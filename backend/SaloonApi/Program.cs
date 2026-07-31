@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -20,7 +21,8 @@ using SaloonApi.Shared.Realtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((_, cfg) => cfg.WriteTo.Console().MinimumLevel.Information());
+builder.Host.UseSerilog((_, cfg) =>
+    cfg.WriteTo.Console(formatProvider: CultureInfo.InvariantCulture).MinimumLevel.Information());
 
 builder.Services.AddOpenApi();
 
@@ -83,4 +85,4 @@ app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapBookingEndpoints();
 
-app.Run();
+await app.RunAsync();

@@ -2,7 +2,7 @@ using Microsoft.Data.SqlClient;
 
 namespace SaloonApi.Shared.Data;
 
-public static class SqlExceptionExtensions
+internal static class SqlExceptionExtensions
 {
     // sp_*'s THROW 50001..50999 are expected application-level rejections (conflict, not-found,
     // already-registered) — anything else is a real error and should bubble up as a 500.

@@ -7,7 +7,7 @@ using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Booking.Endpoints;
 
-public static class BookingEndpoints
+internal static class BookingEndpoints
 {
     public static void MapBookingEndpoints(this IEndpointRouteBuilder app)
     {
@@ -88,7 +88,7 @@ public static class BookingEndpoints
     }
 }
 
-public sealed record HoldRequest(
+internal sealed record HoldRequest(
     int LocationId, int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, List<int> TreatmentIds);
 
-public sealed record HoldResponse(int BookingId, DateTime ExpiresAt);
+internal sealed record HoldResponse(int BookingId, DateTime ExpiresAt);

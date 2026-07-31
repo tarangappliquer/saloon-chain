@@ -3,7 +3,7 @@ using SaloonApi.Shared.Auth;
 
 namespace SaloonApi.Modules.Identity.Application;
 
-public sealed class AuthService(CustomerRepository repo, TokenService tokens)
+internal sealed class AuthService(CustomerRepository repo, TokenService tokens)
 {
     public async Task<(int Id, string Token)> RegisterAsync(string name, string email, string password, string? phone)
     {

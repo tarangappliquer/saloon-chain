@@ -4,7 +4,7 @@ using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Identity.Endpoints;
 
-public static class AuthEndpoints
+internal static class AuthEndpoints
 {
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
@@ -33,6 +33,6 @@ public static class AuthEndpoints
     }
 }
 
-public sealed record RegisterRequest(string Name, string Email, string Password, string? Phone);
-public sealed record LoginRequest(string Email, string Password);
-public sealed record AuthResponse(int CustomerId, string Name, string Email, string Token);
+internal sealed record RegisterRequest(string Name, string Email, string Password, string? Phone);
+internal sealed record LoginRequest(string Email, string Password);
+internal sealed record AuthResponse(int CustomerId, string Name, string Email, string Token);

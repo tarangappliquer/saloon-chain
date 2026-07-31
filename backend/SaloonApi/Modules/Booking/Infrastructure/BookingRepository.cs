@@ -4,33 +4,33 @@ using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Booking.Infrastructure;
 
-public sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, bool IsHoliday);
-public sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
-public sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
-public sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
+internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, bool IsHoliday);
+internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
+internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
+internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
 
-public sealed record AvailabilityData(
+internal sealed record AvailabilityData(
     LocationHoursRow? Location,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRow> EligiblePairs,
     IReadOnlyList<ExistingBookingRow> ExistingBookings);
 
-public sealed record BookingLocationRow(int LocationId, int RoomId, DateTime WorkDate);
+internal sealed record BookingLocationRow(int LocationId, int RoomId, DateTime WorkDate);
 
-public sealed record MyBookingRow(
+internal sealed record MyBookingRow(
     int Id, int LocationId, string LocationName, int RoomId, int TherapistId, string TherapistName,
     DateTime StartTime, DateTime EndTime, string Status);
 
-public sealed record MyBookingTreatmentRow(
+internal sealed record MyBookingTreatmentRow(
     int BookingId, int TreatmentId, string TreatmentName, short SequenceOrder, short SlotCount, decimal Price);
 
-public sealed record MyBookingTreatmentDto(string TreatmentName, short SlotCount, decimal Price);
+internal sealed record MyBookingTreatmentDto(string TreatmentName, short SlotCount, decimal Price);
 
-public sealed record MyBookingDto(
+internal sealed record MyBookingDto(
     int Id, string LocationName, string TherapistName, DateTime StartTime, DateTime EndTime, string Status,
     IReadOnlyList<MyBookingTreatmentDto> Treatments);
 
-public sealed class BookingRepository(SqlConnectionFactory factory)
+internal sealed class BookingRepository(SqlConnectionFactory factory)
 {
     public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date)
     {

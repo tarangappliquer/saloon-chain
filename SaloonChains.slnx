@@ -3,22 +3,12 @@
     <Project Path="backend/SaloonApi/SaloonApi.csproj" />
     <Project Path="backend/SaloonApi.Tests/SaloonApi.Tests.csproj" />
   </Folder>
-  <Folder Name="/frontend/">
-    <Project Path="frontend/adminportal/adminportal.esproj">
-      <Build />
-      <Deploy />
-    </Project>
-    <Project Path="frontend/clientportal/clientportal.esproj">
-      <Build />
-      <Deploy />
-    </Project>
-  </Folder>
 	<Folder Name="/Solution Items/">
-		<File Path=".gitignore" />
-		<File Path=".editorconfig" />
-		<File Path="./backend/Directory.Build.props" />
-		<File Path="./backend/Directory.Packages.props" />
-		<File Path="./docs/architecture.md" />
-	</Folder>
+  <File Path=".gitignore" />
+    <File Path=".editorconfig" />
+	<File Path="backend/Directory.Build.props" />
+	<File Path="backend/Directory.Packages.props" />
+	<File Path="docs/architecture.md" />
+  </Folder>
   
 </Solution>

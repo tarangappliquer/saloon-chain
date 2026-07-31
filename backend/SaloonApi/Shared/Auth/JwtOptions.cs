@@ -1,6 +1,6 @@
 namespace SaloonApi.Shared.Auth;
 
-public sealed class JwtOptions
+internal sealed class JwtOptions
 {
     public string SigningKey { get; init; } = "";
     public string Issuer { get; init; } = "SaloonApi";

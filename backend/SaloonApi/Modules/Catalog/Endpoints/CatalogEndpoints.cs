@@ -2,7 +2,7 @@ using SaloonApi.Modules.Catalog.Infrastructure;
 
 namespace SaloonApi.Modules.Catalog.Endpoints;
 
-public static class CatalogEndpoints
+internal static class CatalogEndpoints
 {
     public static void MapCatalogEndpoints(this IEndpointRouteBuilder app)
     {

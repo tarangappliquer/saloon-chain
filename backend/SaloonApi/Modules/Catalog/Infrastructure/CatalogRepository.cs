@@ -2,18 +2,18 @@ using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Catalog.Infrastructure;
 
-public sealed record ChainDto(int Id, string Name);
+internal sealed record ChainDto(int Id, string Name);
 
-public sealed record LocationDto(
+internal sealed record LocationDto(
     int Id, int ChainId, string Name, string? Address,
     TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
 
-public sealed record TreatmentDto(
+internal sealed record TreatmentDto(
     int Id, int CategoryId, string CategoryName, string Name, decimal Price, short DurationSlots);
 
-public sealed record LocationHolidayRow(DateTime HolidayDate, string? Reason);
+internal sealed record LocationHolidayRow(DateTime HolidayDate, string? Reason);
 
-public sealed class CatalogRepository(SqlConnectionFactory factory)
+internal sealed class CatalogRepository(SqlConnectionFactory factory)
 {
     public async Task<IEnumerable<ChainDto>> GetChainsAsync()
     {

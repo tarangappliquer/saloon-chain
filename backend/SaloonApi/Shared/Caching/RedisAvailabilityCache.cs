@@ -4,7 +4,7 @@ namespace SaloonApi.Shared.Caching;
 
 // Cache-aside only: the SP under sp_getapplock is the correctness boundary, this just saves a
 // round-trip to SQL Server for repeated availability reads. Invalidated on every write.
-public sealed class RedisAvailabilityCache(IConnectionMultiplexer redis) : IAvailabilityCache
+internal sealed class RedisAvailabilityCache(IConnectionMultiplexer redis) : IAvailabilityCache
 {
     private static string Key(int locationId, DateOnly date) => $"avail:{locationId}:{date:yyyy-MM-dd}";
 

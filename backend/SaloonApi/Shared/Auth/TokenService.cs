@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -6,7 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace SaloonApi.Shared.Auth;
 
-public sealed class TokenService(IOptions<JwtOptions> options)
+internal sealed class TokenService(IOptions<JwtOptions> options)
 {
     private readonly JwtOptions _options = options.Value;
 
@@ -16,7 +17,7 @@ public sealed class TokenService(IOptions<JwtOptions> options)
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, customerId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, customerId.ToString(CultureInfo.InvariantCulture)),
             new Claim(ClaimTypes.Email, email)
         };
         var token = new JwtSecurityToken(

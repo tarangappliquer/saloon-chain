@@ -2,7 +2,7 @@ using SaloonApi.Modules.Booking.Application;
 
 namespace SaloonApi.Modules.Booking.BackgroundJobs;
 
-public sealed class HoldExpirySweepService(IServiceScopeFactory scopeFactory, ILogger<HoldExpirySweepService> logger) : BackgroundService
+internal sealed class HoldExpirySweepService(IServiceScopeFactory scopeFactory, ILogger<HoldExpirySweepService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -15,10 +15,14 @@ public sealed class HoldExpirySweepService(IServiceScopeFactory scopeFactory, IL
                 var bookingService = scope.ServiceProvider.GetRequiredService<BookingService>();
                 await bookingService.SweepExpiredHoldsAsync();
             }
+            // CA1031: this is the sweep loop's top-level guard -- any single failure (SQL, Redis,
+            // anything) must not kill the BackgroundService; log and try again next tick.
+#pragma warning disable CA1031
             catch (Exception ex)
             {
                 logger.LogError(ex, "Hold expiry sweep failed");
             }
+#pragma warning restore CA1031
         }
     }
 }

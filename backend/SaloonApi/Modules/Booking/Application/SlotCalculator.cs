@@ -1,13 +1,14 @@
 namespace SaloonApi.Modules.Booking.Application;
 
-public sealed record EligiblePair(int RoomId, int TherapistId, TimeSpan ShiftStart, TimeSpan ShiftEnd);
-public sealed record ExistingBooking(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
-public sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int RoomId, int TherapistId);
+internal sealed record EligiblePair(int RoomId, int TherapistId, TimeSpan ShiftStart, TimeSpan ShiftEnd);
+internal sealed record ExistingBooking(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
+internal sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int RoomId, int TherapistId);
 
 // Pure function: the one non-trivial algorithm in the booking flow, kept out of T-SQL so it's
 // unit-testable. SQL Server only supplies the raw data (hours, eligible room/therapist pairs,
 // existing bookings); this walks 5-minute candidate start times and filters out conflicts.
-public static class SlotCalculator
+// Internal, exercised directly from SaloonApi.Tests via [assembly: InternalsVisibleTo].
+internal static class SlotCalculator
 {
     public static IReadOnlyList<AvailableSlot> ComputeAvailableSlots(
         DateOnly date,

@@ -22,8 +22,10 @@
 
 		<!-- Docs -->
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<NoWarn>$(NoWarn);CS1591;MSG0005;CA1054;CA1056</NoWarn>
-		<!-- Suppress warning about missing XML docs -->
+		<!-- CS1591: missing XML docs. CA1054/CA1056: Uri-as-string interop rules. CA1716: names
+		     colliding with other-language keywords (e.g. VB's Shared/Date) -> this API is C#-only,
+		     never consumed cross-language, so the interop rules in this list don't apply here. -->
+		<NoWarn>$(NoWarn);CS1591;MSG0005;CA1054;CA1056;CA1716</NoWarn>
 
 		<!-- Container tags (if using container builds) -->
 		<ContainerImageTags>10.0.0;latest</ContainerImageTags>

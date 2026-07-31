@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace SaloonApi.Shared.Auth;
 
-public static class PasswordHasher
+internal static class PasswordHasher
 {
     private const int SaltSize = 16;
     private const int KeySize = 32;

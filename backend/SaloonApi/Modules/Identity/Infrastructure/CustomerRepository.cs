@@ -4,9 +4,9 @@ using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Identity.Infrastructure;
 
-public sealed record CustomerRecord(int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt);
+internal sealed record CustomerRecord(int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt);
 
-public sealed class CustomerRepository(SqlConnectionFactory factory)
+internal sealed class CustomerRepository(SqlConnectionFactory factory)
 {
     public async Task<int> CreateAsync(string name, string email, byte[] hash, byte[] salt, string? phone)
     {

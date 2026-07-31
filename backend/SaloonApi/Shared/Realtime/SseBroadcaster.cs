@@ -5,7 +5,7 @@ namespace SaloonApi.Shared.Realtime;
 
 // ponytail: in-process fan-out only (single instance). Scaling to multiple API instances needs a
 // Redis pub/sub backplane instead of this dictionary — add when there's more than one instance.
-public sealed class SseBroadcaster
+internal sealed class SseBroadcaster
 {
     private readonly ConcurrentDictionary<Guid, (string Group, Channel<string> Channel)> _subscribers = new();
 

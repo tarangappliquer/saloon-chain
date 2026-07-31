@@ -6,7 +6,7 @@ using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Booking.Application;
 
-public sealed class BookingService(BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse)
+internal sealed class BookingService(BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse)
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
