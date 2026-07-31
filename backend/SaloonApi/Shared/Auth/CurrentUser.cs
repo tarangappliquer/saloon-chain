@@ -5,10 +5,17 @@ namespace SaloonApi.Shared.Auth;
 // the same instance within a request (see Program.cs).
 internal sealed class CurrentUser : ICurrentUser
 {
-    public int? CustomerId { get; set; }
+    public int? UserId { get; set; }
     public string? Email { get; set; }
+    public UserRole? Role { get; set; }
+    public int? ChainId { get; set; }
+    public int? LocationId { get; set; }
+    public int? TherapistId { get; set; }
+    public int? EmulatedByUserId { get; set; }
     public bool IsAuthenticated { get; set; }
 
-    public int RequireCustomerId() =>
-        CustomerId ?? throw new InvalidOperationException("No authenticated customer on the current request.");
+    public int RequireUserId() =>
+        UserId ?? throw new InvalidOperationException("No authenticated user on the current request.");
+
+    public bool IsInRole(params UserRole[] roles) => Role is { } role && roles.Contains(role);
 }

@@ -5,11 +5,18 @@ namespace SaloonApi.Shared.Auth;
 // handlers) able to know who's calling without depending on ASP.NET Core request types.
 internal interface ICurrentUser
 {
-    int? CustomerId { get; }
+    int? UserId { get; }
     string? Email { get; }
+    UserRole? Role { get; }
+    int? ChainId { get; }    // set for Role=Admin: the chain they're scoped to
+    int? LocationId { get; } // set for Role=Manager/Therapist: the location they're scoped to
+    int? TherapistId { get; } // set for Role=Therapist: the Therapists row this login is tied to
+    int? EmulatedByUserId { get; } // set when this token came from /api/auth/emulate: the staff user id acting as this customer
     bool IsAuthenticated { get; }
 
-    // Throws if called on a request with no authenticated customer -- only call this from code
+    // Throws if called on a request with no authenticated user -- only call this from code
     // that only ever runs behind [Authorize]/.RequireAuthorization().
-    int RequireCustomerId();
+    int RequireUserId();
+
+    bool IsInRole(params UserRole[] roles);
 }

@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
+using SaloonApi.Modules.Admin.Endpoints;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.BackgroundJobs;
 using SaloonApi.Modules.Booking.Endpoints;
@@ -12,6 +13,7 @@ using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Shared.Auth;
+using SaloonApi.Shared.Bootstrap;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Data;
 using SaloonApi.Shared.ErrorHandling;
@@ -65,7 +67,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Broad-to-narrow: SuperAdmin sees every chain, Admin is scoped to one chain (ICurrentUser.ChainId),
+    // Manager/Therapist to one location (ICurrentUser.LocationId) -- see dbo.Users in 01_tables.sql.
+    // These policies gate *which endpoints* a role may call; per-record chain/location scoping is
+    // left to the endpoint/repository layer to check against ICurrentUser where it matters.
+    options.AddPolicy("SuperAdminOnly", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
+    options.AddPolicy("AdminAccess", p => p.RequireRole(
+        nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
+    options.AddPolicy("StaffAccess", p => p.RequireRole(
+        nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Therapist)));
+});
 
 builder.Services.AddCors(options =>
 {
@@ -86,7 +99,7 @@ builder.Services.AddSingleton<IAvailabilityCache, RedisAvailabilityCache>();
 builder.Services.AddSingleton<SseBroadcaster>();
 builder.Services.AddSingleton<TokenService>();
 
-builder.Services.AddScoped<CustomerRepository>();
+builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<BookingRepository>();
@@ -130,5 +143,11 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapBookingEndpoints();
+app.MapAdminCatalogEndpoints();
+app.MapAdminStaffEndpoints();
+app.MapAdminBookingEndpoints();
+app.MapAdminCustomersEndpoints();
+
+await AdminSeeder.SeedSuperAdminAsync(app.Services, app.Configuration);
 
 await app.RunAsync();

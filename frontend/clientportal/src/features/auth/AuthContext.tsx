@@ -6,12 +6,15 @@ interface AuthUser {
   customerId: number;
   name: string;
   email: string;
+  isEmulated: boolean;
+  emulatedByName: string | null;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, phone?: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -26,7 +29,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function persist(res: AuthResponse) {
     setAuthToken(res.token);
-    const authUser = { customerId: res.customerId, name: res.name, email: res.email };
+    const authUser: AuthUser = {
+      customerId: res.userId,
+      name: res.name,
+      email: res.email,
+      isEmulated: res.isEmulated,
+      emulatedByName: res.emulatedByName,
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
     setUser(authUser);
   }
@@ -39,13 +48,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(await api.post<AuthResponse>('/api/auth/register', { name, email, password, phone }));
   }
 
+  // Entry point for a staff-initiated emulation session: the adminportal already exchanged its
+  // session for this customer token and redirected here with it. GET /api/auth/me (using that
+  // token) is what fills in the profile and impersonation banner -- nothing PII-bearing travels
+  // through the URL itself.
+  async function loginWithToken(token: string) {
+    setAuthToken(token);
+    persist({ ...(await api.get<AuthResponse>('/api/auth/me')), token });
+  }
+
   function logout() {
     setAuthToken(null);
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, login, register, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, register, loginWithToken, logout }}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

@@ -36,10 +36,14 @@ export interface HoldResponse {
 }
 
 export interface AuthResponse {
-  customerId: number;
+  userId: number;
   name: string;
   email: string;
+  role: string;
   token: string;
+  canEmulate: boolean;
+  isEmulated: boolean;
+  emulatedByName: string | null;
 }
 
 export interface MyBookingTreatment {

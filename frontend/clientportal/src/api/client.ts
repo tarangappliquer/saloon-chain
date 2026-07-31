@@ -1,4 +1,7 @@
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
+// Where the "Exit emulation" banner sends the browser back to -- separate Vite app/port
+// (frontend/adminportal), not reachable through API_BASE.
+export const ADMIN_PORTAL_URL: string = import.meta.env.VITE_ADMIN_PORTAL_URL ?? 'http://localhost:58562';
 
 const TOKEN_KEY = 'saloon_token';
 let authToken: string | null = localStorage.getItem(TOKEN_KEY);

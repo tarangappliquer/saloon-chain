@@ -24,25 +24,25 @@ internal static class BookingEndpoints
         group.MapPost("/hold", async (HoldRequest req, ICurrentUser currentUser, BookingService svc) =>
         {
             var (bookingId, expiresAt) = await svc.HoldAsync(
-                req.LocationId, req.RoomId, req.TherapistId, currentUser.RequireCustomerId(),
+                req.LocationId, req.RoomId, req.TherapistId, currentUser.RequireUserId(),
                 req.StartTime, req.EndTime, req.TreatmentIds);
             return Results.Ok(new HoldResponse(bookingId, expiresAt));
         }).WithValidation<HoldRequest>();
 
         group.MapPost("/{id:int}/confirm", async (int id, ICurrentUser currentUser, BookingService svc) =>
         {
-            await svc.ConfirmAsync(id, currentUser.RequireCustomerId());
+            await svc.ConfirmAsync(id, currentUser.RequireUserId());
             return Results.NoContent();
         });
 
         group.MapDelete("/{id:int}", async (int id, ICurrentUser currentUser, BookingService svc) =>
         {
-            await svc.CancelAsync(id, currentUser.RequireCustomerId());
+            await svc.CancelAsync(id, currentUser.RequireUserId());
             return Results.NoContent();
         });
 
         group.MapGet("/mine", async (ICurrentUser currentUser, BookingService svc) =>
-            Results.Ok(await svc.GetMineAsync(currentUser.RequireCustomerId())));
+            Results.Ok(await svc.GetMineAsync(currentUser.RequireUserId())));
 
         // Anonymous: the event carries no customer data, just "something changed for this
         // location+date, refetch" -- and EventSource can't send an Authorization header anyway.

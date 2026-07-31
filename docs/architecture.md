@@ -421,7 +421,7 @@ yet.
 | Location holidays | ✅ Built | `LocationHolidays` table, checked in `BookingService` |
 | Admin portal UI | ❌ Not started | `frontend/adminportal` (still default template) |
 | RBAC (6 roles) | ❌ Not started | Extend JWT claims + `[Authorize(Policy=...)]`; no mechanism change needed |
-| Emulation (admin-as-customer) | ❌ Not started | Likely a second claim/token-exchange endpoint in `Identity` |
+| Emulation (admin-as-customer) | ✅ Built | `POST /api/auth/emulate/{customerId}` in `Modules/Identity`, gated by `dbo.Users.IsEmulator` |
 | Shift/room-assignment CRUD | ❌ Not started | Tables exist (`ShiftAssignments`, `RoomCategoryAssignments`), seeded manually via `06_seed.sql` — needs a `Scheduling` module for admin CRUD |
 | Analytics/reports | ❌ Not started | New module, reads via new SPs — no existing code to extend |
 | Payments | ❌ Not started (explicitly future, per spec) | — |

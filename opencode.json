@@ -3,10 +3,10 @@
     "context-engine": {
       "type": "local",
       "command": [
-        "C:\\Users\\tarang-005300\\.local\\bin\\cce.exe",
+        "C:\\Users\\yashree\\.local\\bin\\cce.exe",
         "serve",
         "--project-dir",
-        "D:\\Workspace\\SaloonChains"
+        "D:\\PersonalWorkspace\\saloon-chain"
       ]
     }
   }

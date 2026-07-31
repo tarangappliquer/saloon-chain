@@ -10,9 +10,9 @@ BEGIN TRY
 
     DECLARE @CustomerId INT;
     DECLARE @Email NVARCHAR(256) = CONCAT('test', CONVERT(VARCHAR(36), NEWID()), '@example.com');
-    EXEC dbo.sp_Auth_CreateCustomer
+    EXEC dbo.sp_Auth_CreateUser
         @Name = 'Test Customer', @Email = @Email,
-        @PasswordHash = 0x00, @PasswordSalt = 0x00, @CustomerId = @CustomerId OUTPUT;
+        @PasswordHash = 0x00, @PasswordSalt = 0x00, @UserId = @CustomerId OUTPUT;
 
     DECLARE @Treatments dbo.IntIdList;
     INSERT INTO @Treatments SELECT TOP 1 Id FROM dbo.Treatments;
@@ -41,7 +41,7 @@ BEGIN TRY
 
     DELETE FROM dbo.BookingTreatments WHERE BookingId = @BookingId1;
     DELETE FROM dbo.Bookings WHERE Id = @BookingId1;
-    DELETE FROM dbo.Customers WHERE Id = @CustomerId;
+    DELETE FROM dbo.Users WHERE Id = @CustomerId;
 END TRY
 BEGIN CATCH
     PRINT CONCAT('TEST ERROR: ', ERROR_MESSAGE());
