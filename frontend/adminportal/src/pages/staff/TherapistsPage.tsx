@@ -7,11 +7,18 @@ export function TherapistsPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
-    setTherapists(await api.get<Therapist[]>('/api/admin/catalog/therapists'));
-    setLoading(false);
+    setError(null);
+    try {
+      setTherapists(await api.get<Therapist[]>('/api/admin/catalog/therapists'));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load therapists');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -21,12 +28,15 @@ export function TherapistsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitting(true);
     try {
       await api.post('/api/admin/catalog/therapists', { name });
       setName('');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create therapist');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -56,7 +66,11 @@ export function TherapistsPage() {
           onChange={(e) => setName(e.target.value)}
           className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
         />
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+        >
           Add therapist
         </button>
       </form>

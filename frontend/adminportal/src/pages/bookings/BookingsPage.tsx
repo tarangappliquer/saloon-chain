@@ -21,18 +21,24 @@ export function BookingsPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get<Chain[]>('/api/admin/catalog/chains').then((cs) => {
-      setChains(cs);
-      if (cs.length > 0) setChainId(cs[0].id);
-    });
+    api
+      .get<Chain[]>('/api/admin/catalog/chains')
+      .then((cs) => {
+        setChains(cs);
+        if (cs.length > 0) setChainId(cs[0].id);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
   }, []);
 
   useEffect(() => {
     if (chainId === null) return;
-    api.get<Location[]>(`/api/admin/catalog/locations?chainId=${chainId}`).then((locs) => {
-      setLocations(locs);
-      setLocationId(locs.length > 0 ? locs[0].id : null);
-    });
+    api
+      .get<Location[]>(`/api/admin/catalog/locations?chainId=${chainId}`)
+      .then((locs) => {
+        setLocations(locs);
+        setLocationId(locs.length > 0 ? locs[0].id : null);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
   }, [chainId]);
 
   async function loadBookings() {

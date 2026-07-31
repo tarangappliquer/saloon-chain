@@ -7,11 +7,18 @@ export function ChainsPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
-    setChains(await api.get<Chain[]>('/api/admin/catalog/chains'));
-    setLoading(false);
+    setError(null);
+    try {
+      setChains(await api.get<Chain[]>('/api/admin/catalog/chains'));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load chains');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -21,12 +28,15 @@ export function ChainsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitting(true);
     try {
       await api.post('/api/admin/catalog/chains', { name });
       setName('');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create chain');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -52,7 +62,11 @@ export function ChainsPage() {
           onChange={(e) => setName(e.target.value)}
           className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
         />
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+        >
           Add chain
         </button>
       </form>

@@ -74,6 +74,12 @@ builder.Services.AddAuthorization(options =>
     // These policies gate *which endpoints* a role may call; per-record chain/location scoping is
     // left to the endpoint/repository layer to check against ICurrentUser where it matters.
     options.AddPolicy("SuperAdminOnly", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
+    // Chains are the tenant boundary -- Manager (head of a single location) has no business
+    // creating/renaming one, unlike the rest of the catalog (locations/treatments/rooms) which
+    // stays under AdminAccess below. Layered on top of a route's existing AdminAccess requirement
+    // (see AdminCatalogEndpoints' chains routes), not a replacement for it -- ASP.NET Core ANDs
+    // multiple RequireAuthorization policies together, so the net effect is SuperAdmin/Admin only.
+    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
         nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(

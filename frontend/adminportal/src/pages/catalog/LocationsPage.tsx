@@ -30,18 +30,28 @@ export function LocationsPage() {
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    api.get<Chain[]>('/api/admin/catalog/chains').then((cs) => {
-      setChains(cs);
-      if (cs.length > 0) setChainId(cs[0].id);
-    });
+    api
+      .get<Chain[]>('/api/admin/catalog/chains')
+      .then((cs) => {
+        setChains(cs);
+        if (cs.length > 0) setChainId(cs[0].id);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
   }, []);
 
   async function loadLocations(id: number) {
     setLoading(true);
-    setLocations(await api.get<Location[]>(`/api/admin/catalog/locations?chainId=${id}`));
-    setLoading(false);
+    setError(null);
+    try {
+      setLocations(await api.get<Location[]>(`/api/admin/catalog/locations?chainId=${id}`));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load locations');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -61,6 +71,7 @@ export function LocationsPage() {
     e.preventDefault();
     if (chainId === null) return;
     setError(null);
+    setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
       await api.post('/api/admin/catalog/locations', {
@@ -76,6 +87,8 @@ export function LocationsPage() {
       await loadLocations(chainId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create location');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -161,7 +174,11 @@ export function LocationsPage() {
             </label>
           ))}
         </div>
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+        >
           Add location
         </button>
       </form>

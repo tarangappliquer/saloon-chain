@@ -137,6 +137,7 @@ CREATE TABLE dbo.Users (
     ChainId       INT NULL REFERENCES dbo.SaloonChains(Id),
     LocationId    INT NULL REFERENCES dbo.Locations(Id),
     TherapistId   INT NULL REFERENCES dbo.Therapists(Id),
+    IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- SuperAdmin/Admin/Manager only: allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
     IsDelete      BIT NOT NULL DEFAULT 0,
     IsActive      BIT NOT NULL DEFAULT 1,

@@ -17,7 +17,15 @@ internal static class BookingEndpoints
 
         group.MapGet("/available-slots", async (int locationId, string treatmentIds, DateOnly date, BookingService svc) =>
         {
-            var ids = treatmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+            var parts = treatmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var ids = new List<int>(parts.Length);
+            foreach (var part in parts)
+            {
+                if (!int.TryParse(part, out var id))
+                    return Results.Problem($"Invalid treatmentIds value '{part}'.", statusCode: StatusCodes.Status400BadRequest);
+                ids.Add(id);
+            }
+
             return Results.Ok(await svc.GetAvailableSlotsAsync(locationId, ids, date));
         });
 

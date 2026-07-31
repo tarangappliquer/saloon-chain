@@ -10,29 +10,40 @@ export function TreatmentsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [creatingTreatment, setCreatingTreatment] = useState(false);
 
   const [categoryName, setCategoryName] = useState('');
   const [treatmentForm, setTreatmentForm] = useState({ categoryId: '', name: '', price: '', durationSlots: '' });
   const [assign, setAssign] = useState<Record<number, { locationId: string; priceOverride: string }>>({});
 
   useEffect(() => {
-    api.get<Chain[]>('/api/admin/catalog/chains').then((cs) => {
-      setChains(cs);
-      if (cs.length > 0) setChainId(cs[0].id);
-    });
+    api
+      .get<Chain[]>('/api/admin/catalog/chains')
+      .then((cs) => {
+        setChains(cs);
+        if (cs.length > 0) setChainId(cs[0].id);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
   }, []);
 
   async function loadChainData(id: number) {
     setLoading(true);
-    const [cats, treats, locs] = await Promise.all([
-      api.get<TreatmentCategory[]>(`/api/admin/catalog/treatment-categories?chainId=${id}`),
-      api.get<Treatment[]>(`/api/admin/catalog/treatments?chainId=${id}`),
-      api.get<Location[]>(`/api/admin/catalog/locations?chainId=${id}`),
-    ]);
-    setCategories(cats);
-    setTreatments(treats);
-    setLocations(locs);
-    setLoading(false);
+    setError(null);
+    try {
+      const [cats, treats, locs] = await Promise.all([
+        api.get<TreatmentCategory[]>(`/api/admin/catalog/treatment-categories?chainId=${id}`),
+        api.get<Treatment[]>(`/api/admin/catalog/treatments?chainId=${id}`),
+        api.get<Location[]>(`/api/admin/catalog/locations?chainId=${id}`),
+      ]);
+      setCategories(cats);
+      setTreatments(treats);
+      setLocations(locs);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load treatments');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -43,12 +54,15 @@ export function TreatmentsPage() {
     e.preventDefault();
     if (chainId === null) return;
     setError(null);
+    setCreatingCategory(true);
     try {
       await api.post('/api/admin/catalog/treatment-categories', { chainId, name: categoryName });
       setCategoryName('');
       await loadChainData(chainId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create category');
+    } finally {
+      setCreatingCategory(false);
     }
   }
 
@@ -56,6 +70,7 @@ export function TreatmentsPage() {
     e.preventDefault();
     if (chainId === null) return;
     setError(null);
+    setCreatingTreatment(true);
     try {
       await api.post('/api/admin/catalog/treatments', {
         chainId,
@@ -68,6 +83,8 @@ export function TreatmentsPage() {
       await loadChainData(chainId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create treatment');
+    } finally {
+      setCreatingTreatment(false);
     }
   }
 
@@ -132,7 +149,11 @@ export function TreatmentsPage() {
             onChange={(e) => setCategoryName(e.target.value)}
             className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
           />
-          <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+          <button
+            type="submit"
+            disabled={creatingCategory}
+            className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+          >
             Add category
           </button>
         </form>
@@ -187,7 +208,11 @@ export function TreatmentsPage() {
             onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
             className="w-44 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
           />
-          <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+          <button
+            type="submit"
+            disabled={creatingTreatment}
+            className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+          >
             Add treatment
           </button>
         </form>

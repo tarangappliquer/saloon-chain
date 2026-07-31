@@ -64,10 +64,10 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return rows.Select(r => DateOnly.FromDateTime(r.HolidayDate)).ToList();
     }
 
-    public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync()
+    public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<AdminChainDto>("dbo.sp_Admin_GetChains");
+        return await db.QuerySpAsync<AdminChainDto>("dbo.sp_Admin_GetChains", new { ChainId = chainId });
     }
 
     public async Task<IEnumerable<AdminLocationDto>> GetLocationsForAdminAsync(int chainId)

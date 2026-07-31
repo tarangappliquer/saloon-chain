@@ -11,26 +11,39 @@ export function RoomsPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    api.get<Chain[]>('/api/admin/catalog/chains').then((cs) => {
-      setChains(cs);
-      if (cs.length > 0) setChainId(cs[0].id);
-    });
+    api
+      .get<Chain[]>('/api/admin/catalog/chains')
+      .then((cs) => {
+        setChains(cs);
+        if (cs.length > 0) setChainId(cs[0].id);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
   }, []);
 
   useEffect(() => {
     if (chainId === null) return;
-    api.get<Location[]>(`/api/admin/catalog/locations?chainId=${chainId}`).then((locs) => {
-      setLocations(locs);
-      setLocationId(locs.length > 0 ? locs[0].id : null);
-    });
+    api
+      .get<Location[]>(`/api/admin/catalog/locations?chainId=${chainId}`)
+      .then((locs) => {
+        setLocations(locs);
+        setLocationId(locs.length > 0 ? locs[0].id : null);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
   }, [chainId]);
 
   async function loadRooms(id: number) {
     setLoading(true);
-    setRooms(await api.get<Room[]>(`/api/admin/catalog/rooms?locationId=${id}`));
-    setLoading(false);
+    setError(null);
+    try {
+      setRooms(await api.get<Room[]>(`/api/admin/catalog/rooms?locationId=${id}`));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load rooms');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -42,12 +55,15 @@ export function RoomsPage() {
     e.preventDefault();
     if (locationId === null) return;
     setError(null);
+    setSubmitting(true);
     try {
       await api.post('/api/admin/catalog/rooms', { locationId, name });
       setName('');
       await loadRooms(locationId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create room');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -104,7 +120,11 @@ export function RoomsPage() {
           onChange={(e) => setName(e.target.value)}
           className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
         />
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+        >
           Add room
         </button>
       </form>

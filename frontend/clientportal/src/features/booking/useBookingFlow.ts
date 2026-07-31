@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useReducer, useRef } from 'react';
 import { api, ApiError } from '../../api/client';
 import type { AvailableSlot, HoldResponse } from '../../api/types';
 
@@ -77,6 +77,12 @@ function errorMessage(err: unknown, fallback: string) {
 
 export function useBookingFlow(locationId: number | null) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  // `state.loading` alone doesn't stop a double-click: it's only set via `dispatch`, which doesn't
+  // take effect until the next render, so two clicks in the same tick (before React re-renders
+  // with the disabled button) both slip through and fire duplicate requests. This ref is set
+  // synchronously, before either the dispatch or the await, so the second call in the same tick
+  // sees it immediately and bails.
+  const inFlight = useRef(false);
 
   const loadDates = useCallback(async () => {
     if (!locationId || state.selectedTreatmentIds.length === 0) return;
@@ -113,7 +119,8 @@ export function useBookingFlow(locationId: number | null) {
 
   const selectSlot = useCallback(
     async (slot: AvailableSlot) => {
-      if (!locationId) return;
+      if (!locationId || inFlight.current) return;
+      inFlight.current = true;
       dispatch({ type: 'LOADING' });
       try {
         const hold = await api.post<HoldResponse>('/api/booking/hold', {
@@ -127,19 +134,24 @@ export function useBookingFlow(locationId: number | null) {
         dispatch({ type: 'HELD', hold, slot });
       } catch (err) {
         dispatch({ type: 'ERROR', message: errorMessage(err, 'That slot was just taken — pick another') });
+      } finally {
+        inFlight.current = false;
       }
     },
     [locationId, state.selectedTreatmentIds],
   );
 
   const confirm = useCallback(async () => {
-    if (!state.hold) return;
+    if (!state.hold || inFlight.current) return;
+    inFlight.current = true;
     dispatch({ type: 'LOADING' });
     try {
       await api.post(`/api/booking/${state.hold.bookingId}/confirm`);
       dispatch({ type: 'CONFIRMED' });
     } catch (err) {
       dispatch({ type: 'ERROR', message: errorMessage(err, 'Your hold expired — start again') });
+    } finally {
+      inFlight.current = false;
     }
   }, [state.hold]);
 

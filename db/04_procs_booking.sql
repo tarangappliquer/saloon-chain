@@ -46,6 +46,14 @@ GO
 -- Correctness boundary: everything above is read-only advisory data for the API to compute
 -- candidate slots from. This proc re-validates under an app lock before writing, so a stale
 -- read (or a race between two customers) can never produce a double-booking.
+--
+-- Two locks, not one: the conflict check below considers a match on RoomId *or* TherapistId, so
+-- two holds that share a therapist but target different rooms (or vice versa) must still
+-- serialize against each other. A single room-keyed lock only serializes same-room contention --
+-- concurrent holds for the same therapist in two different rooms would take different lock keys,
+-- both pass the EXISTS check against not-yet-committed data, and both insert. Always acquire the
+-- room lock before the therapist lock (every caller, every time) so two transactions contending
+-- on both resources can't deadlock by acquiring them in opposite orders.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_CreateHold
     @LocationId   INT,
     @RoomId       INT,
@@ -55,7 +63,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Booking_CreateHold
     @EndTime      DATETIME2,
     @Treatments   dbo.IntIdList READONLY,
     @CreatedBy    INT = NULL, -- current logged-in user; equals @CustomerId today, will differ once
-                               -- admin/receptionist can book on a customer's behalf
+                                -- admin/receptionist can book on a customer's behalf
     @BookingId    INT OUTPUT,
     @ExpiresAt    DATETIME2 OUTPUT
 AS
@@ -63,12 +71,21 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @LockKey NVARCHAR(100) = CONCAT('room_', @RoomId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
+    DECLARE @RoomLockKey NVARCHAR(100) = CONCAT('room_', @RoomId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
+    DECLARE @TherapistLockKey NVARCHAR(100) = CONCAT('therapist_', @TherapistId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
     DECLARE @LockResult INT;
 
     BEGIN TRANSACTION;
 
-    EXEC @LockResult = sp_getapplock @Resource = @LockKey, @LockMode = 'Exclusive',
+    EXEC @LockResult = sp_getapplock @Resource = @RoomLockKey, @LockMode = 'Exclusive',
+                                      @LockOwner = 'Transaction', @LockTimeout = 5000;
+    IF @LockResult < 0
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50001, 'Could not acquire booking lock, try again.', 1;
+    END
+
+    EXEC @LockResult = sp_getapplock @Resource = @TherapistLockKey, @LockMode = 'Exclusive',
                                       @LockOwner = 'Transaction', @LockTimeout = 5000;
     IF @LockResult < 0
     BEGIN

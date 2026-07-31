@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { api, ApiError, setAuthToken } from '../../api/client';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { api, ApiError, setAuthToken, setUnauthorizedHandler } from '../../api/client';
 import type { AuthResponse, UserRole } from '../../api/types';
 
 interface AuthUser {
@@ -48,6 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
   }
+
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
 }

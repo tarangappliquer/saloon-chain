@@ -12,6 +12,14 @@ export function setAuthToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// A stale/expired token otherwise leaves the page stuck (the rejected fetch has nowhere to go) --
+// AuthProvider registers logout() here once, so a 401 from any request drops the user back to
+// /login instead of silently hanging.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -31,8 +39,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
     const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, body?.message ?? res.statusText);
+    // Backend error bodies are RFC7807 ProblemDetails (AppExceptionHandler) or a FluentValidation
+    // ValidationProblem -- both carry `title`, never `message`. Falling back to `message` first
+    // meant every real error (hold expired, slot taken, validation failure) surfaced as the bare
+    // HTTP status text instead of the server's actual reason.
+    throw new ApiError(res.status, body?.title ?? body?.message ?? res.statusText);
   }
 
   if (res.status === 204) return undefined as T;

@@ -39,13 +39,17 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateUser
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- IsEmulator only means something for SuperAdmin/Admin/Manager, but not enforced here (mirrors
-    -- Role <> 'Customer' below) -- the AdminAccess policy on /api/admin/staff already keeps
-    -- Therapist/Customer rows out of this proc entirely.
+    -- AdminAccess keeps Therapist/Customer rows out of this proc's caller, but that's a "which
+    -- endpoint" gate, not a "which row" one -- nothing stops the request body itself from setting
+    -- @IsEmulator=1 on a Therapist row. Enforced here instead of trusting the caller: IsEmulator can
+    -- only ever be true for SuperAdmin/Admin/Manager (mirrors AuthService.EmulatorEligibleRoles),
+    -- so login's CanEmulate and the emulate exchange's authorization stay consistent no matter what
+    -- was requested.
     UPDATE dbo.Users
     SET Name = @Name, Phone = @Phone, ChainId = @ChainId, LocationId = @LocationId,
-        TherapistId = @TherapistId, IsEmulator = @IsEmulator, IsActive = @IsActive,
-        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+        TherapistId = @TherapistId,
+        IsEmulator = CASE WHEN Role IN ('SuperAdmin', 'Admin', 'Manager') THEN @IsEmulator ELSE 0 END,
+        IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0 AND Role <> 'Customer';
 
     IF @@ROWCOUNT = 0
@@ -60,11 +64,17 @@ GO
 -- catalog needs to see (and reactivate) inactive rows too.
 -------------------------------------------------------------------------------------------------
 
+-- @ChainId = NULL means "every chain" (SuperAdmin); pass it to scope the list down to a single
+-- tenant (Admin -- see AdminCatalogEndpoints.MapGet("/chains")).
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetChains
+    @ChainId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, IsActive FROM dbo.SaloonChains WHERE IsDelete = 0 ORDER BY Name;
+    SELECT Id, Name, IsActive
+    FROM dbo.SaloonChains
+    WHERE IsDelete = 0 AND (@ChainId IS NULL OR Id = @ChainId)
+    ORDER BY Name;
 END
 GO
 

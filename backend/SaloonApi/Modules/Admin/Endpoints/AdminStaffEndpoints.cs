@@ -14,7 +14,14 @@ internal static class AdminStaffEndpoints
 
         group.MapGet("", async (string? role, int? chainId, int? locationId, UserRepository repo) =>
         {
-            var parsedRole = role is not null ? Enum.Parse<UserRole>(role) : (UserRole?)null;
+            UserRole? parsedRole = null;
+            if (role is not null)
+            {
+                if (!Enum.TryParse<UserRole>(role, out var r))
+                    return Results.Problem($"Unknown role '{role}'.", statusCode: StatusCodes.Status400BadRequest);
+                parsedRole = r;
+            }
+
             return Results.Ok(await repo.GetStaffAsync(parsedRole, chainId, locationId));
         });
 

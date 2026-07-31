@@ -1,5 +1,6 @@
 using FluentValidation;
 using SaloonApi.Modules.Catalog.Infrastructure;
+using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Validation;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
@@ -10,23 +11,44 @@ internal static class AdminCatalogEndpoints
     {
         var group = app.MapGroup("/api/admin/catalog").RequireAuthorization("AdminAccess");
 
-        group.MapGet("/chains", async (CatalogRepository repo) =>
-            Results.Ok(await repo.GetChainsForAdminAsync()));
+        // Read stays under the group's plain AdminAccess -- Manager still needs this list to power
+        // the chain/location pickers on Locations/Treatments/Rooms/Staff/Bookings, even though
+        // Manager can't create/edit chains (see the ChainManagement-gated routes below). Scoping is
+        // still applied: Admin only ever sees their own chain (dbo.Users.ChainId); Manager has no
+        // ChainId (LocationId-scoped instead, see 01_tables.sql), so this passes null for them and
+        // they see every chain, same as before this endpoint had any scoping.
+        group.MapGet("/chains", async (ICurrentUser currentUser, CatalogRepository repo) =>
+            Results.Ok(await repo.GetChainsForAdminAsync(currentUser.IsInRole(UserRole.Admin) ? currentUser.ChainId : null)));
 
-        group.MapGet("/locations", async (int chainId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetLocationsForAdminAsync(chainId)));
+        group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != chainId)
+                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
-        group.MapGet("/treatments", async (int chainId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentsForAdminAsync(chainId)));
+            return Results.Ok(await repo.GetLocationsForAdminAsync(chainId));
+        });
+
+        group.MapGet("/treatments", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != chainId)
+                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetTreatmentsForAdminAsync(chainId));
+        });
 
         group.MapPost("/chains", async (ChainRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateChainAsync(req.Name) })).WithValidation<ChainRequest>();
+            Results.Ok(new { Id = await repo.CreateChainAsync(req.Name) }))
+            .WithValidation<ChainRequest>()
+            .RequireAuthorization("ChainManagement");
 
-        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, CatalogRepository repo) =>
+        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != id)
+                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.UpdateChainAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<ChainUpdateRequest>();
+        }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement");
 
         group.MapPost("/locations", async (LocationRequest req, CatalogRepository repo) =>
             Results.Ok(new

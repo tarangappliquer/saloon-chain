@@ -19,22 +19,37 @@ export function StaffPage() {
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  // Row currently mid-PUT -- both toggle buttons for that row are disabled while set, so a second
+  // click can't build its payload from a pre-update `u` snapshot and clobber the first click's
+  // change (e.g. deactivating while an emulator-toggle click is still in flight would otherwise
+  // silently resurrect isActive:true from the stale closure).
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   async function loadStaff() {
     setLoading(true);
-    setStaff(await api.get<StaffUser[]>('/api/admin/staff'));
-    setLoading(false);
+    setError(null);
+    try {
+      setStaff(await api.get<StaffUser[]>('/api/admin/staff'));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load staff');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     loadStaff();
-    api.get<Chain[]>('/api/admin/catalog/chains').then(setChains);
-    api.get<Therapist[]>('/api/admin/catalog/therapists').then(setTherapists);
+    api.get<Chain[]>('/api/admin/catalog/chains').then(setChains).catch(() => {});
+    api.get<Therapist[]>('/api/admin/catalog/therapists').then(setTherapists).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (form.chainId) {
-      api.get<Location[]>(`/api/admin/catalog/locations?chainId=${form.chainId}`).then(setLocations);
+      api
+        .get<Location[]>(`/api/admin/catalog/locations?chainId=${form.chainId}`)
+        .then(setLocations)
+        .catch(() => setLocations([]));
     } else {
       setLocations([]);
     }
@@ -43,6 +58,7 @@ export function StaffPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitting(true);
     try {
       await api.post('/api/admin/staff', {
         name: form.name,
@@ -57,6 +73,8 @@ export function StaffPage() {
       await loadStaff();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create staff user');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -70,6 +88,7 @@ export function StaffPage() {
 
   async function updateStaff(u: StaffUser, changes: Partial<Pick<StaffUser, 'isActive' | 'isEmulator'>>) {
     setError(null);
+    setSavingId(u.id);
     try {
       await api.put(`/api/admin/staff/${u.id}`, {
         name: u.name,
@@ -84,6 +103,8 @@ export function StaffPage() {
       await loadStaff();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update staff user');
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -172,7 +193,11 @@ export function StaffPage() {
             )}
           </div>
         )}
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+        >
           Create staff login
         </button>
       </form>
@@ -206,7 +231,12 @@ export function StaffPage() {
                 <td className="py-2">{u.isActive ? 'Active' : 'Inactive'}</td>
                 <td className="py-2">
                   {EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
-                    <button type="button" onClick={() => toggleEmulator(u)} className="text-purple-600 hover:underline">
+                    <button
+                      type="button"
+                      disabled={savingId === u.id}
+                      onClick={() => toggleEmulator(u)}
+                      className="text-purple-600 hover:underline disabled:opacity-40"
+                    >
                       {u.isEmulator ? 'Enabled' : 'Disabled'}
                     </button>
                   ) : (
@@ -214,7 +244,12 @@ export function StaffPage() {
                   )}
                 </td>
                 <td className="py-2 text-right">
-                  <button type="button" onClick={() => toggleActive(u)} className="text-purple-600 hover:underline">
+                  <button
+                    type="button"
+                    disabled={savingId === u.id}
+                    onClick={() => toggleActive(u)}
+                    className="text-purple-600 hover:underline disabled:opacity-40"
+                  >
                     {u.isActive ? 'Deactivate' : 'Activate'}
                   </button>
                 </td>

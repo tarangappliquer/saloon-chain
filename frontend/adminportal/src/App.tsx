@@ -17,6 +17,9 @@ import { CustomersPage } from './pages/customers/CustomersPage';
 // sync by hand since the frontend has no way to read ASP.NET Core policy definitions directly.
 const ADMIN_ACCESS: UserRole[] = ['SuperAdmin', 'Admin', 'Manager'];
 const STAFF_ACCESS: UserRole[] = ['SuperAdmin', 'Admin', 'Manager', 'Therapist'];
+// Chains are the tenant boundary -- Manager (head of a single location) can't manage them, unlike
+// the rest of the catalog. Mirrors the backend's ChainManagement policy (Program.cs).
+const CHAIN_MANAGEMENT: UserRole[] = ['SuperAdmin', 'Admin'];
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -56,13 +59,14 @@ function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
   const canManageCatalog = ADMIN_ACCESS.includes(user.role);
+  const canManageChains = CHAIN_MANAGEMENT.includes(user.role);
 
   return (
     <nav className="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-800">
       <div className="flex items-center gap-5 text-sm">
         <span className="mr-2 font-semibold text-gray-900 dark:text-gray-100">Saloon Admin</span>
         <NavLink to="/">Dashboard</NavLink>
-        {canManageCatalog && <NavLink to="/catalog/chains">Chains</NavLink>}
+        {canManageChains && <NavLink to="/catalog/chains">Chains</NavLink>}
         {canManageCatalog && <NavLink to="/catalog/locations">Locations</NavLink>}
         {canManageCatalog && <NavLink to="/catalog/treatments">Treatments</NavLink>}
         {canManageCatalog && <NavLink to="/staff/users">Staff</NavLink>}
@@ -101,7 +105,7 @@ function AppRoutes() {
           <Route
             path="/catalog/chains"
             element={
-              <RequireRole roles={ADMIN_ACCESS}>
+              <RequireRole roles={CHAIN_MANAGEMENT}>
                 <ChainsPage />
               </RequireRole>
             }

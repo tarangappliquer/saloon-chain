@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { api, setAuthToken } from '../../api/client';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { api, setAuthToken, setUnauthorizedHandler } from '../../api/client';
 import type { AuthResponse } from '../../api/types';
 
 interface AuthUser {
@@ -54,7 +54,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // through the URL itself.
   async function loginWithToken(token: string) {
     setAuthToken(token);
-    persist({ ...(await api.get<AuthResponse>('/api/auth/me')), token });
+    try {
+      persist({ ...(await api.get<AuthResponse>('/api/auth/me')), token });
+    } catch (err) {
+      // Don't leave a bad token behind -- it would otherwise get sent as Authorization on every
+      // subsequent request from this browser (e.g. a later legitimate login) until overwritten.
+      setAuthToken(null);
+      throw err;
+    }
   }
 
   function logout() {
@@ -62,6 +69,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
   }
+
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, login, register, loginWithToken, logout }}>{children}</AuthContext.Provider>

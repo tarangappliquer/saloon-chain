@@ -1,4 +1,5 @@
 using SaloonApi.Modules.Booking.Infrastructure;
+using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Realtime;
 
@@ -10,10 +11,17 @@ internal static class AdminBookingEndpoints
     {
         var group = app.MapGroup("/api/admin/bookings");
 
-        // Therapists can see their own location's schedule too, not just Admin/Manager.
-        group.MapGet("", async (int locationId, DateOnly date, BookingRepository repo) =>
-            Results.Ok(await repo.GetForLocationAsync(locationId, date)))
-            .RequireAuthorization("StaffAccess");
+        // Therapists can see their own location's schedule too, not just Admin/Manager -- but
+        // StaffAccess only checks role membership, not *which* location, so Manager/Therapist
+        // scoping (dbo.Users.LocationId) has to be enforced here or either role could read another
+        // location's bookings -- including customer name/email -- just by changing locationId.
+        group.MapGet("", async (int locationId, DateOnly date, BookingRepository repo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Therapist) && currentUser.LocationId != locationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetForLocationAsync(locationId, date));
+        }).RequireAuthorization("StaffAccess");
 
         group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, IAvailabilityCache cache, SseBroadcaster sse) =>
         {
