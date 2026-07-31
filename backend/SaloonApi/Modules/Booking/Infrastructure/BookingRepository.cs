@@ -39,6 +39,16 @@ internal sealed record AdminBookingDto(
     int Id, string LocationName, string RoomName, string TherapistName, string CustomerName, string CustomerEmail,
     DateTime StartTime, DateTime EndTime, string Status, IReadOnlyList<MyBookingTreatmentDto> Treatments);
 
+internal sealed record ConfirmationHeaderRow(
+    int Id, string CustomerName, string CustomerEmail, string LocationName, string TherapistName,
+    DateTime StartTime, DateTime EndTime);
+
+internal sealed record ConfirmationTreatmentRow(int TreatmentId, string TreatmentName, short SlotCount, decimal Price);
+
+internal sealed record ConfirmationDetailsDto(
+    int Id, string CustomerName, string CustomerEmail, string LocationName, string TherapistName,
+    DateTime StartTime, DateTime EndTime, IReadOnlyList<ConfirmationTreatmentRow> Treatments);
+
 internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
     public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date)
@@ -86,6 +96,21 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return (await db.QuerySingleSpAsync<BookingLocationRow>(
             "dbo.sp_Booking_Confirm",
             new { BookingId = bookingId, CustomerId = customerId, UpdatedBy = currentUser.UserId }))!;
+    }
+
+    public async Task<ConfirmationDetailsDto?> GetConfirmationDetailsAsync(int bookingId)
+    {
+        using var db = factory.Create();
+        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetConfirmationDetails", new { BookingId = bookingId });
+
+        var header = await multi.ReadSingleOrDefaultAsync<ConfirmationHeaderRow>();
+        var treatments = (await multi.ReadAsync<ConfirmationTreatmentRow>()).ToList();
+
+        return header is null
+            ? null
+            : new ConfirmationDetailsDto(
+                header.Id, header.CustomerName, header.CustomerEmail, header.LocationName, header.TherapistName,
+                header.StartTime, header.EndTime, treatments);
     }
 
     public async Task<BookingLocationRow> CancelAsync(int bookingId, int customerId)

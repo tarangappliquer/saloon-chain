@@ -20,6 +20,7 @@ using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Bootstrap;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.Realtime;
@@ -55,6 +56,7 @@ builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
     ?? throw new InvalidOperationException("Missing Jwt configuration");
 
@@ -112,6 +114,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 builder.Services.AddSingleton<IAvailabilityCache, RedisAvailabilityCache>();
 builder.Services.AddSingleton<SseBroadcaster>();
 builder.Services.AddSingleton<TokenService>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
 
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<AuthService>();
@@ -122,6 +126,7 @@ builder.Services.AddScoped<SchedulingRepository>();
 builder.Services.AddScoped<ProfileRepository>();
 
 builder.Services.AddHostedService<HoldExpirySweepService>();
+builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
 var app = builder.Build();
 

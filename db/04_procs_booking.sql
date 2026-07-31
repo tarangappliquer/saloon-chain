@@ -142,6 +142,32 @@ BEGIN
 END
 GO
 
+-- Backs the confirmation email (BookingService.ConfirmAsync, Shared/Email) -- separate from
+-- sp_Booking_Confirm's own return value (just LocationId/RoomId/WorkDate, enough for cache
+-- invalidation) because the email needs customer/location/therapist names and the treatment list,
+-- which that lean shape deliberately doesn't carry.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetConfirmationDetails
+    @BookingId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT b.Id, c.Name AS CustomerName, c.Email AS CustomerEmail, l.Name AS LocationName,
+           th.Name AS TherapistName, b.StartTime, b.EndTime
+    FROM dbo.Bookings b
+    JOIN dbo.Users c ON c.Id = b.CustomerId
+    JOIN dbo.Locations l ON l.Id = b.LocationId
+    JOIN dbo.Therapists th ON th.Id = b.TherapistId
+    WHERE b.Id = @BookingId AND b.IsDelete = 0;
+
+    SELECT bt.TreatmentId, t.Name AS TreatmentName, bt.SlotCount, bt.Price
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+    WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
+    ORDER BY bt.SequenceOrder;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Cancel
     @BookingId  INT,
     @CustomerId INT,

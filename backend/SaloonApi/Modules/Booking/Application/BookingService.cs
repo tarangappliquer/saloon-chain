@@ -1,12 +1,16 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Shared.Caching;
+using SaloonApi.Shared.Email;
 using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Booking.Application;
 
-internal sealed class BookingService(BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse)
+internal sealed class BookingService(
+    BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse, IBackgroundEmailQueue emailQueue)
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
@@ -58,6 +62,47 @@ internal sealed class BookingService(BookingRepository repo, CatalogRepository c
     {
         var r = await repo.ConfirmAsync(bookingId, customerId);
         await InvalidateAndNotifyAsync(r.LocationId, DateOnly.FromDateTime(r.WorkDate));
+
+        // Enqueue-only: this must stay fast (no SMTP I/O on the confirm request path) -- actual
+        // sending happens on EmailQueueBackgroundService. Details is a fresh read rather than
+        // something threaded through ConfirmAsync's return value because sp_Booking_Confirm's
+        // shape is deliberately lean (just enough for cache invalidation); the email needs
+        // names and the treatment list that read never carried.
+        var details = await repo.GetConfirmationDetailsAsync(bookingId);
+        if (details is not null)
+            emailQueue.Enqueue(BuildConfirmationEmail(details));
+    }
+
+    private static EmailMessage BuildConfirmationEmail(ConfirmationDetailsDto details)
+    {
+        var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
+        var when = details.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
+
+        // Plain decimal, no currency symbol -- matches how prices are already shown everywhere
+        // else in the app (e.g. TreatmentsPage.tsx's toFixed(2)); nothing in this app configures
+        // a currency/locale, so "C" formatting would print an ambiguous generic currency sign.
+        var treatmentRows = new StringBuilder();
+        foreach (var t in details.Treatments)
+            treatmentRows.Append(CultureInfo.InvariantCulture, $"<li>{t.TreatmentName} &mdash; {t.Price:F2}</li>");
+
+        var html = $"""
+            <p>Hi {details.CustomerName},</p>
+            <p>Your appointment is confirmed.</p>
+            <p><strong>Appointment number: APT-{appointmentNumber}</strong></p>
+            <ul>
+              <li><strong>When:</strong> {when}</li>
+              <li><strong>Location:</strong> {details.LocationName}</li>
+              <li><strong>Therapist:</strong> {details.TherapistName}</li>
+            </ul>
+            <p><strong>Treatments:</strong></p>
+            <ul>{treatmentRows}</ul>
+            <p>See you then!</p>
+            """;
+
+        return new EmailMessage(
+            To: [new EmailAddress(details.CustomerEmail, details.CustomerName)],
+            Subject: $"Appointment confirmed - APT-{appointmentNumber}",
+            HtmlBody: html);
     }
 
     public async Task CancelAsync(int bookingId, int customerId)

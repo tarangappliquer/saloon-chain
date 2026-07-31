@@ -425,6 +425,7 @@ yet.
 | Shift/room-assignment CRUD | ✅ Built (Receptionist assignment deferred) | `Modules/Scheduling` — therapist shift assignment + room-category "opening" for a date, reusing `ShiftAssignments`/`RoomCategoryAssignments` |
 | Real delete (vs. deactivate) | ✅ Built for Chains (SuperAdmin) and Locations (SuperAdmin/Admin) | `IsDelete` soft-delete, `sp_Catalog_DeleteChain`/`sp_Catalog_DeleteLocation`; not extended to other entities |
 | Analytics/reports | ❌ Not started | New module, reads via new SPs — no existing code to extend |
+| Booking confirmation email | ✅ Built | `Shared/Email` (MailKit SMTP + in-memory queue + `EmailQueueBackgroundService`), enqueued from `BookingService.ConfirmAsync` — never blocks the confirm request on SMTP I/O |
 | Payments | ❌ Not started (explicitly future, per spec) | — |
 | SignalR | ❌ Not started | See §6 — add when an admin-facing authenticated push feature exists |
 | Multi-instance SSE | ❌ Not needed yet | Redis pub/sub backplane behind `SseBroadcaster` when scaling past 1 instance |

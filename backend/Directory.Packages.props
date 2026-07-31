@@ -1,21 +1,19 @@
 <Project>
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
     <EnablePackageVersionOverride>true</EnablePackageVersionOverride>
   </PropertyGroup>
-
   <PropertyGroup>
     <IsPublishable>true</IsPublishable>
     <!-- Pack default lives in Directory.Build.props (false; source-ownership model). -->
   </PropertyGroup>
-
   <ItemGroup Label="SaloonApi">
     <!-- SaloonApi -->
     <PackageVersion Include="Dapper" Version="2.1.79" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <PackageVersion Include="MailKit" Version="4.17.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
@@ -30,7 +28,6 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="3.0.25" />
   </ItemGroup>
-
   <ItemGroup Label="SaloonApi Tests">
     <!-- SaloonApi.Tests -->
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
@@ -38,10 +35,8 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
-
   <ItemGroup Label="Shared">
     <!-- Shared (Directory.Build.props) -->
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.31.0.145097" />
   </ItemGroup>
-
 </Project>
