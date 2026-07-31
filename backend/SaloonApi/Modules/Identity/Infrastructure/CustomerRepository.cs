@@ -1,12 +1,13 @@
 using System.Data;
 using Dapper;
+using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Identity.Infrastructure;
 
 internal sealed record CustomerRecord(int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt);
 
-internal sealed class CustomerRepository(SqlConnectionFactory factory)
+internal sealed class CustomerRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
     public async Task<int> CreateAsync(string name, string email, byte[] hash, byte[] salt, string? phone)
     {
@@ -17,6 +18,8 @@ internal sealed class CustomerRepository(SqlConnectionFactory factory)
         p.Add("@PasswordHash", hash);
         p.Add("@PasswordSalt", salt);
         p.Add("@Phone", phone);
+        // Null for self-registration (the common case -- no logged-in user yet at that point).
+        p.Add("@CreatedBy", currentUser.CustomerId);
         p.Add("@CustomerId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("dbo.sp_Auth_CreateCustomer", p);

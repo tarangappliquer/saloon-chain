@@ -104,6 +104,41 @@ Time granularity: 5-minute slots. `Treatments.DurationSlots` is a count of 5-min
 (e.g. `6` = 30 minutes), not a duration in minutes — this must stay consistent everywhere it's
 read (`SlotCalculator`, seed data, any new treatment-duration UI).
 
+### Every table has the same 6 audit columns
+
+`IsDelete`, `IsActive`, `CreatedBy`, `CreatedDate`, `UpdatedBy`, `UpdatedDate` — on every table,
+no exceptions. This is a project-wide convention, not something scoped to the booking flow, so a
+new table added anywhere gets all 6.
+
+- `IsDelete BIT NOT NULL DEFAULT 0` — soft-delete flag. Nothing sets it yet (no delete feature is
+  built), but every `SELECT` proc already filters `WHERE IsDelete = 0` so the column is inert
+  until a delete feature lands, not retrofitted then.
+- `IsActive BIT NOT NULL DEFAULT 1` — a few tables (`Locations`, `Treatments`,
+  `LocationTreatments`) already had this before the convention existed; it's the same column,
+  not a duplicate.
+- `CreatedBy`/`UpdatedBy INT NULL` — the current logged-in user's id, i.e. `ICurrentUser.CustomerId`
+  (§5). **Nullable is load-bearing, not laziness**: self-registration has no logged-in user yet
+  when the `Customers` row is created; the hold-expiry background sweep (`sp_Booking_ExpireStaleHolds`)
+  has no HTTP request/user at all; seed-script rows have no user either. All three are NULL by
+  design — NULL means "no logged-in user did this," not "forgot to set it." No FK to `Customers`:
+  once RBAC lands there will be several kinds of "user" (staff roles), not just customers, so
+  there's no single FK target yet.
+- `CreatedDate DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()` / `UpdatedDate DATETIME2 NULL` — set
+  by the column default on insert; procs that update a row set `UpdatedDate = SYSUTCDATETIME()`
+  explicitly (there's no trigger-based auto-update — see `sp_Booking_Confirm`/`Cancel` for the
+  pattern).
+
+**Where `CreatedBy` is passed in from C#**: the repository reads `ICurrentUser.CustomerId`
+directly and passes it as `@CreatedBy`/`@UpdatedBy` — see `CustomerRepository.CreateAsync` and
+`BookingRepository.CreateHoldAsync`/`ConfirmAsync`/`CancelAsync`. Note `Bookings.CreatedBy` is
+**not** the same thing as `Bookings.CustomerId`: `CustomerId` is who the booking is *for* (the
+business FK), `CreatedBy` is who *created the row*. They're identical today because customers can
+only book for themselves, but that stops being true the moment an admin/receptionist can book on
+a customer's behalf (per spec) — `CustomerId` would be the customer, `CreatedBy` the staff member.
+**When writing a new INSERT/UPDATE proc, add `@CreatedBy`/`@UpdatedBy` parameters (default `NULL`)
+and thread them from the calling repository's `ICurrentUser` the same way** — don't skip this
+because "it's just like the others," the whole point is that it's on every table.
+
 `Locations.WorkingDaysMask` is a `TINYINT` bitmask, `bit0 = Monday .. bit6 = Sunday`. Converting
 a `DayOfWeek` to a bit: `((int)dayOfWeek + 6) % 7` (see `BookingService.GetAvailableDatesAsync`).
 
@@ -425,6 +460,10 @@ Server can prove gets a script in `db/tests/`.
 
 - New query or write → new stored procedure first (`db/0N_procs_<module>.sql`, `CREATE OR ALTER`),
   then a Dapper call through `DapperSp` extensions. Never inline SQL in C#.
+- New table → all 6 audit columns (`IsDelete`, `IsActive`, `CreatedBy`, `CreatedDate`, `UpdatedBy`,
+  `UpdatedDate`, §4), no exceptions. New `SELECT` proc → filter `WHERE IsDelete = 0`. New
+  INSERT/UPDATE proc → `@CreatedBy`/`@UpdatedBy INT = NULL` params, sourced from the calling
+  repository's `ICurrentUser.CustomerId`.
 - New module → `Infrastructure/` (+`Application/` only if there's real orchestration) +
   `Endpoints/`, registered in `Program.cs`, following the pattern in §5.
 - Passing a list of IDs into a proc → use the `dbo.IntIdList` TVP and `.AsIntIdList()`
