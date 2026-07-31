@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="adminportal/adminportal.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="clientportal/clientportal.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="SaloonApi/SaloonApi.csproj" />
+</Solution>
