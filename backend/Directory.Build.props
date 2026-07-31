@@ -1,0 +1,47 @@
+<Project>
+
+  <!-- Shared by every project under backend/ (auto-imported by MSBuild). -->
+  <PropertyGroup>
+		<!-- Target framework -->
+		<TargetFramework>net10.0</TargetFramework>
+
+		<!-- Enable latest C# features and diagnostics -->
+		<LangVersion>latest</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+
+		<!-- Code quality & analysis. Warnings are errors locally so the
+		     dev loop matches CI (.github/workflows/backend.yml passes
+		     -warnaserror to dotnet build); previously the divergence
+		     let analyzer regressions slip through to CI. -->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<AnalysisLevel>latest</AnalysisLevel>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+
+		<!-- Docs -->
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<NoWarn>$(NoWarn);CS1591;MSG0005;CA1054;CA1056</NoWarn>
+		<!-- Suppress warning about missing XML docs -->
+
+		<!-- Container tags (if using container builds) -->
+		<ContainerImageTags>10.0.0;latest</ContainerImageTags>
+
+		<!-- Prevent MSBuild from excluding common folders (optional) -->
+		<NoDefaultExcludes>true</NoDefaultExcludes>
+
+    <!-- <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode> -->
+  </PropertyGroup>
+
+  <!-- SonarLint's Roslyn analyzer engine, wired in for every project here instead of per-csproj. -->
+  <ItemGroup>
+    <PackageReference Include="SonarAnalyzer.CSharp">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
