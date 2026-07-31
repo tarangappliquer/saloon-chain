@@ -12,14 +12,19 @@ import { TherapistsPage } from './pages/staff/TherapistsPage';
 import { RoomsPage } from './pages/staff/RoomsPage';
 import { BookingsPage } from './pages/bookings/BookingsPage';
 import { CustomersPage } from './pages/customers/CustomersPage';
+import { SchedulingPage } from './pages/scheduling/SchedulingPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 // Mirrors the backend's AdminAccess/StaffAccess authorization policies (Program.cs) -- kept in
 // sync by hand since the frontend has no way to read ASP.NET Core policy definitions directly.
 const ADMIN_ACCESS: UserRole[] = ['SuperAdmin', 'Admin', 'Manager'];
 const STAFF_ACCESS: UserRole[] = ['SuperAdmin', 'Admin', 'Manager', 'Therapist'];
-// Chains are the tenant boundary -- Manager (head of a single location) can't manage them, unlike
-// the rest of the catalog. Mirrors the backend's ChainManagement policy (Program.cs).
-const CHAIN_MANAGEMENT: UserRole[] = ['SuperAdmin', 'Admin'];
+// Chains are the tenant boundary -- create/activate/delete is Super Admin's alone. Mirrors the
+// backend's ChainManagement policy (Program.cs).
+const CHAIN_MANAGEMENT: UserRole[] = ['SuperAdmin'];
+// Locations/Rooms are Admin's remit, not Manager's (head of one location, not a creator of them).
+// Mirrors the backend's LocationManagement policy (Program.cs).
+const LOCATION_MANAGEMENT: UserRole[] = ['SuperAdmin', 'Admin'];
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -60,6 +65,7 @@ function Nav() {
   if (!user) return null;
   const canManageCatalog = ADMIN_ACCESS.includes(user.role);
   const canManageChains = CHAIN_MANAGEMENT.includes(user.role);
+  const canManageLocations = LOCATION_MANAGEMENT.includes(user.role);
 
   return (
     <nav className="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-800">
@@ -67,18 +73,19 @@ function Nav() {
         <span className="mr-2 font-semibold text-gray-900 dark:text-gray-100">Saloon Admin</span>
         <NavLink to="/">Dashboard</NavLink>
         {canManageChains && <NavLink to="/catalog/chains">Chains</NavLink>}
-        {canManageCatalog && <NavLink to="/catalog/locations">Locations</NavLink>}
+        {canManageLocations && <NavLink to="/catalog/locations">Locations</NavLink>}
         {canManageCatalog && <NavLink to="/catalog/treatments">Treatments</NavLink>}
         {canManageCatalog && <NavLink to="/staff/users">Staff</NavLink>}
         {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>}
-        {canManageCatalog && <NavLink to="/staff/rooms">Rooms</NavLink>}
+        {canManageLocations && <NavLink to="/staff/rooms">Rooms</NavLink>}
+        {canManageCatalog && <NavLink to="/scheduling">Scheduling</NavLink>}
         <NavLink to="/bookings">Bookings</NavLink>
         {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
       </div>
       <div className="flex items-center gap-3 text-sm">
-        <span className="text-gray-500">
+        <NavLink to="/profile">
           {user.name} &middot; {user.role}
-        </span>
+        </NavLink>
         <button type="button" onClick={logout} className="text-gray-500 hover:underline">
           Sign out
         </button>
@@ -113,7 +120,7 @@ function AppRoutes() {
           <Route
             path="/catalog/locations"
             element={
-              <RequireRole roles={ADMIN_ACCESS}>
+              <RequireRole roles={LOCATION_MANAGEMENT}>
                 <LocationsPage />
               </RequireRole>
             }
@@ -145,8 +152,16 @@ function AppRoutes() {
           <Route
             path="/staff/rooms"
             element={
-              <RequireRole roles={ADMIN_ACCESS}>
+              <RequireRole roles={LOCATION_MANAGEMENT}>
                 <RoomsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/scheduling"
+            element={
+              <RequireRole roles={ADMIN_ACCESS}>
+                <SchedulingPage />
               </RequireRole>
             }
           />
@@ -164,6 +179,14 @@ function AppRoutes() {
               <RequireEmulator>
                 <CustomersPage />
               </RequireEmulator>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ProfilePage />
+              </RequireAuth>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

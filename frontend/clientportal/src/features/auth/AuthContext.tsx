@@ -16,6 +16,7 @@ interface AuthContextValue {
   register: (name: string, email: string, password: string, phone?: string) => Promise<void>;
   loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
+  updateName: (name: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,6 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  // Called after a successful ProfilePage save so the nav bar (and anywhere else that reads
+  // user.name) reflects the edit immediately, without waiting for the next login.
+  function updateName(name: string) {
+    setUser((u) => {
+      if (!u) return u;
+      const updated = { ...u, name };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }
+
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
@@ -77,7 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, register, loginWithToken, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, login, register, loginWithToken, logout, updateName }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

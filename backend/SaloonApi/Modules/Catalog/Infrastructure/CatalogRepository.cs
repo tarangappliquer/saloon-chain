@@ -100,6 +100,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
     }
 
+    public async Task DeleteChainAsync(int id)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteChain", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+    }
+
     public async Task<int> CreateLocationAsync(
         int chainId, string name, string? address, TimeSpan openTime, TimeSpan closeTime, byte workingDaysMask, string timeZoneId)
     {
@@ -135,6 +141,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
             IsActive = isActive,
             UpdatedBy = currentUser.RequireUserId()
         });
+    }
+
+    public async Task DeleteLocationAsync(int id)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteLocation", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<TreatmentCategoryDto>> GetTreatmentCategoriesAsync(int chainId)

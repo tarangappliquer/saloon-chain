@@ -61,3 +61,12 @@ export interface MyBooking {
   status: string;
   treatments: MyBookingTreatment[];
 }
+
+export interface Profile {
+  userId: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  photoPath: string | null;
+}

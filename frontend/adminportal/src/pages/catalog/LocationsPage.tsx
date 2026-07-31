@@ -110,6 +110,17 @@ export function LocationsPage() {
     }
   }
 
+  async function handleDelete(loc: Location) {
+    if (!window.confirm(`Delete "${loc.name}"? This cannot be undone from the UI.`)) return;
+    setError(null);
+    try {
+      await api.del(`/api/admin/catalog/locations/${loc.id}`);
+      if (chainId !== null) await loadLocations(chainId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to delete location');
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Locations</h1>
@@ -208,8 +219,11 @@ export function LocationsPage() {
                 </td>
                 <td className="py-2">{l.isActive === false ? 'Inactive' : 'Active'}</td>
                 <td className="py-2 text-right">
-                  <button type="button" onClick={() => toggleActive(l)} className="text-purple-600 hover:underline">
+                  <button type="button" onClick={() => toggleActive(l)} className="mr-3 text-purple-600 hover:underline">
                     {l.isActive === false ? 'Activate' : 'Deactivate'}
+                  </button>
+                  <button type="button" onClick={() => handleDelete(l)} className="text-red-600 hover:underline">
+                    Delete
                   </button>
                 </td>
               </tr>

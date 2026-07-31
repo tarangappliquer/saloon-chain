@@ -419,10 +419,11 @@ yet.
 | Catalog browsing | ✅ Built (read-only) | `Modules/Catalog` |
 | Booking flow (hold → confirm) | ✅ Built | `Modules/Booking` |
 | Location holidays | ✅ Built | `LocationHolidays` table, checked in `BookingService` |
-| Admin portal UI | ❌ Not started | `frontend/adminportal` (still default template) |
-| RBAC (6 roles) | ❌ Not started | Extend JWT claims + `[Authorize(Policy=...)]`; no mechanism change needed |
-| Emulation (admin-as-customer) | ✅ Built | `POST /api/auth/emulate/{customerId}` in `Modules/Identity`, gated by `dbo.Users.IsEmulator` |
-| Shift/room-assignment CRUD | ❌ Not started | Tables exist (`ShiftAssignments`, `RoomCategoryAssignments`), seeded manually via `06_seed.sql` — needs a `Scheduling` module for admin CRUD |
+| Admin portal UI | ✅ Built | `frontend/adminportal` |
+| RBAC (5 roles: SuperAdmin/Admin/Manager/Therapist/Customer; Receptionist deferred) | ✅ Built | JWT claims + `[Authorize(Policy=...)]` (`Program.cs`: `ChainManagement`/`LocationManagement`/`AdminAccess`/`StaffAccess`); staff-creation hierarchy enforced in `AdminStaffEndpoints.MapPost` |
+| Emulation (admin-as-customer) | ✅ Built | `POST /api/auth/emulate/{customerId}` in `Modules/Identity`, gated by `dbo.Users.IsEmulator` (SuperAdmin-only to grant) |
+| Shift/room-assignment CRUD | ✅ Built (Receptionist assignment deferred) | `Modules/Scheduling` — therapist shift assignment + room-category "opening" for a date, reusing `ShiftAssignments`/`RoomCategoryAssignments` |
+| Real delete (vs. deactivate) | ✅ Built for Chains (SuperAdmin) and Locations (SuperAdmin/Admin) | `IsDelete` soft-delete, `sp_Catalog_DeleteChain`/`sp_Catalog_DeleteLocation`; not extended to other entities |
 | Analytics/reports | ❌ Not started | New module, reads via new SPs — no existing code to extend |
 | Payments | ❌ Not started (explicitly future, per spec) | — |
 | SignalR | ❌ Not started | See §6 — add when an admin-facing authenticated push feature exists |

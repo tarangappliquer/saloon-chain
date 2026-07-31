@@ -12,6 +12,10 @@ using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Modules.Profile.Endpoints;
+using SaloonApi.Modules.Profile.Infrastructure;
+using SaloonApi.Modules.Scheduling.Endpoints;
+using SaloonApi.Modules.Scheduling.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Bootstrap;
 using SaloonApi.Shared.Caching;
@@ -19,6 +23,7 @@ using SaloonApi.Shared.Data;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.Realtime;
+using Microsoft.Extensions.FileProviders;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -74,12 +79,15 @@ builder.Services.AddAuthorization(options =>
     // These policies gate *which endpoints* a role may call; per-record chain/location scoping is
     // left to the endpoint/repository layer to check against ICurrentUser where it matters.
     options.AddPolicy("SuperAdminOnly", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
-    // Chains are the tenant boundary -- Manager (head of a single location) has no business
-    // creating/renaming one, unlike the rest of the catalog (locations/treatments/rooms) which
-    // stays under AdminAccess below. Layered on top of a route's existing AdminAccess requirement
-    // (see AdminCatalogEndpoints' chains routes), not a replacement for it -- ASP.NET Core ANDs
-    // multiple RequireAuthorization policies together, so the net effect is SuperAdmin/Admin only.
-    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+    // Chains are the tenant boundary -- create/activate/delete/assign-admin is Super Admin's alone
+    // per spec (Admin's remit starts at *locations* within a chain, not the chain record itself).
+    // Layered on top of a route's existing AdminAccess requirement (see AdminCatalogEndpoints'
+    // chains routes), not a replacement for it -- ASP.NET Core ANDs multiple RequireAuthorization
+    // policies together, so the net effect of AdminAccess + ChainManagement is SuperAdmin only.
+    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
+    // Locations/Rooms are Admin's remit, not Manager's (Manager is head of one location, not a
+    // creator of them) -- same layering trick as ChainManagement above.
+    options.AddPolicy("LocationManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
         nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(
@@ -110,6 +118,8 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddScoped<BookingService>();
+builder.Services.AddScoped<SchedulingRepository>();
+builder.Services.AddScoped<ProfileRepository>();
 
 builder.Services.AddHostedService<HoldExpirySweepService>();
 
@@ -129,6 +139,18 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
+
+// Served publicly (no auth) -- profile photos are referenced directly from <img> tags in both
+// frontends, which can't attach an Authorization header. Not under wwwroot: this is an API project
+// with no other static content, so a dedicated physical provider keeps the upload directory
+// separate from (and not implying) a general-purpose static-site root.
+var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
+Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads"
+});
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 
@@ -153,6 +175,8 @@ app.MapAdminCatalogEndpoints();
 app.MapAdminStaffEndpoints();
 app.MapAdminBookingEndpoints();
 app.MapAdminCustomersEndpoints();
+app.MapSchedulingEndpoints();
+app.MapProfileEndpoints();
 
 await AdminSeeder.SeedSuperAdminAsync(app.Services, app.Configuration);
 

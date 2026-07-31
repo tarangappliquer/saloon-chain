@@ -41,28 +41,48 @@ internal static class AdminCatalogEndpoints
             .WithValidation<ChainRequest>()
             .RequireAuthorization("ChainManagement");
 
-        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        // No Admin-scoping check needed in these three handlers -- ChainManagement now excludes
+        // Admin entirely (see Program.cs), so only SuperAdmin ever reaches them.
+        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != id)
-                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
-
             await repo.UpdateChainAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
         }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement");
 
-        group.MapPost("/locations", async (LocationRequest req, CatalogRepository repo) =>
-            Results.Ok(new
+        group.MapDelete("/chains/{id:int}", async (int id, CatalogRepository repo) =>
+        {
+            await repo.DeleteChainAsync(id);
+            return Results.NoContent();
+        }).RequireAuthorization("ChainManagement");
+
+        group.MapPost("/locations", async (LocationRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != req.ChainId)
+                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new
             {
                 Id = await repo.CreateLocationAsync(
                     req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId)
-            })).WithValidation<LocationRequest>();
+            });
+        }).WithValidation<LocationRequest>().RequireAuthorization("LocationManagement");
 
+        // Admin-owns-this-location isn't checked here (PUT/DELETE only carry the location id, not
+        // its chain) -- accepted at the same trust level Rooms/Therapists already operate at: the
+        // location id only ever reaches this handler via a dropdown that GET /locations already
+        // scoped to the caller's own chain, so an Admin has no way to discover another chain's id.
         group.MapPut("/locations/{id:int}", async (int id, LocationUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateLocationAsync(
                 id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<LocationUpdateRequest>();
+        }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationManagement");
+
+        group.MapDelete("/locations/{id:int}", async (int id, CatalogRepository repo) =>
+        {
+            await repo.DeleteLocationAsync(id);
+            return Results.NoContent();
+        }).RequireAuthorization("LocationManagement");
 
         group.MapGet("/treatment-categories", async (int chainId, CatalogRepository repo) =>
             Results.Ok(await repo.GetTreatmentCategoriesAsync(chainId)));
@@ -107,17 +127,21 @@ internal static class AdminCatalogEndpoints
             return Results.NoContent();
         }).WithValidation<TherapistUpdateRequest>();
 
+        // GET stays under the group's plain AdminAccess -- Manager still needs the room list to
+        // power the Scheduling page (room-opening), even though Manager can't add/edit rooms.
         group.MapGet("/rooms", async (int locationId, CatalogRepository repo) =>
             Results.Ok(await repo.GetRoomsAsync(locationId)));
 
         group.MapPost("/rooms", async (RoomRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateRoomAsync(req.LocationId, req.Name) })).WithValidation<RoomRequest>();
+            Results.Ok(new { Id = await repo.CreateRoomAsync(req.LocationId, req.Name) }))
+            .WithValidation<RoomRequest>()
+            .RequireAuthorization("LocationManagement");
 
         group.MapPut("/rooms/{id:int}", async (int id, RoomUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateRoomAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<RoomUpdateRequest>();
+        }).WithValidation<RoomUpdateRequest>().RequireAuthorization("LocationManagement");
     }
 }
 

@@ -1,22 +1,33 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../../api/client';
+import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 
-const STAFF_ROLES: UserRole[] = ['SuperAdmin', 'Admin', 'Manager', 'Therapist'];
 // Mirrors AuthService.EmulatorEligibleRoles on the backend -- only these roles can ever emulate a
 // customer, so the toggle is hidden for Therapist rows rather than allowed-then-ignored.
 const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['SuperAdmin', 'Admin', 'Manager'];
 
-function emptyForm() {
-  return { name: '', email: '', password: '', role: 'Manager' as UserRole, chainId: '', locationId: '', therapistId: '' };
+// Mirrors AdminStaffEndpoints.MapPost's hierarchy: SuperAdmin -> Admin/Manager/Therapist (any
+// chain/location); Admin -> Manager/Therapist (own chain, clamped server-side); Manager ->
+// Therapist only (own location, clamped server-side).
+function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
+  if (callerRole === 'SuperAdmin') return ['Admin', 'Manager', 'Therapist'];
+  if (callerRole === 'Admin') return ['Manager', 'Therapist'];
+  return ['Therapist'];
+}
+
+function emptyForm(defaultRole: UserRole) {
+  return { name: '', email: '', password: '', role: defaultRole, chainId: '', locationId: '', therapistId: '' };
 }
 
 export function StaffPage() {
+  const { user: currentUser } = useAuth();
+  const roleOptions = creatableRoles(currentUser?.role);
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [chains, setChains] = useState<Chain[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState(emptyForm(roleOptions[0]));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -40,8 +51,17 @@ export function StaffPage() {
 
   useEffect(() => {
     loadStaff();
-    api.get<Chain[]>('/api/admin/catalog/chains').then(setChains).catch(() => {});
+    // Admin's list is always exactly one chain (server-scoped) -- auto-select it since the picker
+    // is hidden for anyone but SuperAdmin (their own chain is clamped server-side regardless).
+    api
+      .get<Chain[]>('/api/admin/catalog/chains')
+      .then((cs) => {
+        setChains(cs);
+        if (currentUser?.role !== 'SuperAdmin' && cs.length > 0) setForm((f) => ({ ...f, chainId: String(cs[0].id) }));
+      })
+      .catch(() => {});
     api.get<Therapist[]>('/api/admin/catalog/therapists').then(setTherapists).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -69,7 +89,7 @@ export function StaffPage() {
         locationId: form.locationId ? Number(form.locationId) : null,
         therapistId: form.therapistId ? Number(form.therapistId) : null,
       });
-      setForm(emptyForm());
+      setForm({ ...emptyForm(roleOptions[0]), chainId: currentUser?.role === 'SuperAdmin' ? '' : form.chainId });
       await loadStaff();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create staff user');
@@ -142,15 +162,17 @@ export function StaffPage() {
             onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
             className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
           >
-            {STAFF_ROLES.map((r) => (
+            {roleOptions.map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>
             ))}
           </select>
         </div>
-        {form.role !== 'SuperAdmin' && (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* Only SuperAdmin picks a chain -- Admin/Manager are clamped to their own chain/location
+              server-side (AdminStaffEndpoints.MapPost), so there's nothing for them to choose. */}
+          {currentUser?.role === 'SuperAdmin' && (
             <select
               value={form.chainId}
               onChange={(e) => setForm({ ...form, chainId: e.target.value, locationId: '' })}
@@ -163,21 +185,22 @@ export function StaffPage() {
                 </option>
               ))}
             </select>
-            {(form.role === 'Manager' || form.role === 'Therapist') && (
-              <select
-                value={form.locationId}
-                onChange={(e) => setForm({ ...form, locationId: e.target.value })}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="">Location (scope)</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            {form.role === 'Therapist' && (
+          )}
+          {(form.role === 'Manager' || form.role === 'Therapist') && currentUser?.role !== 'Manager' && (
+            <select
+              value={form.locationId}
+              onChange={(e) => setForm({ ...form, locationId: e.target.value })}
+              className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
+            >
+              <option value="">Location (scope)</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {form.role === 'Therapist' && (
               <select
                 value={form.therapistId}
                 onChange={(e) => setForm({ ...form, therapistId: e.target.value })}
@@ -191,8 +214,7 @@ export function StaffPage() {
                 ))}
               </select>
             )}
-          </div>
-        )}
+        </div>
         <button
           type="submit"
           disabled={submitting}
@@ -230,7 +252,12 @@ export function StaffPage() {
                 </td>
                 <td className="py-2">{u.isActive ? 'Active' : 'Inactive'}</td>
                 <td className="py-2">
-                  {EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
+                  {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
+                    <span className="text-gray-400">n/a</span>
+                  ) : currentUser?.role === 'SuperAdmin' ? (
+                    // "Can mark admin as Emulator" is Super Admin's alone (AdminStaffEndpoints'
+                    // PUT handler rejects anyone else's attempt to change it) -- Admin/Manager see
+                    // the flag but can't click it.
                     <button
                       type="button"
                       disabled={savingId === u.id}
@@ -240,7 +267,7 @@ export function StaffPage() {
                       {u.isEmulator ? 'Enabled' : 'Disabled'}
                     </button>
                   ) : (
-                    <span className="text-gray-400">n/a</span>
+                    <span className="text-gray-500">{u.isEmulator ? 'Enabled' : 'Disabled'}</span>
                   )}
                 </td>
                 <td className="py-2 text-right">

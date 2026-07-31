@@ -6,6 +6,7 @@ import { BookPage } from './pages/BookPage';
 import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
 import { MyBookingsPage } from './pages/MyBookingsPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -45,9 +46,14 @@ function Nav() {
         <Link to="/book">Book</Link>
         <Link to="/my-bookings">My Bookings</Link>
       </div>
-      <button type="button" onClick={logout} className="text-sm text-gray-500 hover:underline">
-        Sign out
-      </button>
+      <div className="flex items-center gap-4 text-sm">
+        <Link to="/profile" className="font-medium text-gray-600 hover:underline dark:text-gray-300">
+          {user.name}
+        </Link>
+        <button type="button" onClick={logout} className="text-gray-500 hover:underline">
+          Sign out
+        </button>
+      </div>
     </nav>
   );
 }
@@ -73,6 +79,14 @@ function AppRoutes() {
           element={
             <RequireAuth>
               <MyBookingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth>
+              <ProfilePage />
             </RequireAuth>
           }
         />

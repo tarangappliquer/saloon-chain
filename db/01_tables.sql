@@ -1,4 +1,4 @@
--- Run order: 01_tables -> 02_types -> 03_procs_catalog -> 04_procs_booking -> 05_procs_auth -> 06_seed -> 07_procs_admin -> 08_procs_emulation
+-- Run order: 01_tables -> 02_types -> 03_procs_catalog -> 04_procs_booking -> 05_procs_auth -> 06_seed -> 07_procs_admin -> 08_procs_emulation -> 09_procs_scheduling -> 10_procs_profile
 -- Target: an existing SQL Server database (create one first, e.g. CREATE DATABASE SaloonChains;)
 
 -- Every table carries the same 6 audit columns: IsDelete (soft-delete flag; nothing sets it yet --
@@ -180,6 +180,10 @@ CREATE TABLE dbo.ShiftAssignments (
     UpdatedDate  DATETIME2 NULL
 );
 CREATE INDEX IX_ShiftAssignments_Location_Date ON dbo.ShiftAssignments(LocationId, WorkDate);
+-- Backs sp_Scheduling_AssignTherapistShift's MERGE upsert -- filtered so a soft-deleted (removed)
+-- assignment doesn't block re-assigning the same therapist to the same shift/date later.
+CREATE UNIQUE INDEX UQ_ShiftAssignments_Location_Therapist_Shift_Date
+    ON dbo.ShiftAssignments(LocationId, TherapistId, ShiftType, WorkDate) WHERE IsDelete = 0;
 
 CREATE TABLE dbo.RoomCategoryAssignments (
     Id                   INT IDENTITY(1,1) PRIMARY KEY,
@@ -195,6 +199,10 @@ CREATE TABLE dbo.RoomCategoryAssignments (
     UpdatedDate          DATETIME2 NULL
 );
 CREATE INDEX IX_RoomCategoryAssignments_Room_Date ON dbo.RoomCategoryAssignments(RoomId, WorkDate);
+-- Backs sp_Scheduling_OpenRoom's MERGE upsert -- a room serves one category per shift/date, and
+-- filtered (like the index above) so closing a room doesn't block reopening it later.
+CREATE UNIQUE INDEX UQ_RoomCategoryAssignments_Room_Shift_Date
+    ON dbo.RoomCategoryAssignments(RoomId, ShiftType, WorkDate) WHERE IsDelete = 0;
 
 CREATE TABLE dbo.Bookings (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
@@ -234,3 +242,24 @@ CREATE TABLE dbo.BookingTreatments (
     UpdatedDate    DATETIME2 NULL
 );
 CREATE INDEX IX_BookingTreatments_BookingId ON dbo.BookingTreatments(BookingId);
+
+-- 1:1 extension of dbo.Users, split by Staff/Customer per the two roles' very different concerns
+-- (a Customer's profile is self-managed and minimal; a Staff profile could grow admin-managed
+-- fields later) without breaking the single-Users-table design everything else FKs to (see
+-- CreatedBy/UpdatedBy across this whole schema, and Bookings.CustomerId). Rows are created lazily
+-- (upserted on first edit/photo upload, see sp_Profile_Set*Photo) rather than at Users-insert time,
+-- so existing rows from before this feature shipped don't need a backfill.
+CREATE TABLE dbo.StaffProfiles (
+    UserId       INT PRIMARY KEY REFERENCES dbo.Users(Id),
+    PhotoPath    NVARCHAR(500) NULL, -- web-relative path under /uploads/profile-photos, not a filesystem path
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+
+CREATE TABLE dbo.CustomerProfiles (
+    UserId       INT PRIMARY KEY REFERENCES dbo.Users(Id),
+    PhotoPath    NVARCHAR(500) NULL,
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedDate  DATETIME2 NULL
+);

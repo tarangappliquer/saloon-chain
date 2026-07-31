@@ -132,6 +132,24 @@ BEGIN
 END
 GO
 
+-- First real (soft-)delete in the app -- every table already carries IsDelete but nothing sets it
+-- until now (see 01_tables.sql's audit-column comment). No cascade: a deleted chain's locations
+-- keep IsDelete=0 and simply become unreachable through normal admin nav, same as deactivation.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_DeleteChain
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.SaloonChains
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50021, 'Chain not found.', 1;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateLocation
     @ChainId         INT,
     @Name            NVARCHAR(200),
@@ -168,6 +186,21 @@ BEGIN
     SET Name = @Name, Address = @Address, OpenTime = @OpenTime, CloseTime = @CloseTime,
         WorkingDaysMask = @WorkingDaysMask, TimeZoneId = @TimeZoneId, IsActive = @IsActive,
         UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50022, 'Location not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_DeleteLocation
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Locations
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
 
     IF @@ROWCOUNT = 0

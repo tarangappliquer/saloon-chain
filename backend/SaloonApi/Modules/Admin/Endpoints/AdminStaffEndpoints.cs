@@ -12,7 +12,11 @@ internal static class AdminStaffEndpoints
     {
         var group = app.MapGroup("/api/admin/staff").RequireAuthorization("AdminAccess");
 
-        group.MapGet("", async (string? role, int? chainId, int? locationId, UserRepository repo) =>
+        // Admin/Manager are forced to their own scope regardless of what they pass -- previously
+        // this endpoint returned every staff member in the system to any AdminAccess caller (the
+        // same class of over-exposure fixed for chains/locations/bookings earlier), letting e.g. an
+        // Admin browse another chain's Managers by name/email.
+        group.MapGet("", async (string? role, int? chainId, int? locationId, ICurrentUser currentUser, UserRepository repo) =>
         {
             UserRole? parsedRole = null;
             if (role is not null)
@@ -22,18 +26,53 @@ internal static class AdminStaffEndpoints
                 parsedRole = r;
             }
 
+            if (currentUser.IsInRole(UserRole.Admin)) chainId = currentUser.ChainId;
+            if (currentUser.IsInRole(UserRole.Manager)) locationId = currentUser.LocationId;
+
             return Results.Ok(await repo.GetStaffAsync(parsedRole, chainId, locationId));
         });
 
-        group.MapPost("", async (CreateStaffRequest req, AuthService auth) =>
+        // Who may create whom: SuperAdmin -> Admin/Manager/Therapist (anywhere); Admin -> Manager/
+        // Therapist within their own chain; Manager -> Therapist within their own location. Nothing
+        // enforced this before -- any AdminAccess caller (including a plain Manager) could create a
+        // brand-new SuperAdmin via this endpoint.
+        // Admin/Manager's own scope is clamped server-side rather than checked-and-rejected, so the
+        // adminportal form never needs to know (or guess) the caller's own chain/location id -- it
+        // just omits those fields for non-SuperAdmin creators and the server fills them in.
+        group.MapPost("", async (CreateStaffRequest req, ICurrentUser currentUser, AuthService auth) =>
         {
             var role = Enum.Parse<UserRole>(req.Role);
+
+            if (currentUser.IsInRole(UserRole.Admin))
+            {
+                if (role is not (UserRole.Manager or UserRole.Therapist))
+                    return Results.Problem("Not authorized to create this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                req = req with { ChainId = currentUser.ChainId };
+            }
+
+            if (currentUser.IsInRole(UserRole.Manager))
+            {
+                if (role != UserRole.Therapist)
+                    return Results.Problem("Not authorized to create this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                req = req with { LocationId = currentUser.LocationId };
+            }
+
             var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, req.TherapistId);
             return Results.Ok(new { Id = id });
         }).WithValidation<CreateStaffRequest>();
 
-        group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, UserRepository repo) =>
+        // "Can mark admin as Emulator" is Super Admin's alone -- compare against the stored value
+        // (not a blanket reject on isEmulator:true) because the adminportal always round-trips the
+        // current value on every save (see this session's stale-closure fix), so an Admin/Manager
+        // saving an unrelated field like phone on an emulator-enabled Admin must still go through.
+        group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, ICurrentUser currentUser, UserRepository repo) =>
         {
+            var existing = await repo.GetByIdAsync(id);
+            if (existing is null) return Results.NotFound();
+
+            if (req.IsEmulator != existing.IsEmulator && !currentUser.IsInRole(UserRole.SuperAdmin))
+                return Results.Problem("Only Super Admin can change emulator status.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.ChainId, req.LocationId, req.TherapistId, req.IsEmulator, req.IsActive);
             return Results.NoContent();
         }).WithValidation<UpdateStaffRequest>();
@@ -56,9 +95,12 @@ internal sealed class CreateStaffRequestValidator : AbstractValidator<CreateStaf
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
         RuleFor(x => x.Password).NotEmpty().MinimumLength(8);
+        // SuperAdmin is excluded too -- there's no "assign SuperAdmin" workflow (bootstrapped only
+        // via AdminSeeder); AdminStaffEndpoints.MapPost further restricts who may create which of
+        // the remaining roles (Admin/Manager/Therapist) based on the caller's own role/scope.
         RuleFor(x => x.Role)
-            .Must(r => Enum.TryParse<UserRole>(r, out var role) && role != UserRole.Customer)
-            .WithMessage("Role must be one of SuperAdmin, Admin, Manager, Therapist.");
+            .Must(r => Enum.TryParse<UserRole>(r, out var role) && role is UserRole.Admin or UserRole.Manager or UserRole.Therapist)
+            .WithMessage("Role must be one of Admin, Manager, Therapist.");
     }
 }
 

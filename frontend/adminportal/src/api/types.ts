@@ -97,3 +97,37 @@ export interface AdminBooking {
   status: string;
   treatments: AdminBookingTreatment[];
 }
+
+export type ShiftType = 'Morning' | 'Evening';
+
+export interface TherapistShift {
+  id: number;
+  therapistId: number;
+  therapistName: string;
+  shiftType: ShiftType;
+  startTime: string;
+  endTime: string;
+}
+
+export interface RoomOpening {
+  id: number;
+  roomId: number;
+  roomName: string;
+  treatmentCategoryId: number;
+  categoryName: string;
+  shiftType: ShiftType;
+}
+
+export interface Roster {
+  therapistShifts: TherapistShift[];
+  roomOpenings: RoomOpening[];
+}
+
+export interface Profile {
+  userId: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: UserRole;
+  photoPath: string | null;
+}
