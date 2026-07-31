@@ -1,10 +1,7 @@
-using System.Globalization;
-using System.Text;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
-using Scalar.AspNetCore;
-using Serilog;
-using StackExchange.Redis;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.BackgroundJobs;
 using SaloonApi.Modules.Booking.Endpoints;
@@ -17,14 +14,38 @@ using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.ErrorHandling;
+using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.Realtime;
+using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Formatting.Json;
+using StackExchange.Redis;
+using System.Globalization;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((_, cfg) =>
-    cfg.WriteTo.Console(formatProvider: CultureInfo.InvariantCulture).MinimumLevel.Information());
+{
+    var json = new JsonFormatter(renderMessage: true, formatProvider: CultureInfo.InvariantCulture);
+    cfg.Enrich.FromLogContext() // required for CorrelationIdMiddleware's LogContext.PushProperty to show up
+       .Enrich.WithMachineName()
+       .Enrich.WithEnvironmentName()
+       .Enrich.WithThreadId()
+       .MinimumLevel.Information()
+#if DEBUG
+       .WriteTo.Console(json)
+#endif
+       .WriteTo.File(json, "Logs/log-.json", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
+});
 
 builder.Services.AddOpenApi();
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<AppExceptionHandler>();
+
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
@@ -53,6 +74,11 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod());
 });
 
+builder.Services.AddTransient<CorrelationIdMiddleware>();
+builder.Services.AddTransient<CurrentUserMiddleware>();
+builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+
 builder.Services.AddSingleton<SqlConnectionFactory>();
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
@@ -70,15 +96,35 @@ builder.Services.AddHostedService<HoldExpirySweepService>();
 
 var app = builder.Build();
 
+// Must run first: everything downstream (exception handler, HTTPS redirection, auth) needs the
+// scheme/remote-IP already corrected from X-Forwarded-* before it makes any decision on them.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+// Cleared: ASP.NET Core only trusts forwarded headers from a loopback proxy by default. In a
+// typical container/cloud deployment the reverse proxy (ingress, sidecar, load balancer) isn't
+// loopback and its IP isn't fixed, so the default allowlist would silently ignore it. This trusts
+// forwarded headers from *any* immediate caller -- only appropriate because the proxy in front is
+// the sole entry point (the app itself is never directly internet-reachable).
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
 
+app.UseExceptionHandler();
+
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
+app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs context.User's claims populated
 app.UseAuthorization();
 
 app.MapAuthEndpoints();

@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <!-- Direct reference forces resolution to the pinned patched version above (2.11.0),
@@ -10,7 +12,15 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="Logs\*" />
+    <None Include="Logs\*" />
   </ItemGroup>
 
 </Project>

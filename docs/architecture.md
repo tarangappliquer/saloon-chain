@@ -29,6 +29,9 @@ payments, SignalR. Their DB tables mostly already exist; only the application co
 | Cache | Redis (`StackExchange.Redis`) | Cache-aside for availability reads only, never the correctness path |
 | Real-time | Server-Sent Events (native `EventSource`) | SignalR is specified but not yet needed — see §8 |
 | Auth | JWT bearer (`System.IdentityModel.Tokens.Jwt`) | No ASP.NET Identity (pulls in EF) |
+| Validation | FluentValidation | Generic `IEndpointFilter`, not manual `ValidateAsync` calls — see §5 |
+| Errors | `IExceptionHandler` + `ProblemDetails` | One global handler, no per-endpoint `try`/`catch` — see §5 |
+| Logging | Serilog, JSON-formatted | Console + daily-rolling file (`logs/log-YYYYMMDD.json`, 31-day retention); enriched with machine name, environment, thread id, and a per-request correlation id — see §5 |
 | Frontend | React 19 + Vite + TypeScript | Two separate SPAs: `adminportal` (scaffold only), `clientportal` (built) |
 | Styling | Tailwind CSS 4 | `clientportal` only so far |
 | Routing | `react-router-dom` | Client-side only, no SSR |
@@ -128,9 +131,11 @@ a `DayOfWeek` to a bit: `((int)dayOfWeek + 6) % 7` (see `BookingService.GetAvail
 `05_procs_auth.sql`: `sp_Auth_CreateCustomer`, `sp_Auth_GetCustomerByEmail`.
 
 Application-level errors (slot taken, hold expired, email already registered, etc.) are raised
-via `THROW 50000`–`50999` inside the proc. The API layer catches `SqlException` where
-`ex.Number` is in that range (`SqlExceptionExtensions.IsApplicationError()`) and turns it into a
-409, rather than a 500. Anything outside that range is a real bug and should 500.
+via `THROW 50000`–`50999` inside the proc. Endpoints don't catch these themselves — they bubble
+up to the global exception handler (`Shared/ErrorHandling/AppExceptionHandler.cs`, see §5), which
+checks `SqlException.Number` via `SqlExceptionExtensions.IsApplicationError()` and turns it into a
+409 ProblemDetails response. Anything outside that range is a real bug and 500s (logged, message
+not leaked to the client).
 
 **Gotcha worth knowing**: `EXEC proc @param = <expr>` in T-SQL only accepts a literal or a
 variable — not a function call like `CONCAT(...)` — inline. Assign to a `DECLARE`d variable
@@ -142,13 +147,17 @@ which pass parameters directly, never as inline `EXEC` text.)
 ```text
 SaloonApi/
   Program.cs                 -- composition root: DI, auth, CORS, endpoint mapping
+  AssemblyInfo.cs             -- [assembly: InternalsVisibleTo("SaloonApi.Tests")]
   Shared/                    -- kernel, no business logic
     Data/SqlConnectionFactory.cs   -- reads ConnectionStrings:SaloonDb
     Data/DapperSp.cs                -- QuerySpAsync/ExecuteSpAsync/etc — ALL db calls go through these
     Data/SqlExceptionExtensions.cs -- IsApplicationError()
     Caching/IAvailabilityCache.cs + RedisAvailabilityCache.cs
     Realtime/SseBroadcaster.cs     -- in-process pub/sub for SSE groups
-    Auth/JwtOptions.cs, TokenService.cs, PasswordHasher.cs, ClaimsPrincipalExtensions.cs
+    Auth/JwtOptions.cs, TokenService.cs, PasswordHasher.cs
+    Auth/ICurrentUser.cs, CurrentUser.cs, CurrentUserMiddleware.cs -- see below
+    ErrorHandling/AppExceptionHandler.cs -- global IExceptionHandler, see below
+    Validation/ValidationFilter.cs        -- generic FluentValidation endpoint filter, see below
   Modules/
     Identity/    Application/AuthService.cs · Infrastructure/CustomerRepository.cs · Endpoints/AuthEndpoints.cs
     Catalog/     Infrastructure/CatalogRepository.cs · Endpoints/CatalogEndpoints.cs   (read-only)
@@ -173,7 +182,10 @@ Each module under `Modules/` is a self-contained vertical slice with (at most) 4
   non-DB algorithms live here too and get unit tests (`SlotCalculator`).
 - **Endpoints/** — one static class with one `Map<Module>Endpoints(this IEndpointRouteBuilder)`
   extension method, called from `Program.cs`. Request/response DTOs are `sealed record`s defined
-  at the bottom of the same file. Routes are grouped under `/api/<module-lowercase>`.
+  at the bottom of the same file. Routes are grouped under `/api/<module-lowercase>`. A DTO that
+  needs validation gets a `sealed class <Dto>Validator : AbstractValidator<Dto>` right below it in
+  the same file (see AuthEndpoints.cs, BookingEndpoints.cs), and the route adds
+  `.WithValidation<Dto>()` — no manual `ValidateAsync` calls in handlers, see below.
 - **BackgroundJobs/** — only Booking has this. A `BackgroundService` that resolves scoped
   services via `IServiceScopeFactory` (never inject a scoped service into a singleton
   `BackgroundService` directly).
@@ -191,14 +203,78 @@ add an `Application/` service if there's real orchestration beyond "call the pro
 
 JWT bearer only — no cookies (explicit product decision). `POST /api/auth/register` and
 `/api/auth/login` return `{ customerId, name, email, token }`; every other endpoint requires
-`Authorization: Bearer <token>` and reads the customer id via
-`ClaimsPrincipal.GetCustomerId()` (an extension on `ClaimTypes.NameIdentifier`). Passwords are
-PBKDF2-hashed (`Rfc2898DeriveBytes`, 100k iterations) — no ASP.NET Identity, no third-party hash
-library, stdlib only.
+`Authorization: Bearer <token>`. Passwords are PBKDF2-hashed (`Rfc2898DeriveBytes`, 100k
+iterations) — no ASP.NET Identity, no third-party hash library, stdlib only.
+
+**Reading the current user**: inject `ICurrentUser` (`Shared/Auth/ICurrentUser.cs`), not
+`ClaimsPrincipal`/`HttpContext` directly — that keeps identity-dependent logic usable from
+services, not just endpoint handlers. It's populated once per request by
+`CurrentUserMiddleware : IMiddleware` (`Shared/Auth/CurrentUserMiddleware.cs`), which must run
+after `app.UseAuthentication()` (`context.User`'s claims aren't populated before that — see the
+pipeline order note above) and reads `ClaimTypes.NameIdentifier`/`ClaimTypes.Email` off it into
+the scoped `CurrentUser` concrete type. `ICurrentUser.CustomerId` is nullable (the type has to
+make sense for anonymous routes too, e.g. the SSE stream); call `RequireCustomerId()` — which
+throws if there's no authenticated customer — from handlers that only ever run behind
+`.RequireAuthorization()` (see `BookingEndpoints.cs`). DI wiring: `CurrentUser` is `AddScoped`,
+and `ICurrentUser` is registered to resolve to that same scoped instance
+(`AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>())`) so the middleware's writes
+and a handler's reads see one instance per request.
 
 There is currently exactly one role: implicit "Customer." When RBAC lands (Super
 Admin/Admin/Manager/Receptionist/Therapist/Customer per spec), it plugs in as claims on the same
 JWT plus `[Authorize(Policy = ...)]` — no auth mechanism change needed.
+
+### Error handling & validation
+
+Two cross-cutting concerns, both wired once in `Program.cs` and never touched per-endpoint:
+
+- **Errors**: `AppExceptionHandler : IExceptionHandler` (`Shared/ErrorHandling/`) is the only place
+  exceptions are caught. Registered via `AddExceptionHandler<AppExceptionHandler>()` +
+  `AddProblemDetails()` + `app.UseExceptionHandler()` (mapped first in the pipeline, before CORS/
+  auth). It writes RFC7807 `ProblemDetails` through `IProblemDetailsService`: known application
+  errors (`SqlException` in the 50000–50999 range, see §4) become 409s with the proc's own
+  message; anything else becomes a generic 500 and gets logged with the exception and request
+  path. **Endpoint handlers do not `try`/`catch` `SqlException` themselves** — that used to be
+  copy-pasted into every write endpoint and is gone now that the global handler covers it.
+- **Validation**: FluentValidation, wired through a generic `ValidationFilter<T> : IEndpointFilter`
+  (`Shared/Validation/ValidationFilter.cs`) plus a `.WithValidation<T>()` extension on
+  `RouteHandlerBuilder`. The filter resolves `IValidator<T>` from DI for whichever route parameter
+  matches `T`, runs it, and short-circuits with `Results.ValidationProblem(...)` (400) before the
+  handler body runs if invalid. Validators are registered once via
+  `AddValidatorsFromAssemblyContaining<Program>()` — a new `AbstractValidator<TDto>` just needs to
+  exist in the assembly, no manual registration. **To validate a new request DTO**: add the
+  validator class next to the DTO (see `RegisterRequestValidator` in `AuthEndpoints.cs`,
+  `HoldRequestValidator` in `BookingEndpoints.cs`), chain `.WithValidation<TDto>()` onto the
+  `Map*` call. Don't call `IValidator<T>.ValidateAsync` by hand in a handler — use the filter.
+
+### Observability & reverse-proxy pipeline order
+
+Logging is Serilog, configured once in `Program.cs`: `Enrich.FromLogContext()` (required — see
+below) plus `WithMachineName()`/`WithEnvironmentName()`/`WithThreadId()`, writing JSON
+(`Serilog.Formatting.Json.JsonFormatter`) to both the console and a daily-rolling file
+(`logs/log-.json`, `RollingInterval.Day`, 31-day retention via `retainedFileCountLimit`). `logs/`
+is gitignored.
+
+`Shared/Observability/CorrelationIdMiddleware.cs` reads `X-Correlation-Id` off the incoming
+request (trusting it only if present and ≤100 chars, else generating a GUID), pushes it into
+Serilog's `LogContext` for the duration of the request, and echoes it back on the response. Every
+log line for a request — from routing through the handler to the exception handler — carries it,
+which is what makes `Enrich.FromLogContext()` non-optional: without it the pushed property is a
+no-op.
+
+Pipeline order in `Program.cs` matters and mirrors *why* each piece is early:
+
+1. `UseForwardedHeaders` — must be first; everything after it (exception handler, HTTPS
+   redirection, auth) needs the real scheme/client IP already substituted from `X-Forwarded-*`,
+   not the reverse proxy's. `KnownIPNetworks`/`KnownProxies` are cleared (the default only trusts
+   a loopback proxy) — safe *only* because the app is assumed to never be directly
+   internet-reachable, i.e. the proxy in front is the sole entry point. If that assumption ever
+   stops holding, this needs a real allowlist instead of trusting any caller.
+2. `UseMiddleware<CorrelationIdMiddleware>` — before the exception handler, so even a request
+   that 500s gets a correlated log trail.
+3. `UseExceptionHandler` (§ above) — before everything else that could throw.
+4. `UseHttpsRedirection` / `UseCors` / `UseAuthentication` → `UseMiddleware<CurrentUserMiddleware>()`
+   (needs `context.User` populated, so it can't go earlier) → `UseAuthorization`.
 
 ## 6. The booking flow — the core of this codebase
 
@@ -353,8 +429,10 @@ Server can prove gets a script in `db/tests/`.
   `Endpoints/`, registered in `Program.cs`, following the pattern in §5.
 - Passing a list of IDs into a proc → use the `dbo.IntIdList` TVP and `.AsIntIdList()`
   (`Shared/Data/DapperSp.cs`), not a comma-joined string parsed in SQL.
-- Application-level rejections from a proc → `THROW 50000`–`50999`; the endpoint catches via
-  `SqlExceptionExtensions.IsApplicationError()` and returns 409, not 500.
+- Application-level rejections from a proc → `THROW 50000`–`50999`; let it bubble up, don't catch
+  `SqlException` in the endpoint — `AppExceptionHandler` (§5) turns it into a 409 globally.
+- New request DTO that needs validation → add an `AbstractValidator<TDto>` next to it and chain
+  `.WithValidation<TDto>()` onto the route (§5) — don't call `ValidateAsync` by hand in a handler.
 - Anything touching booking concurrency → the correctness check belongs in the SP under the app
   lock, not in C#, not in Redis.
 - Don't add a dependency (state library, component kit, SignalR, ORM) speculatively — every

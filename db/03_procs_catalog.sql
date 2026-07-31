@@ -2,7 +2,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetChains
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name FROM dbo.SaloonChains ORDER BY Name;
+    SELECT Id, Name FROM dbo.SaloonChains WHERE IsDelete = 0 AND IsActive = 1 ORDER BY Name;
 END
 GO
 
@@ -13,7 +13,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT Id, ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId
     FROM dbo.Locations
-    WHERE ChainId = @ChainId AND IsActive = 1
+    WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1
     ORDER BY Name;
 END
 GO
@@ -28,6 +28,7 @@ BEGIN
     SELECT HolidayDate, Reason
     FROM dbo.LocationHolidays
     WHERE LocationId = @LocationId AND HolidayDate BETWEEN @FromDate AND @ToDate
+      AND IsDelete = 0 AND IsActive = 1
     ORDER BY HolidayDate;
 END
 GO
@@ -43,7 +44,9 @@ BEGIN
     FROM dbo.Treatments t
     JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
     JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
-    WHERE t.IsActive = 1 AND lt.IsActive = 1
+    WHERE t.IsDelete = 0 AND t.IsActive = 1
+      AND lt.IsDelete = 0 AND lt.IsActive = 1
+      AND tc.IsDelete = 0 AND tc.IsActive = 1
       AND (@CategoryId IS NULL OR t.CategoryId = @CategoryId)
     ORDER BY tc.Name, t.Name;
 END

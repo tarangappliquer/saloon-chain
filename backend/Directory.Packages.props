@@ -14,15 +14,20 @@
   <ItemGroup Label="SaloonApi">
     <!-- SaloonApi -->
     <PackageVersion Include="Dapper" Version="2.1.79" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <!-- Microsoft.AspNetCore.OpenApi 10.0.10 pulls in Microsoft.OpenApi 2.0.0, which has a known
          high-severity DoS advisory (GHSA-v5pm-xwqc-g5wc). Pinned forward within the 2.x line
          (not 3.x, to avoid an API-breaking major bump against Microsoft.AspNetCore.OpenApi). -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.11.0" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.17" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="3.0.25" />
   </ItemGroup>
 

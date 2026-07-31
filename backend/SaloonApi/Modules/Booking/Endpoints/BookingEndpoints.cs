@@ -1,9 +1,8 @@
-using System.Security.Claims;
-using Microsoft.Data.SqlClient;
+using FluentValidation;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Shared.Auth;
-using SaloonApi.Shared.Data;
 using SaloonApi.Shared.Realtime;
+using SaloonApi.Shared.Validation;
 
 namespace SaloonApi.Modules.Booking.Endpoints;
 
@@ -22,49 +21,28 @@ internal static class BookingEndpoints
             return Results.Ok(await svc.GetAvailableSlotsAsync(locationId, ids, date));
         });
 
-        group.MapPost("/hold", async (HoldRequest req, ClaimsPrincipal user, BookingService svc) =>
+        group.MapPost("/hold", async (HoldRequest req, ICurrentUser currentUser, BookingService svc) =>
         {
-            try
-            {
-                var customerId = user.GetCustomerId();
-                var (bookingId, expiresAt) = await svc.HoldAsync(
-                    req.LocationId, req.RoomId, req.TherapistId, customerId, req.StartTime, req.EndTime, req.TreatmentIds);
-                return Results.Ok(new HoldResponse(bookingId, expiresAt));
-            }
-            catch (SqlException ex) when (ex.IsApplicationError())
-            {
-                return Results.Conflict(new { message = ex.Message });
-            }
+            var (bookingId, expiresAt) = await svc.HoldAsync(
+                req.LocationId, req.RoomId, req.TherapistId, currentUser.RequireCustomerId(),
+                req.StartTime, req.EndTime, req.TreatmentIds);
+            return Results.Ok(new HoldResponse(bookingId, expiresAt));
+        }).WithValidation<HoldRequest>();
+
+        group.MapPost("/{id:int}/confirm", async (int id, ICurrentUser currentUser, BookingService svc) =>
+        {
+            await svc.ConfirmAsync(id, currentUser.RequireCustomerId());
+            return Results.NoContent();
         });
 
-        group.MapPost("/{id:int}/confirm", async (int id, ClaimsPrincipal user, BookingService svc) =>
+        group.MapDelete("/{id:int}", async (int id, ICurrentUser currentUser, BookingService svc) =>
         {
-            try
-            {
-                await svc.ConfirmAsync(id, user.GetCustomerId());
-                return Results.NoContent();
-            }
-            catch (SqlException ex) when (ex.IsApplicationError())
-            {
-                return Results.Conflict(new { message = ex.Message });
-            }
+            await svc.CancelAsync(id, currentUser.RequireCustomerId());
+            return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, ClaimsPrincipal user, BookingService svc) =>
-        {
-            try
-            {
-                await svc.CancelAsync(id, user.GetCustomerId());
-                return Results.NoContent();
-            }
-            catch (SqlException ex) when (ex.IsApplicationError())
-            {
-                return Results.Conflict(new { message = ex.Message });
-            }
-        });
-
-        group.MapGet("/mine", async (ClaimsPrincipal user, BookingService svc) =>
-            Results.Ok(await svc.GetMineAsync(user.GetCustomerId())));
+        group.MapGet("/mine", async (ICurrentUser currentUser, BookingService svc) =>
+            Results.Ok(await svc.GetMineAsync(currentUser.RequireCustomerId())));
 
         // Anonymous: the event carries no customer data, just "something changed for this
         // location+date, refetch" -- and EventSource can't send an Authorization header anyway.
@@ -92,3 +70,15 @@ internal sealed record HoldRequest(
     int LocationId, int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, List<int> TreatmentIds);
 
 internal sealed record HoldResponse(int BookingId, DateTime ExpiresAt);
+
+internal sealed class HoldRequestValidator : AbstractValidator<HoldRequest>
+{
+    public HoldRequestValidator()
+    {
+        RuleFor(x => x.LocationId).GreaterThan(0);
+        RuleFor(x => x.RoomId).GreaterThan(0);
+        RuleFor(x => x.TherapistId).GreaterThan(0);
+        RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
+        RuleFor(x => x.TreatmentIds).NotEmpty();
+    }
+}
