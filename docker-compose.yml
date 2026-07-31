@@ -1,0 +1,25 @@
+services:
+  saloonchains-redis:
+    image: redis:8-alpine
+    container_name: saloonchains-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  saloonchains-sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: saloonchains-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
+    ports:
+      - "1434:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  sqlserver-data:
