@@ -4,8 +4,11 @@
 			"path": "."
 		},
 		{
+			"path": "backend"
+		},
+		{
 			"path": "frontend"
-		}
+		},
 	],
 	"settings": {
 		"hide-files.files": [],
