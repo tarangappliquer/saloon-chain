@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Badge, Card } from '@saloon/ui';
 import { bookingApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
@@ -26,18 +27,10 @@ function latestEnd(b: MyBooking): number {
 
 function BookingCard({ b }: { b: MyBooking }) {
   return (
-    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+    <Card>
       <div className="flex items-center justify-between">
         <span className="font-medium text-gray-900 dark:text-gray-100">{b.locationName}</span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            b.status === 'Confirmed'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-          }`}
-        >
-          {b.status}
-        </span>
+        <Badge status={b.status} />
       </div>
       <ul className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-300">
         {b.treatments.map((t) => (
@@ -59,7 +52,7 @@ function BookingCard({ b }: { b: MyBooking }) {
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   );
 }
 

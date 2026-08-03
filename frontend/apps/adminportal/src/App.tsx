@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { ErrorBoundary } from '@saloon/ui';
+import { ErrorBoundary, LoadingFallback } from '@saloon/ui';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
@@ -197,25 +197,11 @@ function AppRoutes() {
   );
 }
 
-function LoadingFallback() {
-  return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6 animate-pulse">
-      <div className="h-10 w-48 rounded-md bg-gray-200 dark:bg-gray-800" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800" />
-        <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800" />
-        <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800" />
-      </div>
-      <div className="h-64 rounded-xl bg-gray-200 dark:bg-gray-800" />
-    </div>
-  );
-}
-
 function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Suspense fallback={<LoadingFallback />}>
+        <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
           <AppRoutes />
         </Suspense>
       </AuthProvider>

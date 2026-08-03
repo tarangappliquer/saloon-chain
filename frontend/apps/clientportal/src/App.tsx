@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { ErrorBoundary } from '@saloon/ui';
+import { ErrorBoundary, LoadingFallback } from '@saloon/ui';
 import { ADMIN_PORTAL_URL } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
@@ -12,22 +12,6 @@ import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
 import { MyBookingsPage } from './pages/MyBookingsPage';
 import { ProfilePage } from './pages/ProfilePage';
-
-function LoadingFallback() {
-  return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6 animate-pulse">
-      <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800" />
-      <div className="flex gap-4 border-b border-gray-200 py-2 dark:border-gray-800">
-        <div className="h-8 w-24 rounded-md bg-gray-200 dark:bg-gray-800" />
-        <div className="h-8 w-24 rounded-md bg-gray-200 dark:bg-gray-800" />
-      </div>
-      <div className="space-y-4">
-        <div className="h-28 rounded-lg bg-gray-200 dark:bg-gray-800" />
-        <div className="h-28 rounded-lg bg-gray-200 dark:bg-gray-800" />
-      </div>
-    </div>
-  );
-}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
