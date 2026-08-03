@@ -1,6 +1,6 @@
 # ProfileApi
 
-All URIs are relative to *https://localhost:7185*
+All URIs are relative to *http://localhost:5127*
 
 |Method | HTTP request | Description|
 |------------- | ------------- | -------------|
@@ -42,17 +42,17 @@ This endpoint does not have any parameters.
 ### HTTP request headers
 
  - **Content-Type**: Not defined
- - **Accept**: application/json, application/problem+json
+ - **Accept**: application/problem+json, application/json
 
 
 ### HTTP response details
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-|**200** | OK |  -  |
-|**400** | Bad Request |  -  |
 |**401** | Unauthorized |  -  |
-|**403** | Forbidden |  -  |
+|**200** | OK |  -  |
 |**404** | Not Found |  -  |
+|**400** | Bad Request |  -  |
+|**403** | Forbidden |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
@@ -97,15 +97,15 @@ const { status, data } = await apiInstance.apiProfilePhotoPost(
 ### HTTP request headers
 
  - **Content-Type**: multipart/form-data
- - **Accept**: application/json, application/problem+json
+ - **Accept**: application/problem+json, application/json
 
 
 ### HTTP response details
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
+|**401** | Unauthorized |  -  |
 |**200** | OK |  -  |
 |**400** | Bad Request |  -  |
-|**401** | Unauthorized |  -  |
 |**403** | Forbidden |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
@@ -152,15 +152,15 @@ const { status, data } = await apiInstance.apiProfilePut(
 ### HTTP request headers
 
  - **Content-Type**: application/json
- - **Accept**: application/json, application/problem+json
+ - **Accept**: application/problem+json, application/json
 
 
 ### HTTP response details
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-|**200** | OK |  -  |
-|**400** | Bad Request |  -  |
 |**401** | Unauthorized |  -  |
+|**400** | Bad Request |  -  |
+|**200** | OK |  -  |
 |**403** | Forbidden |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

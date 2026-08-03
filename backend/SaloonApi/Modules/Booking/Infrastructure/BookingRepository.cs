@@ -8,7 +8,7 @@ namespace SaloonApi.Modules.Booking.Infrastructure;
 internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, bool IsHoliday);
 internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
 internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
-internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
+internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
 
 internal sealed record AvailabilityData(
     LocationHoursRow? Location,

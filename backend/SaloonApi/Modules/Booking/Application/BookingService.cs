@@ -40,7 +40,7 @@ internal sealed class BookingService(
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd)).ToList();
-        var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime)).ToList();
+        var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Held")).ToList();
 
         var slots = SlotCalculator.ComputeAvailableSlots(
             date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing);

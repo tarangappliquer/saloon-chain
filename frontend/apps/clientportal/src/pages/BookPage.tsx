@@ -40,7 +40,7 @@ export function BookPage() {
   }, [locationId]);
 
   const refetchSlots = useCallback(() => {
-    if (flow.state.step === 'slot' && flow.state.selectedDate) flow.pickDate(flow.state.selectedDate);
+    if (flow.state.step === 'slot' && flow.state.selectedDate) flow.reloadSlots();
   }, [flow]);
 
   useAvailabilityStream(locationId, flow.state.selectedDate, refetchSlots);
@@ -101,15 +101,21 @@ export function BookPage() {
       )}
 
       {flow.state.step === 'slot' && (
-        <SlotPicker slots={flow.state.slots} onSelect={flow.selectSlot} loading={flow.state.loading} />
+        <SlotPicker
+          treatments={treatments.filter((t) => flow.state.selectedTreatmentIds.includes(t.id))}
+          slotsByTreatment={flow.state.slotsByTreatment}
+          holdsByTreatment={Object.fromEntries(flow.state.holds.map((h) => [h.treatmentId, h]))}
+          onSelect={flow.selectSlot}
+          loading={flow.state.loading}
+        />
       )}
 
-      {flow.state.step === 'held' && flow.state.hold && flow.state.heldSlot && (
+      {flow.state.step === 'held' && flow.state.holds.length > 0 && (
         <BookingSummary
-          slot={flow.state.heldSlot}
-          expiresAt={flow.state.hold.expiresAt}
-          onConfirm={flow.confirm}
-          onCancel={flow.cancelHold}
+          holds={flow.state.holds}
+          treatments={treatments}
+          onConfirm={flow.confirmAll}
+          onCancel={flow.cancelHolds}
           loading={flow.state.loading}
         />
       )}

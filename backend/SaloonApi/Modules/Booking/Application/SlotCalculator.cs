@@ -1,8 +1,8 @@
 namespace SaloonApi.Modules.Booking.Application;
 
 internal sealed record EligiblePair(int RoomId, int TherapistId, TimeSpan ShiftStart, TimeSpan ShiftEnd);
-internal sealed record ExistingBooking(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
-internal sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int RoomId, int TherapistId);
+internal sealed record ExistingBooking(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, bool IsHeld = false);
+internal sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int RoomId, int TherapistId, bool IsHeld = false);
 
 // Pure function: the one non-trivial algorithm in the booking flow, kept out of T-SQL so it's
 // unit-testable. SQL Server only supplies the raw data (hours, eligible room/therapist pairs,
@@ -37,12 +37,25 @@ internal static class SlotCalculator
             while (cursor <= latestStart)
             {
                 var slotEnd = cursor + duration;
-                var conflict = existingBookings.Any(b =>
-                    (b.RoomId == pair.RoomId || b.TherapistId == pair.TherapistId) &&
-                    b.StartTime < slotEnd && b.EndTime > cursor);
 
-                if (!conflict && seenStartTimes.Add(cursor))
-                    results.Add(new AvailableSlot(cursor, slotEnd, pair.RoomId, pair.TherapistId));
+                // A confirmed booking is a hard conflict and drops the slot entirely. A held (but
+                // not yet confirmed) booking is temporary, so surface the slot anyway, flagged so
+                // the client can disable rather than hide it -- it's someone else's in-progress
+                // checkout, not a permanent unavailability.
+                var hardConflict = false;
+                var held = false;
+                foreach (var b in existingBookings)
+                {
+                    if ((b.RoomId != pair.RoomId && b.TherapistId != pair.TherapistId) ||
+                        b.StartTime >= slotEnd || b.EndTime <= cursor)
+                        continue;
+
+                    if (!b.IsHeld) { hardConflict = true; break; }
+                    held = true;
+                }
+
+                if (!hardConflict && seenStartTimes.Add(cursor))
+                    results.Add(new AvailableSlot(cursor, slotEnd, pair.RoomId, pair.TherapistId, held));
 
                 cursor = cursor.AddMinutes(slotMinutes);
             }

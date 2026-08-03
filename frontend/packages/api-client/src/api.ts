@@ -100,6 +100,7 @@ export interface AvailableSlot {
     'endTime': string;
     'roomId': ApiBookingStreamGetLocationIdParameter;
     'therapistId': ApiBookingStreamGetLocationIdParameter;
+    'isHeld'?: boolean;
 }
 export interface ChainDto {
     'id': ApiBookingStreamGetLocationIdParameter;
@@ -550,7 +551,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             // http bearer authentication required
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -666,7 +667,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -707,7 +708,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
                 localVarQueryParameter['chainId'] = chainId;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -864,7 +865,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -905,7 +906,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
                 localVarQueryParameter['locationId'] = locationId;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -984,7 +985,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1018,7 +1019,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             // http bearer authentication required
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1097,7 +1098,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1138,7 +1139,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
                 localVarQueryParameter['chainId'] = chainId;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1175,7 +1176,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1216,7 +1217,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
                 localVarQueryParameter['chainId'] = chainId;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -1337,7 +1338,7 @@ export const AdminCatalogApiAxiosParamCreator = function (configuration?: Config
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2077,7 +2078,7 @@ export const AdminCustomersApiAxiosParamCreator = function (configuration?: Conf
                 localVarQueryParameter['q'] = q;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2189,7 +2190,7 @@ export const AdminStaffApiAxiosParamCreator = function (configuration?: Configur
                 localVarQueryParameter['locationId'] = locationId;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2268,7 +2269,7 @@ export const AdminStaffApiAxiosParamCreator = function (configuration?: Configur
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2474,7 +2475,7 @@ export const AuthApiAxiosParamCreator = function (configuration?: Configuration)
             const localVarQueryParameter = {} as any;
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2575,7 +2576,7 @@ export const AuthApiAxiosParamCreator = function (configuration?: Configuration)
             const localVarQueryParameter = {} as any;
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2609,7 +2610,7 @@ export const AuthApiAxiosParamCreator = function (configuration?: Configuration)
             const localVarQueryParameter = {} as any;
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2884,7 +2885,7 @@ export const BookingApiAxiosParamCreator = function (configuration?: Configurati
                     to;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2940,7 +2941,7 @@ export const BookingApiAxiosParamCreator = function (configuration?: Configurati
                     date;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -2977,7 +2978,7 @@ export const BookingApiAxiosParamCreator = function (configuration?: Configurati
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3085,7 +3086,7 @@ export const BookingApiAxiosParamCreator = function (configuration?: Configurati
             // http bearer authentication required
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3657,7 +3658,7 @@ export const ProfileApiAxiosParamCreator = function (configuration?: Configurati
             // http bearer authentication required
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3699,7 +3700,7 @@ export const ProfileApiAxiosParamCreator = function (configuration?: Configurati
                 localVarFormParams.append('file', file as any);
             }
             localVarHeaderParameter['Content-Type'] = 'multipart/form-data';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3737,7 +3738,7 @@ export const ProfileApiAxiosParamCreator = function (configuration?: Configurati
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3935,7 +3936,7 @@ export const SchedulingApiAxiosParamCreator = function (configuration?: Configur
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -3985,7 +3986,7 @@ export const SchedulingApiAxiosParamCreator = function (configuration?: Configur
                     date;
             }
 
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};
@@ -4059,7 +4060,7 @@ export const SchedulingApiAxiosParamCreator = function (configuration?: Configur
             await setBearerAuthToObject(localVarHeaderParameter, configuration)
 
             localVarHeaderParameter['Content-Type'] = 'application/json';
-            localVarHeaderParameter['Accept'] = 'application/json,application/problem+json';
+            localVarHeaderParameter['Accept'] = 'application/problem+json,application/json';
 
             setSearchParams(localVarUrlObj, localVarQueryParameter);
             let headersFromBaseOptions = baseOptions && baseOptions.headers ? baseOptions.headers : {};

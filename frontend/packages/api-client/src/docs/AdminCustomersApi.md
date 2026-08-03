@@ -1,6 +1,6 @@
 # AdminCustomersApi
 
-All URIs are relative to *https://localhost:7185*
+All URIs are relative to *http://localhost:5127*
 
 |Method | HTTP request | Description|
 |------------- | ------------- | -------------|
@@ -47,16 +47,16 @@ const { status, data } = await apiInstance.apiAdminCustomersSearchGet(
 ### HTTP request headers
 
  - **Content-Type**: Not defined
- - **Accept**: application/json, application/problem+json
+ - **Accept**: application/problem+json, application/json
 
 
 ### HTTP response details
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-|**200** | OK |  -  |
-|**400** | Bad Request |  -  |
 |**401** | Unauthorized |  -  |
 |**403** | Forbidden |  -  |
+|**200** | OK |  -  |
+|**400** | Bad Request |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

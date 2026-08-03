@@ -11,7 +11,7 @@ BEGIN
            CASE WHEN EXISTS (
                SELECT 1 FROM dbo.LocationHolidays h
                WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
-           ) THEN 1 ELSE 0 END AS IsHoliday
+           ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsHoliday
     FROM dbo.Locations l
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
@@ -34,8 +34,10 @@ BEGIN
           SELECT DISTINCT t.CategoryId FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
       );
 
-    -- 4) existing bookings that day for rooms at this location (confirmed, or held and not yet expired)
-    SELECT b.RoomId, b.TherapistId, b.StartTime, b.EndTime
+    -- 4) existing bookings that day for rooms at this location (confirmed, or held and not yet
+    -- expired). Status is returned so the API can tell a hard conflict (Confirmed) from a
+    -- temporary one (Held) and show the latter as disabled rather than hiding the slot outright.
+    SELECT b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status
     FROM dbo.Bookings b
     JOIN dbo.Rooms r ON r.Id = b.RoomId AND r.LocationId = @LocationId
     WHERE CAST(b.StartTime AS DATE) = @WorkDate AND b.IsDelete = 0

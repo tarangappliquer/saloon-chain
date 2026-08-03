@@ -16,7 +16,7 @@
     "client:build": "pnpm --filter clientportal build",
     "client:lint": "pnpm --filter clientportal lint",
     "client:preview": "pnpm --filter clientportal preview",
-    "api": "openapi-generator-cli generate -i v1.json -g typescript-axios -o ./packages/api-client/src"
+    "api": "openapi-generator-cli generate -i http://localhost:5127/openapi/v1.json -g typescript-axios -o ./packages/api-client/src"
   },
   "keywords": [],
   "author": "",

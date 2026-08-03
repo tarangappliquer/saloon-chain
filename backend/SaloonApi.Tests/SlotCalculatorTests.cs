@@ -78,4 +78,20 @@ public class SlotCalculatorTests
         var slots = SlotCalculator.ComputeAvailableSlots(Date, TimeSpan.FromHours(9), TimeSpan.FromHours(18), totalDurationSlots: 6, [], []);
         Assert.Empty(slots);
     }
+
+    [Fact]
+    public void HeldBookingSurfacesSlotFlaggedInsteadOfExcludingIt()
+    {
+        var pairs = new[] { new EligiblePair(1, 1, TimeSpan.FromHours(9), TimeSpan.FromHours(10)) };
+        var existing = new[]
+        {
+            new ExistingBooking(RoomId: 1, TherapistId: 1,
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))),
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.5))), IsHeld: true)
+        };
+        var slots = SlotCalculator.ComputeAvailableSlots(Date, TimeSpan.FromHours(9), TimeSpan.FromHours(18), totalDurationSlots: 6, pairs, existing);
+
+        var slot = Assert.Single(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))));
+        Assert.True(slot.IsHeld);
+    }
 }

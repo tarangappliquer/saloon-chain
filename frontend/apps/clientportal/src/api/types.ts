@@ -28,11 +28,22 @@ export interface AvailableSlot {
   endTime: string;
   roomId: number;
   therapistId: number;
+  isHeld: boolean;
 }
 
 export interface HoldResponse {
   bookingId: number;
   expiresAt: string;
+}
+
+// One held booking per treatment — the booking schema models a single contiguous time block
+// (one RoomId/TherapistId/StartTime/EndTime), so treatments booked at independent times are
+// separate bookings, each surfaced here so the summary can label them.
+export interface HeldSlot {
+  bookingId: number;
+  expiresAt: string;
+  slot: AvailableSlot;
+  treatmentId: number;
 }
 
 export interface AuthResponse {

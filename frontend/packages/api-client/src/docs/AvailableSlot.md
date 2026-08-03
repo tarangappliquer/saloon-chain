@@ -9,6 +9,7 @@ Name | Type | Description | Notes
 **endTime** | **string** |  | [default to undefined]
 **roomId** | [**ApiBookingStreamGetLocationIdParameter**](ApiBookingStreamGetLocationIdParameter.md) |  | [default to undefined]
 **therapistId** | [**ApiBookingStreamGetLocationIdParameter**](ApiBookingStreamGetLocationIdParameter.md) |  | [default to undefined]
+**isHeld** | **boolean** |  | [optional] [default to false]
 
 ## Example
 
@@ -20,6 +21,7 @@ const instance: AvailableSlot = {
     endTime,
     roomId,
     therapistId,
+    isHeld,
 };
 ```
 

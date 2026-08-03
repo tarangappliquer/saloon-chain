@@ -1,6 +1,6 @@
 # CatalogApi
 
-All URIs are relative to *https://localhost:7185*
+All URIs are relative to *http://localhost:5127*
 
 |Method | HTTP request | Description|
 |------------- | ------------- | -------------|
