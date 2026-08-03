@@ -1,6 +1,440 @@
-@SaloonApi_HostAddress = http://localhost:5127
+@baseUrl = https://localhost:7185
 
-GET {{SaloonApi_HostAddress}}/weatherforecast/
-Accept: application/json
+### ── Variables you'll want to edit ──────────────────────────────────────────
+@email = superadmin@saloonchains.local
+@password = ChangeMe123!
+@chainId = 1
+@locationId = 1
+@categoryId = 1
+@treatmentId = 1
+@roomId = 1
+@therapistId = 1
+@staffId = 1
+@customerId = 1
+@bookingId = 1
+@date = 2026-08-03
 
-###
+# ============================================================================
+# Auth (public)
+# ============================================================================
+
+### Register a new Customer account
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test Customer",
+  "email": "customer@example.com",
+  "password": "Password123!",
+  "phone": null
+}
+
+### Log in -- captures token/refreshToken for the requests below
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+@authToken = {{login.response.body.$.token}}
+@refreshToken = {{login.response.body.$.refreshToken}}
+
+### Exchange the refresh token for a new access/refresh pair
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Revoke the refresh token (sign out)
+POST {{baseUrl}}/api/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+# ============================================================================
+# Auth (authenticated)
+# ============================================================================
+
+### Get the caller's own profile / impersonation banner state
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{authToken}}
+
+### Emulate a customer (AdminAccess + caller must be flagged as an emulator)
+POST {{baseUrl}}/api/auth/emulate/{{customerId}}
+Authorization: Bearer {{authToken}}
+
+# ============================================================================
+# Catalog (public)
+# ============================================================================
+
+### List every active saloon chain
+GET {{baseUrl}}/api/catalog/chains
+
+### List a chain's active locations
+GET {{baseUrl}}/api/catalog/locations?chainId={{chainId}}
+
+### List a location's treatments (optionally filtered by category)
+GET {{baseUrl}}/api/catalog/treatments?locationId={{locationId}}
+
+### List a location's treatments filtered by category
+GET {{baseUrl}}/api/catalog/treatments?locationId={{locationId}}&categoryId={{categoryId}}
+
+# ============================================================================
+# Booking (authenticated, any role)
+# ============================================================================
+
+### List dates with at least one open slot
+GET {{baseUrl}}/api/booking/available-dates?locationId={{locationId}}&from={{date}}&to={{date}}
+Authorization: Bearer {{authToken}}
+
+### List open slots for a treatment combo at a location/date
+GET {{baseUrl}}/api/booking/available-slots?locationId={{locationId}}&treatmentIds={{treatmentId}}&date={{date}}
+Authorization: Bearer {{authToken}}
+
+### Hold a slot -- captures bookingId for confirm/cancel below
+# @name hold
+POST {{baseUrl}}/api/booking/hold
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "locationId": {{locationId}},
+  "roomId": {{roomId}},
+  "therapistId": {{therapistId}},
+  "startTime": "2026-08-03T10:00:00",
+  "endTime": "2026-08-03T10:30:00",
+  "treatmentIds": [{{treatmentId}}]
+}
+
+@heldBookingId = {{hold.response.body.$.bookingId}}
+
+### Confirm the held booking
+POST {{baseUrl}}/api/booking/{{heldBookingId}}/confirm
+Authorization: Bearer {{authToken}}
+
+### Cancel the caller's own booking
+DELETE {{baseUrl}}/api/booking/{{bookingId}}
+Authorization: Bearer {{authToken}}
+
+### List the caller's own bookings
+GET {{baseUrl}}/api/booking/mine
+Authorization: Bearer {{authToken}}
+
+### Server-sent events stream (anonymous) -- open in a browser tab instead, REST clients don't render SSE
+GET {{baseUrl}}/api/booking/stream?locationId={{locationId}}&date={{date}}
+
+# ============================================================================
+# Profile (authenticated, any role)
+# ============================================================================
+
+### Get the caller's own profile
+GET {{baseUrl}}/api/profile
+Authorization: Bearer {{authToken}}
+
+### Update the caller's own name/phone
+PUT {{baseUrl}}/api/profile
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "phone": "+1 555 0100"
+}
+
+### Upload/replace the caller's own profile photo
+# Edit the file path below to a real JPG/PNG/WEBP on disk before running.
+POST {{baseUrl}}/api/profile/photo
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data; boundary=----SaloonApiBoundary
+
+------SaloonApiBoundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+< ./photo.jpg
+------SaloonApiBoundary--
+
+# ============================================================================
+# Admin Bookings (StaffAccess to view, AdminAccess to cancel)
+# ============================================================================
+
+### List a location's bookings for a date
+GET {{baseUrl}}/api/admin/bookings?locationId={{locationId}}&date={{date}}
+Authorization: Bearer {{authToken}}
+
+### Cancel a customer's booking on their behalf
+POST {{baseUrl}}/api/admin/bookings/{{bookingId}}/cancel
+Authorization: Bearer {{authToken}}
+
+# ============================================================================
+# Admin Catalog (AdminAccess; Chain/Location management further gated)
+# ============================================================================
+
+### List chains visible to the caller
+GET {{baseUrl}}/api/admin/catalog/chains
+Authorization: Bearer {{authToken}}
+
+### Create a chain (ChainManagement: SuperAdmin only)
+POST {{baseUrl}}/api/admin/catalog/chains
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "New Chain"
+}
+
+### Rename/activate a chain (ChainManagement: SuperAdmin only)
+PUT {{baseUrl}}/api/admin/catalog/chains/{{chainId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Renamed Chain",
+  "isActive": true
+}
+
+### Soft-delete a chain (ChainManagement: SuperAdmin only)
+DELETE {{baseUrl}}/api/admin/catalog/chains/{{chainId}}
+Authorization: Bearer {{authToken}}
+
+### List a chain's locations, including inactive ones
+GET {{baseUrl}}/api/admin/catalog/locations?chainId={{chainId}}
+Authorization: Bearer {{authToken}}
+
+### Create a location (LocationManagement: SuperAdmin/Admin)
+POST {{baseUrl}}/api/admin/catalog/locations
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "chainId": {{chainId}},
+  "name": "New Location",
+  "address": "123 Main St",
+  "openTime": "09:00:00",
+  "closeTime": "18:00:00",
+  "workingDaysMask": 127,
+  "timeZoneId": "UTC"
+}
+
+### Update a location (LocationManagement: SuperAdmin/Admin)
+PUT {{baseUrl}}/api/admin/catalog/locations/{{locationId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Location",
+  "address": "456 Main St",
+  "openTime": "09:00:00",
+  "closeTime": "18:00:00",
+  "workingDaysMask": 127,
+  "timeZoneId": "UTC",
+  "isActive": true
+}
+
+### Soft-delete a location (LocationManagement: SuperAdmin/Admin)
+DELETE {{baseUrl}}/api/admin/catalog/locations/{{locationId}}
+Authorization: Bearer {{authToken}}
+
+### List a chain's treatment categories
+GET {{baseUrl}}/api/admin/catalog/treatment-categories?chainId={{chainId}}
+Authorization: Bearer {{authToken}}
+
+### Create a treatment category
+POST {{baseUrl}}/api/admin/catalog/treatment-categories
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "chainId": {{chainId}},
+  "name": "New Category"
+}
+
+### List a chain's treatments, including inactive ones
+GET {{baseUrl}}/api/admin/catalog/treatments?chainId={{chainId}}
+Authorization: Bearer {{authToken}}
+
+### Create a treatment
+POST {{baseUrl}}/api/admin/catalog/treatments
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "chainId": {{chainId}},
+  "categoryId": {{categoryId}},
+  "name": "New Treatment",
+  "price": 49.99,
+  "durationSlots": 6
+}
+
+### Update a treatment
+PUT {{baseUrl}}/api/admin/catalog/treatments/{{treatmentId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "categoryId": {{categoryId}},
+  "name": "Updated Treatment",
+  "price": 59.99,
+  "durationSlots": 6,
+  "isActive": true
+}
+
+### Assign a treatment to a location, optionally overriding its price
+POST {{baseUrl}}/api/admin/catalog/treatments/{{treatmentId}}/assign
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "locationId": {{locationId}},
+  "priceOverride": null
+}
+
+### Remove a treatment from a location
+DELETE {{baseUrl}}/api/admin/catalog/locations/{{locationId}}/treatments/{{treatmentId}}
+Authorization: Bearer {{authToken}}
+
+### List every therapist
+GET {{baseUrl}}/api/admin/catalog/therapists
+Authorization: Bearer {{authToken}}
+
+### Create a therapist
+POST {{baseUrl}}/api/admin/catalog/therapists
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "New Therapist"
+}
+
+### Update a therapist
+PUT {{baseUrl}}/api/admin/catalog/therapists/{{therapistId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Therapist",
+  "isActive": true
+}
+
+### List a location's rooms
+GET {{baseUrl}}/api/admin/catalog/rooms?locationId={{locationId}}
+Authorization: Bearer {{authToken}}
+
+### Create a room (LocationManagement: SuperAdmin/Admin)
+POST {{baseUrl}}/api/admin/catalog/rooms
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "locationId": {{locationId}},
+  "name": "New Room"
+}
+
+### Update a room (LocationManagement: SuperAdmin/Admin)
+PUT {{baseUrl}}/api/admin/catalog/rooms/{{roomId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Room",
+  "isActive": true
+}
+
+# ============================================================================
+# Admin Customers (AdminAccess)
+# ============================================================================
+
+### Search customers by name/email (for the emulation picker)
+GET {{baseUrl}}/api/admin/customers/search?q=test
+Authorization: Bearer {{authToken}}
+
+# ============================================================================
+# Admin Staff (AdminAccess)
+# ============================================================================
+
+### List staff users, scoped to the caller's own chain/location where applicable
+GET {{baseUrl}}/api/admin/staff
+Authorization: Bearer {{authToken}}
+
+### List staff users filtered by role/chain/location
+GET {{baseUrl}}/api/admin/staff?role=Therapist&chainId={{chainId}}&locationId={{locationId}}
+Authorization: Bearer {{authToken}}
+
+### Create a staff login (role the caller may create is enforced server-side)
+POST {{baseUrl}}/api/admin/staff
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "New Staff",
+  "email": "staff@example.com",
+  "password": "Password123!",
+  "role": "Therapist",
+  "chainId": null,
+  "locationId": {{locationId}},
+  "therapistId": {{therapistId}}
+}
+
+### Update a staff user's details/scope/active/emulator state
+PUT {{baseUrl}}/api/admin/staff/{{staffId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Staff",
+  "phone": "+1 555 0100",
+  "chainId": null,
+  "locationId": {{locationId}},
+  "therapistId": {{therapistId}},
+  "isEmulator": false,
+  "isActive": true
+}
+
+# ============================================================================
+# Scheduling (AdminAccess; Manager pinned to their own location server-side)
+# ============================================================================
+
+### Get a location's therapist shifts and room openings for a date
+GET {{baseUrl}}/api/admin/scheduling/roster?locationId={{locationId}}&date={{date}}
+Authorization: Bearer {{authToken}}
+
+### Assign a therapist to a shift
+POST {{baseUrl}}/api/admin/scheduling/therapist-shifts
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "locationId": {{locationId}},
+  "therapistId": {{therapistId}},
+  "shiftType": "Morning",
+  "workDate": "{{date}}",
+  "startTime": "09:00:00",
+  "endTime": "13:30:00"
+}
+
+### Remove a therapist's shift assignment
+DELETE {{baseUrl}}/api/admin/scheduling/therapist-shifts/1
+Authorization: Bearer {{authToken}}
+
+### Open a room for a treatment category during a shift/date
+POST {{baseUrl}}/api/admin/scheduling/room-openings
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "roomId": {{roomId}},
+  "treatmentCategoryId": {{categoryId}},
+  "shiftType": "Morning",
+  "workDate": "{{date}}"
+}
+
+### Close a room opening
+DELETE {{baseUrl}}/api/admin/scheduling/room-openings/1
+Authorization: Bearer {{authToken}}
