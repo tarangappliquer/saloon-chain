@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useOutletContext } from 'react-router-dom';
-import { catalogApi } from '../api/client';
-import type { Chain, Location, Treatment } from '../api/types';
+import { Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { bookingApi, catalogApi } from '../api/client';
+import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { SearchableSelect } from '../components/SearchableSelect';
 
 export interface BookingContext {
@@ -14,6 +14,9 @@ export function useBookingContext() {
 }
 
 export function BookPage() {
+  const { bookingId } = useParams<{ bookingId?: string }>();
+  const isEditingBooking = Boolean(bookingId);
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
@@ -24,18 +27,44 @@ export function BookPage() {
     catalogApi.apiCatalogChainsGet().then(({ data }) => {
       const cs = data as unknown as Chain[];
       setChains(cs);
-      if (cs.length > 0) setChainId(cs[0].id);
+      if (!isEditingBooking && cs.length > 0) {
+        setChainId(cs[0].id);
+      }
     });
-  }, []);
+  }, [isEditingBooking]);
 
   useEffect(() => {
-    if (!chainId) return;
+    if (!isEditingBooking || !bookingId) return;
+
+    bookingApi.apiBookingIdGet(Number(bookingId)).then(async ({ data }) => {
+      const b = data as unknown as BookingDetails;
+      if (!b || !b.locationId) return;
+
+      const targetLocId = b.locationId;
+      const chainsRes = await catalogApi.apiCatalogChainsGet();
+      const allChains = chainsRes.data as unknown as Chain[];
+
+      for (const c of allChains) {
+        const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
+        const locs = locsRes.data as unknown as Location[];
+        if (locs.some((l) => l.id === targetLocId)) {
+          setChainId(c.id);
+          setLocations(locs);
+          setLocationId(targetLocId);
+          break;
+        }
+      }
+    });
+  }, [bookingId, isEditingBooking]);
+
+  useEffect(() => {
+    if (isEditingBooking || !chainId) return;
     catalogApi.apiCatalogLocationsGet(chainId).then(({ data }) => {
       const locs = data as unknown as Location[];
       setLocations(locs);
       if (locs.length > 0) setLocationId(locs[0].id);
     });
-  }, [chainId]);
+  }, [chainId, isEditingBooking]);
 
   useEffect(() => {
     if (!locationId) return;
@@ -51,6 +80,7 @@ export function BookPage() {
       <div className="flex flex-wrap gap-2">
         {chains.length > 1 && (
           <SearchableSelect
+            disabled={isEditingBooking}
             value={String(chainId ?? '')}
             onChange={(v) => setChainId(Number(v))}
             options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
@@ -60,6 +90,7 @@ export function BookPage() {
 
         {locations.length > 1 && (
           <SearchableSelect
+            disabled={isEditingBooking}
             value={String(locationId ?? '')}
             onChange={(v) => setLocationId(Number(v))}
             options={locations.map((l) => ({ value: String(l.id), label: l.name }))}

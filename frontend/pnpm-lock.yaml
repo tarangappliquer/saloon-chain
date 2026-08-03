@@ -20,6 +20,9 @@ importers:
       '@saloon/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@saloon/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.0(@types/node@24.13.3)(jiti@2.7.0))
@@ -72,6 +75,9 @@ importers:
       '@saloon/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@saloon/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.0(@types/node@24.13.3)(jiti@2.7.0))
@@ -120,6 +126,33 @@ importers:
         version: 8.2.0(@types/node@24.13.3)(jiti@2.7.0)
 
   packages/api-client: {}
+
+  packages/ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.2.17
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.4(@types/react@19.2.18)
+      '@vitejs/plugin-react':
+        specifier: ^6.0.4
+        version: 6.0.5(vite@8.2.0(@types/node@24.13.3)(jiti@2.7.0))
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      vite:
+        specifier: ^8.2.0
+        version: 8.2.0(@types/node@24.13.3)(jiti@2.7.0)
 
 packages:
 

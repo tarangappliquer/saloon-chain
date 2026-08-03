@@ -23,7 +23,7 @@ export function EmulatePage() {
     }
 
     loginWithToken(token)
-      .then(() => navigate('/book', { replace: true }))
+      .then(() => navigate('/my-bookings', { replace: true }))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to start emulation session'));
   }, [searchParams, loginWithToken, navigate]);
 

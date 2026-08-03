@@ -1,11 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 
 export function LoginPage() {
-  const { login, register } = useAuth();
+  const { user, login, register } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      navigate('/my-bookings', { replace: true });
+    }
+  }, [user, navigate]);
+
+  if (user) return null;
+
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,7 +29,7 @@ export function LoginPage() {
     try {
       if (mode === 'login') await login(email, password);
       else await register(name, email, password);
-      navigate('/book');
+      navigate('/my-bookings');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {

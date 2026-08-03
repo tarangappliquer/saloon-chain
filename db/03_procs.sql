@@ -168,6 +168,8 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50006, 'Treatment not available at this location.', 1;
+
+    UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @CreatedBy WHERE Id = @BookingId;
 END
 GO
 
@@ -196,6 +198,8 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50007, 'Treatment not found on this booking.', 1;
+
+    UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy WHERE Id = @BookingId;
 
     SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM @Removed WHERE RoomId IS NOT NULL;
 END
@@ -289,6 +293,8 @@ BEGIN
     SET RoomId = @RoomId, TherapistId = @TherapistId, StartTime = @StartTime, EndTime = @EndTime,
         ExpiresAt = @ExpiresAt, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE BookingId = @BookingId AND TreatmentId = @TreatmentId AND IsDelete = 0;
+
+    UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy WHERE Id = @BookingId;
 
     COMMIT TRANSACTION;
 END
@@ -403,6 +409,18 @@ BEGIN
     WHERE b.Status = 'Draft' AND bt.IsDelete = 0
       AND bt.ExpiresAt IS NOT NULL AND bt.ExpiresAt <= SYSUTCDATETIME();
 
+    -- Delete draft bookings inactive for 15+ minutes from database
+    DELETE FROM dbo.BookingTreatments
+    WHERE BookingId IN (
+        SELECT Id FROM dbo.Bookings
+        WHERE Status = 'Draft'
+          AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME())
+    );
+
+    DELETE FROM dbo.Bookings
+    WHERE Status = 'Draft'
+      AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME());
+
     SELECT DISTINCT LocationId, RoomId, WorkDate FROM @Expired;
 END
 GO
@@ -440,7 +458,9 @@ BEGIN
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
     FROM dbo.Bookings b
     JOIN dbo.Locations l ON l.Id = b.LocationId
-    WHERE b.CustomerId = @CustomerId AND b.Status = 'Confirmed' AND b.IsDelete = 0
+    WHERE b.CustomerId = @CustomerId
+      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+      AND b.IsDelete = 0
     ORDER BY b.Id DESC;
 
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
@@ -449,7 +469,9 @@ BEGIN
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
     LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
-    WHERE b.CustomerId = @CustomerId AND b.Status = 'Confirmed' AND b.IsDelete = 0 AND bt.IsDelete = 0;
+    WHERE b.CustomerId = @CustomerId
+      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+      AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
 GO
 

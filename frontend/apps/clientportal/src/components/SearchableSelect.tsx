@@ -34,7 +34,10 @@ type Props = SingleProps | MultiProps;
 // elements with no prior style to match, so they get one sane default look.
 function classNames(className: string | undefined) {
   return {
-    control: () => `flex items-center ${className ?? ''}`,
+    control: (state: { isDisabled?: boolean }) =>
+      `flex items-center ${className ?? ''} ${
+        state.isDisabled ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''
+      }`,
     placeholder: () => 'px-1 text-gray-400',
     singleValue: () => 'px-1',
     input: () => 'px-1 text-inherit',

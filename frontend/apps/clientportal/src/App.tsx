@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { ErrorBoundary } from '@saloon/ui';
 import { ADMIN_PORTAL_URL } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
@@ -11,6 +12,22 @@ import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
 import { MyBookingsPage } from './pages/MyBookingsPage';
 import { ProfilePage } from './pages/ProfilePage';
+
+function LoadingFallback() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 p-6 animate-pulse">
+      <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800" />
+      <div className="flex gap-4 border-b border-gray-200 py-2 dark:border-gray-800">
+        <div className="h-8 w-24 rounded-md bg-gray-200 dark:bg-gray-800" />
+        <div className="h-8 w-24 rounded-md bg-gray-200 dark:bg-gray-800" />
+      </div>
+      <div className="space-y-4">
+        <div className="h-28 rounded-lg bg-gray-200 dark:bg-gray-800" />
+        <div className="h-28 rounded-lg bg-gray-200 dark:bg-gray-800" />
+      </div>
+    </div>
+  );
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -47,8 +64,8 @@ function Nav() {
   return (
     <nav className="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-800">
       <div className="flex gap-4 text-sm font-medium">
-        <Link to="/book">Book</Link>
         <Link to="/my-bookings">My Bookings</Link>
+        <Link to="/book">Book</Link>
       </div>
       <div className="flex items-center gap-4 text-sm">
         <Link to="/profile" className="font-medium text-gray-600 hover:underline dark:text-gray-300">
@@ -68,6 +85,7 @@ function AppRoutes() {
       <EmulationBanner />
       <Nav />
       <Routes>
+        <Route path="/" element={<Navigate to="/my-bookings" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/emulate" element={<EmulatePage />} />
         <Route
@@ -99,7 +117,7 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
-        <Route path="*" element={<Navigate to="/book" replace />} />
+        <Route path="*" element={<Navigate to="/my-bookings" replace />} />
       </Routes>
     </>
   );
@@ -107,9 +125,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Suspense fallback={<LoadingFallback />}>
+          <AppRoutes />
+        </Suspense>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { bookingApi } from '../api/client';
 import type { MyBooking } from '../api/types';
+import { useAuth } from '../features/auth/AuthContext';
 
-type Tab = 'upcoming' | 'past';
+type Tab = 'upcoming' | 'past' | 'draft';
 
 // A booking has no single time of its own (each treatment is scheduled independently) -- a
 // booking counts as "past" once every treatment has finished; still "upcoming" otherwise
@@ -62,6 +64,7 @@ function BookingCard({ b }: { b: MyBooking }) {
 }
 
 export function MyBookingsPage() {
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [tab, setTab] = useState<Tab>('upcoming');
 
@@ -70,24 +73,44 @@ export function MyBookingsPage() {
   }, []);
 
   if (!bookings) return <p className="p-6 text-gray-500">Loading…</p>;
-  if (bookings.length === 0) return <p className="p-6 text-gray-500">No bookings yet.</p>;
 
+  const isDev = import.meta.env.DEV;
   const now = Date.now();
-  const upcoming = bookings.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c));
-  const past = bookings.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a));
-  const shown = tab === 'upcoming' ? upcoming : past;
+  const drafts = bookings.filter((b) => b.status === 'Draft');
+  const nonDrafts = bookings.filter((b) => b.status !== 'Draft');
+  const upcoming = nonDrafts.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c));
+  const past = nonDrafts.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a));
+  const shown = tab === 'draft' ? drafts : tab === 'upcoming' ? upcoming : past;
+
+  const tabs: [Tab, string][] = [
+    ['upcoming', `Upcoming (${upcoming.length})`],
+    ['past', `Past (${past.length})`],
+  ];
+  if (isDev) {
+    tabs.push(['draft', `Draft (${drafts.length})`]);
+  }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-6">
-      <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">My bookings</h1>
+    <div className="mx-auto max-w-2xl space-y-6 p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-purple-100 bg-purple-50 p-6 dark:border-purple-900/50 dark:bg-purple-950/30">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+            Welcome back{user?.name ? `, ${user.name}` : ''}!
+          </h1>
+          {user?.email && (
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{user.email}</p>
+          )}
+        </div>
+        <Link
+          to="/book"
+          className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-purple-700 transition"
+        >
+          Book new appointment
+        </Link>
+      </div>
 
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        {(
-          [
-            ['upcoming', `Upcoming (${upcoming.length})`],
-            ['past', `Past (${past.length})`],
-          ] as const
-        ).map(([id, label]) => (
+        {tabs.map(([id, label]) => (
           <button
             key={id}
             type="button"
