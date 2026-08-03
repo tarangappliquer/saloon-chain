@@ -77,7 +77,7 @@ export function BookPage() {
         )}
       </div>
 
-      <Outlet context={{ treatments, locationId } satisfies BookingContext} />
+      <Outlet key={locationId} context={{ treatments, locationId } satisfies BookingContext} />
     </div>
   );
 }
