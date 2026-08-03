@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button, Card, Input } from '@saloon/ui';
 import { ApiError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 
@@ -38,52 +39,71 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto mt-16 max-w-sm px-4">
-      <h1 className="mb-6 text-2xl font-semibold text-gray-900 dark:text-gray-100">
-        {mode === 'login' ? 'Sign in' : 'Create account'}
-      </h1>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        {mode === 'register' && (
-          <input
+    <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center p-4">
+      <Card className="w-full max-w-md p-8 shadow-xl">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-600 text-xl font-bold text-white shadow-lg shadow-purple-600/30">
+            S
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            {mode === 'login' ? 'Welcome back' : 'Create account'}
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {mode === 'login' ? 'Sign in to manage your appointments' : 'Register to start booking treatments'}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'register' && (
+            <Input
+              required
+              label="Full Name"
+              placeholder="e.g. Jane Doe"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+          <Input
             required
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+            type="email"
+            label="Email Address"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
-        )}
-        <input
-          required
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
-        <input
-          required
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-lg bg-purple-600 py-2.5 font-medium text-white disabled:opacity-40"
-        >
-          {mode === 'login' ? 'Sign in' : 'Create account'}
-        </button>
-      </form>
-      <button
-        type="button"
-        onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-        className="mt-4 text-sm text-purple-600 hover:underline"
-      >
-        {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
-      </button>
-    </div>
+          <Input
+            required
+            type="password"
+            label="Password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+              {error}
+            </div>
+          )}
+
+          <Button type="submit" disabled={submitting} size="lg" className="w-full">
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </Button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setMode(mode === 'login' ? 'register' : 'login');
+            }}
+            className="text-xs font-semibold text-purple-600 hover:text-purple-700 dark:text-purple-400 hover:underline"
+          >
+            {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
+          </button>
+        </div>
+      </Card>
+    </main>
   );
 }

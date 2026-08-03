@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { ErrorBoundary, LoadingFallback } from '@saloon/ui';
+import { Badge, ErrorBoundary, LoadingFallback } from '@saloon/ui';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
@@ -69,29 +69,46 @@ function Nav() {
   const canManageLocations = LOCATION_MANAGEMENT.includes(user.role);
 
   return (
-    <nav className="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-800">
-      <div className="flex items-center gap-5 text-sm">
-        <span className="mr-2 font-semibold text-gray-900 dark:text-gray-100">Saloon Admin</span>
-        <NavLink to="/">Dashboard</NavLink>
-        {canManageChains && <NavLink to="/catalog/chains">Chains</NavLink>}
-        {canManageLocations && <NavLink to="/catalog/locations">Locations</NavLink>}
-        {canManageCatalog && <NavLink to="/catalog/treatments">Treatments</NavLink>}
-        {canManageCatalog && <NavLink to="/staff/users">Staff</NavLink>}
-        {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>}
-        {canManageLocations && <NavLink to="/staff/rooms">Rooms</NavLink>}
-        {canManageCatalog && <NavLink to="/scheduling">Scheduling</NavLink>}
-        <NavLink to="/bookings">Bookings</NavLink>
-        {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
-      </div>
-      <div className="flex items-center gap-3 text-sm">
-        <NavLink to="/profile">
-          {user.name} &middot; {user.role}
-        </NavLink>
-        <button type="button" onClick={logout} className="text-gray-500 hover:underline">
-          Sign out
-        </button>
-      </div>
-    </nav>
+    <header className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/85 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-950/85">
+      <nav aria-label="Admin Navigation" className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        <div className="flex items-center gap-6 overflow-x-auto py-1 no-scrollbar">
+          <Link to="/" className="flex items-center gap-2 font-bold text-gray-900 dark:text-gray-100 shrink-0">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-xs font-bold text-white shadow-md shadow-purple-600/30">
+              A
+            </span>
+            <span className="tracking-tight text-base">Saloon Admin</span>
+          </Link>
+          <div className="flex items-center gap-1 text-sm font-medium shrink-0">
+            <NavLink to="/">Dashboard</NavLink>
+            {canManageChains && <NavLink to="/catalog/chains">Chains</NavLink>}
+            {canManageLocations && <NavLink to="/catalog/locations">Locations</NavLink>}
+            {canManageCatalog && <NavLink to="/catalog/treatments">Treatments</NavLink>}
+            {canManageCatalog && <NavLink to="/staff/users">Staff</NavLink>}
+            {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>}
+            {canManageLocations && <NavLink to="/staff/rooms">Rooms</NavLink>}
+            {canManageCatalog && <NavLink to="/scheduling">Scheduling</NavLink>}
+            <NavLink to="/bookings">Bookings</NavLink>
+            {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-sm shrink-0 ml-4">
+          <Link
+            to="/profile"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition dark:text-gray-300 dark:hover:bg-gray-900"
+          >
+            <span className="font-semibold">{user.name}</span>
+            <Badge status={user.role} />
+          </Link>
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200"
+          >
+            Sign out
+          </button>
+        </div>
+      </nav>
+    </header>
   );
 }
 

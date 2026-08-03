@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Badge } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Chain, Location } from '../../api/types';
@@ -149,7 +150,7 @@ export function BookingsPage() {
                     ))}
                   </ul>
                 </td>
-                <td className="py-2">{b.status}</td>
+                <td className="py-2"><Badge status={b.status} /></td>
                 <td className="py-2 text-right">
                   {canCancel && (b.status === 'Draft' || b.status === 'Confirmed') && (
                     <button type="button" onClick={() => handleCancel(b.id)} className="text-red-600 hover:underline">

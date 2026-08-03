@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Badge } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../../api/client';
 import type { Chain } from '../../api/types';
 
@@ -102,7 +103,9 @@ export function ChainsPage() {
               <tr key={c.id} className="border-b border-gray-100 dark:border-gray-900">
                 <td className="py-2">{c.id}</td>
                 <td className="py-2">{c.name}</td>
-                <td className="py-2">{c.isActive === false ? 'Inactive' : 'Active'}</td>
+                <td className="py-2">
+                  <Badge status={c.isActive === false ? 'Inactive' : 'Active'} />
+                </td>
                 <td className="py-2 text-right">
                   <button type="button" onClick={() => toggleActive(c)} className="mr-3 text-purple-600 hover:underline">
                     {c.isActive === false ? 'Activate' : 'Deactivate'}
