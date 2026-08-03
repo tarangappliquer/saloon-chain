@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { adminCatalogApi, ApiError, schedulingApi } from '../../api/client';
 import type { Chain, Location, Room, Roster, ShiftType, Therapist, TreatmentCategory } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
 
@@ -164,31 +165,21 @@ export function SchedulingPage() {
       <div className="mb-4 flex flex-wrap gap-4 text-sm">
         <label>
           Chain{' '}
-          <select
-            value={chainId ?? ''}
-            onChange={(e) => setChainId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(chainId ?? '')}
+            onChange={(v) => setChainId(Number(v))}
+            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
             className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {chains.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label>
           Location{' '}
-          <select
-            value={locationId ?? ''}
-            onChange={(e) => setLocationId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(locationId ?? '')}
+            onChange={(v) => setLocationId(Number(v))}
+            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
             className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label>
           Date{' '}
@@ -210,32 +201,19 @@ export function SchedulingPage() {
           <section>
             <h2 className="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">Therapist Shifts</h2>
             <form onSubmit={handleAssignShift} className="mb-3 flex flex-wrap gap-2">
-              <select
-                required
+              <SearchableSelect
                 value={shiftForm.therapistId}
-                onChange={(e) => setShiftForm({ ...shiftForm, therapistId: e.target.value })}
+                onChange={(v) => setShiftForm({ ...shiftForm, therapistId: v })}
+                placeholder="Therapist"
+                options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
                 className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="" disabled>
-                  Therapist
-                </option>
-                {therapists.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <select
+              />
+              <SearchableSelect
                 value={shiftForm.shiftType}
-                onChange={(e) => setShiftForm({ ...shiftForm, shiftType: e.target.value as ShiftType })}
+                onChange={(v) => setShiftForm({ ...shiftForm, shiftType: v as ShiftType })}
+                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
                 className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                {SHIFT_TYPES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              />
               <input
                 required
                 type="time"
@@ -279,47 +257,26 @@ export function SchedulingPage() {
           <section>
             <h2 className="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">Room Openings</h2>
             <form onSubmit={handleOpenRoom} className="mb-3 flex flex-wrap gap-2">
-              <select
-                required
+              <SearchableSelect
                 value={roomForm.roomId}
-                onChange={(e) => setRoomForm({ ...roomForm, roomId: e.target.value })}
+                onChange={(v) => setRoomForm({ ...roomForm, roomId: v })}
+                placeholder="Room"
+                options={rooms.map((r) => ({ value: String(r.id), label: r.name }))}
                 className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="" disabled>
-                  Room
-                </option>
-                {rooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                required
+              />
+              <SearchableSelect
                 value={roomForm.treatmentCategoryId}
-                onChange={(e) => setRoomForm({ ...roomForm, treatmentCategoryId: e.target.value })}
+                onChange={(v) => setRoomForm({ ...roomForm, treatmentCategoryId: v })}
+                placeholder="Treatment category"
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
                 className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="" disabled>
-                  Treatment category
-                </option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <select
+              />
+              <SearchableSelect
                 value={roomForm.shiftType}
-                onChange={(e) => setRoomForm({ ...roomForm, shiftType: e.target.value as ShiftType })}
+                onChange={(v) => setRoomForm({ ...roomForm, shiftType: v as ShiftType })}
+                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
                 className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                {SHIFT_TYPES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              />
               <button
                 type="submit"
                 disabled={submittingRoom}

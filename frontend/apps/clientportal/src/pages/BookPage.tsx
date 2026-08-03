@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useOutletContext } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Chain, Location, Treatment } from '../api/types';
+import { SearchableSelect } from '../components/SearchableSelect';
 
 export interface BookingContext {
   treatments: Treatment[];
@@ -49,31 +50,21 @@ export function BookPage() {
 
       <div className="flex flex-wrap gap-2">
         {chains.length > 1 && (
-          <select
-            value={chainId ?? ''}
-            onChange={(e) => setChainId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(chainId ?? '')}
+            onChange={(v) => setChainId(Number(v))}
+            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
             className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {chains.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
         )}
 
         {locations.length > 1 && (
-          <select
-            value={locationId ?? ''}
-            onChange={(e) => setLocationId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(locationId ?? '')}
+            onChange={(v) => setLocationId(Number(v))}
+            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
             className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+          />
         )}
       </div>
 

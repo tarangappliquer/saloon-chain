@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { adminCatalogApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -129,17 +130,12 @@ export function LocationsPage() {
 
       <label className="mb-4 block text-sm">
         Chain{' '}
-        <select
-          value={chainId ?? ''}
-          onChange={(e) => setChainId(Number(e.target.value))}
+        <SearchableSelect
+          value={String(chainId ?? '')}
+          onChange={(v) => setChainId(Number(v))}
+          options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
           className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-        >
-          {chains.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       <form onSubmit={handleCreate} className="mb-6 space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-800">

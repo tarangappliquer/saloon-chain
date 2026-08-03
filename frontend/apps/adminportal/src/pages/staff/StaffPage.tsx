@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { adminCatalogApi, adminStaffApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 // Mirrors AuthService.EmulatorEligibleRoles on the backend -- only these roles can ever emulate a
 // customer, so the toggle is hidden for Therapist rows rather than allowed-then-ignored.
@@ -162,63 +163,43 @@ export function StaffPage() {
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
           />
-          <select
+          <SearchableSelect
             value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
+            onChange={(v) => setForm({ ...form, role: v as UserRole })}
+            options={roleOptions.map((r) => ({ value: r, label: r }))}
             className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {roleOptions.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="flex flex-wrap gap-2">
           {/* Only SuperAdmin picks a chain -- Admin/Manager are clamped to their own chain/location
               server-side (AdminStaffEndpoints.MapPost), so there's nothing for them to choose. */}
           {currentUser?.role === 'SuperAdmin' && (
-            <select
+            <SearchableSelect
               value={form.chainId}
-              onChange={(e) => setForm({ ...form, chainId: e.target.value, locationId: '' })}
+              onChange={(v) => setForm({ ...form, chainId: v, locationId: '' })}
+              placeholder="Chain (scope)"
+              options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
               className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-            >
-              <option value="">Chain (scope)</option>
-              {chains.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            />
           )}
           {(form.role === 'Manager' || form.role === 'Therapist') && currentUser?.role !== 'Manager' && (
-            <select
+            <SearchableSelect
               value={form.locationId}
-              onChange={(e) => setForm({ ...form, locationId: e.target.value })}
+              onChange={(v) => setForm({ ...form, locationId: v })}
+              placeholder="Location (scope)"
+              options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
               className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-            >
-              <option value="">Location (scope)</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+            />
           )}
           {form.role === 'Therapist' && (
-              <select
-                value={form.therapistId}
-                onChange={(e) => setForm({ ...form, therapistId: e.target.value })}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="">Linked therapist record</option>
-                {therapists.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <SearchableSelect
+              value={form.therapistId}
+              onChange={(v) => setForm({ ...form, therapistId: v })}
+              placeholder="Linked therapist record"
+              options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
+              className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
+            />
+          )}
         </div>
         <button
           type="submit"

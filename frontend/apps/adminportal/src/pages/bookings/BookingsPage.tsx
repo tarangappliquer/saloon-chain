@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { adminBookingsApi, adminCatalogApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Chain, Location } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -79,31 +80,21 @@ export function BookingsPage() {
       <div className="mb-4 flex flex-wrap gap-4 text-sm">
         <label>
           Chain{' '}
-          <select
-            value={chainId ?? ''}
-            onChange={(e) => setChainId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(chainId ?? '')}
+            onChange={(v) => setChainId(Number(v))}
+            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
             className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {chains.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label>
           Location{' '}
-          <select
-            value={locationId ?? ''}
-            onChange={(e) => setLocationId(Number(e.target.value))}
+          <SearchableSelect
+            value={String(locationId ?? '')}
+            onChange={(v) => setLocationId(Number(v))}
+            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
             className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label>
           Date{' '}

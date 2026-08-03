@@ -1,4 +1,5 @@
 import type { BookingTreatmentLine, Treatment } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 interface Props {
   treatments: Treatment[]; // full catalog, for the "add" dropdown
@@ -40,21 +41,16 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
       ))}
 
       {addable.length > 0 && (
-        <select
+        <SearchableSelect
           value=""
           disabled={loading}
-          onChange={(e) => {
-            if (e.target.value) onAdd(Number(e.target.value));
+          onChange={(v) => {
+            if (v) onAdd(Number(v));
           }}
+          placeholder="+ Add treatment"
+          options={addable.map((t) => ({ value: String(t.id), label: t.name }))}
           className="rounded-full border border-dashed border-gray-300 bg-transparent px-3 py-1 text-sm text-gray-500 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400"
-        >
-          <option value="">+ Add treatment</option>
-          {addable.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        />
       )}
     </div>
   );

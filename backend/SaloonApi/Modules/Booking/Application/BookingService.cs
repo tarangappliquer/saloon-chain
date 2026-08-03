@@ -31,7 +31,7 @@ internal sealed class BookingService(
 
     public async Task<IReadOnlyList<AvailableSlot>> GetAvailableSlotsAsync(int locationId, IReadOnlyList<int> treatmentIds, DateOnly date)
     {
-        var cached = await cache.GetAsync(locationId, date);
+        var cached = await cache.GetAsync(locationId, date, treatmentIds);
         if (cached is not null)
             return JsonSerializer.Deserialize<List<AvailableSlot>>(cached)!;
 
@@ -45,7 +45,7 @@ internal sealed class BookingService(
         var slots = SlotCalculator.ComputeAvailableSlots(
             date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing);
 
-        await cache.SetAsync(locationId, date, JsonSerializer.Serialize(slots), TimeSpan.FromSeconds(60));
+        await cache.SetAsync(locationId, date, treatmentIds, JsonSerializer.Serialize(slots), TimeSpan.FromSeconds(60));
         return slots;
     }
 

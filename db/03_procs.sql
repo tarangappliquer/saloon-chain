@@ -436,7 +436,7 @@ BEGIN
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
     FROM dbo.Bookings b
     JOIN dbo.Locations l ON l.Id = b.LocationId
-    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Draft','Confirmed') AND b.IsDelete = 0
+    WHERE b.CustomerId = @CustomerId AND b.Status = 'Confirmed' AND b.IsDelete = 0
     ORDER BY b.Id DESC;
 
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
@@ -445,7 +445,7 @@ BEGIN
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
     LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
-    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Draft','Confirmed') AND b.IsDelete = 0 AND bt.IsDelete = 0;
+    WHERE b.CustomerId = @CustomerId AND b.Status = 'Confirmed' AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
 GO
 

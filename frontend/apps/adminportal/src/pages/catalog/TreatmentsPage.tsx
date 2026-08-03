@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { adminCatalogApi, ApiError } from '../../api/client';
 import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 export function TreatmentsPage() {
   const [chains, setChains] = useState<Chain[]>([]);
@@ -69,7 +70,7 @@ export function TreatmentsPage() {
 
   async function handleCreateTreatment(e: FormEvent) {
     e.preventDefault();
-    if (chainId === null) return;
+    if (chainId === null || !treatmentForm.categoryId) return;
     setError(null);
     setCreatingTreatment(true);
     try {
@@ -125,17 +126,12 @@ export function TreatmentsPage() {
 
       <label className="mb-4 block text-sm">
         Chain{' '}
-        <select
-          value={chainId ?? ''}
-          onChange={(e) => setChainId(Number(e.target.value))}
+        <SearchableSelect
+          value={String(chainId ?? '')}
+          onChange={(v) => setChainId(Number(v))}
+          options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
           className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-        >
-          {chains.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
@@ -170,21 +166,13 @@ export function TreatmentsPage() {
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">New treatment</h2>
         <form onSubmit={handleCreateTreatment} className="flex flex-wrap gap-2">
-          <select
-            required
+          <SearchableSelect
             value={treatmentForm.categoryId}
-            onChange={(e) => setTreatmentForm({ ...treatmentForm, categoryId: e.target.value })}
+            onChange={(v) => setTreatmentForm({ ...treatmentForm, categoryId: v })}
+            placeholder="Category"
+            options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
             className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-          >
-            <option value="" disabled>
-              Category
-            </option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
           <input
             required
             placeholder="Name"
@@ -244,20 +232,15 @@ export function TreatmentsPage() {
                 <td className="py-2">{t.isActive === false ? 'Inactive' : 'Active'}</td>
                 <td className="py-2">
                   <div className="flex gap-1">
-                    <select
+                    <SearchableSelect
                       value={assign[t.id]?.locationId ?? ''}
-                      onChange={(e) =>
-                        setAssign({ ...assign, [t.id]: { locationId: e.target.value, priceOverride: assign[t.id]?.priceOverride ?? '' } })
+                      onChange={(v) =>
+                        setAssign({ ...assign, [t.id]: { locationId: v, priceOverride: assign[t.id]?.priceOverride ?? '' } })
                       }
+                      placeholder="Location..."
+                      options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
                       className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-                    >
-                      <option value="">Location...</option>
-                      {locations.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                     <input
                       placeholder="Price override"
                       value={assign[t.id]?.priceOverride ?? ''}
