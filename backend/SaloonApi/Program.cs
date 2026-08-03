@@ -1,6 +1,8 @@
 using FluentValidation;
+using MicroElements.AspNetCore.OpenApi.FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using SaloonApi.Modules.Admin.Endpoints;
 using SaloonApi.Modules.Booking.Application;
@@ -23,14 +25,15 @@ using SaloonApi.Shared.Data;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Observability;
+using SaloonApi.Shared.OpenApi;
 using SaloonApi.Shared.Realtime;
-using Microsoft.Extensions.FileProviders;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Formatting.Json;
 using StackExchange.Redis;
 using System.Globalization;
 using System.Text;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,12 +51,20 @@ builder.Host.UseSerilog((_, cfg) =>
        .WriteTo.File(json, "Logs/log-.json", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
 });
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddScalarTransformers();
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<DefaultResponsesOperationTransformer>();
+
+    options.AddFluentValidationRules();
+});
+
+builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
+builder.Services.AddFluentValidationRulesToOpenApi();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
-
-builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
@@ -118,6 +129,7 @@ builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
 
 builder.Services.AddScoped<UserRepository>();
+builder.Services.AddScoped<RefreshTokenRepository>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<BookingRepository>();

@@ -9,7 +9,7 @@ internal static class AdminBookingEndpoints
 {
     public static void MapAdminBookingEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/admin/bookings");
+        var group = app.MapGroup("/api/admin/bookings").WithTags("Admin Bookings");
 
         // Therapists can see their own location's schedule too, not just Admin/Manager -- but
         // StaffAccess only checks role membership, not *which* location, so Manager/Therapist
@@ -21,7 +21,11 @@ internal static class AdminBookingEndpoints
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetForLocationAsync(locationId, date));
-        }).RequireAuthorization("StaffAccess");
+        }).RequireAuthorization("StaffAccess")
+          .Produces<IReadOnlyList<AdminBookingDto>>()
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a location's bookings for a given date.");
 
         group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, IAvailabilityCache cache, SseBroadcaster sse) =>
         {
@@ -30,6 +34,10 @@ internal static class AdminBookingEndpoints
             await cache.InvalidateAsync(r.LocationId, workDate);
             sse.Publish(SseBroadcaster.Group(r.LocationId, workDate), "slot-changed");
             return Results.NoContent();
-        }).RequireAuthorization("AdminAccess");
+        }).RequireAuthorization("AdminAccess")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Cancel a customer's booking on their behalf and free its slot.");
     }
 }

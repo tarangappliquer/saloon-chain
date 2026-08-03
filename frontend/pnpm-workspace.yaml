@@ -1,3 +1,3 @@
 packages:
-  - 'adminportal'
-  - 'clientportal'
+  - 'apps/*'
+  - 'packages/*'

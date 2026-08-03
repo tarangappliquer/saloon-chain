@@ -9,7 +9,9 @@ internal static class AdminCatalogEndpoints
 {
     public static void MapAdminCatalogEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/admin/catalog").RequireAuthorization("AdminAccess");
+        var group = app.MapGroup("/api/admin/catalog").RequireAuthorization("AdminAccess").WithTags("Admin Catalog")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         // Read stays under the group's plain AdminAccess -- Manager still needs this list to power
         // the chain/location pickers on Locations/Treatments/Rooms/Staff/Bookings, even though
@@ -18,7 +20,9 @@ internal static class AdminCatalogEndpoints
         // ChainId (LocationId-scoped instead, see 01_tables.sql), so this passes null for them and
         // they see every chain, same as before this endpoint had any scoping.
         group.MapGet("/chains", async (ICurrentUser currentUser, CatalogRepository repo) =>
-            Results.Ok(await repo.GetChainsForAdminAsync(currentUser.IsInRole(UserRole.Admin) ? currentUser.ChainId : null)));
+            Results.Ok(await repo.GetChainsForAdminAsync(currentUser.IsInRole(UserRole.Admin) ? currentUser.ChainId : null)))
+            .Produces<IEnumerable<AdminChainDto>>()
+            .WithDescription("List chains visible to the caller (all for SuperAdmin/Manager, own chain only for Admin).");
 
         group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
@@ -26,7 +30,9 @@ internal static class AdminCatalogEndpoints
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetLocationsForAdminAsync(chainId));
-        });
+        }).Produces<IEnumerable<AdminLocationDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a chain's locations, including inactive ones.");
 
         group.MapGet("/treatments", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
@@ -34,12 +40,16 @@ internal static class AdminCatalogEndpoints
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetTreatmentsForAdminAsync(chainId));
-        });
+        }).Produces<IEnumerable<AdminTreatmentDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a chain's treatments, including inactive ones.");
 
         group.MapPost("/chains", async (ChainRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateChainAsync(req.Name) }))
+            Results.Ok(new IdResponse(await repo.CreateChainAsync(req.Name))))
             .WithValidation<ChainRequest>()
-            .RequireAuthorization("ChainManagement");
+            .RequireAuthorization("ChainManagement")
+            .Produces<IdResponse>()
+            .WithDescription("Create a new saloon chain (SuperAdmin only).");
 
         // No Admin-scoping check needed in these three handlers -- ChainManagement now excludes
         // Admin entirely (see Program.cs), so only SuperAdmin ever reaches them.
@@ -47,25 +57,29 @@ internal static class AdminCatalogEndpoints
         {
             await repo.UpdateChainAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement");
+        }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Rename or activate/deactivate a chain (SuperAdmin only).");
 
         group.MapDelete("/chains/{id:int}", async (int id, CatalogRepository repo) =>
         {
             await repo.DeleteChainAsync(id);
             return Results.NoContent();
-        }).RequireAuthorization("ChainManagement");
+        }).RequireAuthorization("ChainManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Soft-delete a chain (SuperAdmin only).");
 
         group.MapPost("/locations", async (LocationRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
             if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != req.ChainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(new
-            {
-                Id = await repo.CreateLocationAsync(
-                    req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId)
-            });
-        }).WithValidation<LocationRequest>().RequireAuthorization("LocationManagement");
+            return Results.Ok(new IdResponse(await repo.CreateLocationAsync(
+                req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId)));
+        }).WithValidation<LocationRequest>().RequireAuthorization("LocationManagement")
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Create a new location under a chain.");
 
         // Admin-owns-this-location isn't checked here (PUT/DELETE only carry the location id, not
         // its chain) -- accepted at the same trust level Rooms/Therapists already operate at: the
@@ -76,74 +90,106 @@ internal static class AdminCatalogEndpoints
             await repo.UpdateLocationAsync(
                 id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationManagement");
+        }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Update a location's details or active state.");
 
         group.MapDelete("/locations/{id:int}", async (int id, CatalogRepository repo) =>
         {
             await repo.DeleteLocationAsync(id);
             return Results.NoContent();
-        }).RequireAuthorization("LocationManagement");
+        }).RequireAuthorization("LocationManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Soft-delete a location.");
 
         group.MapGet("/treatment-categories", async (int chainId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentCategoriesAsync(chainId)));
+            Results.Ok(await repo.GetTreatmentCategoriesAsync(chainId)))
+            .Produces<IEnumerable<TreatmentCategoryDto>>()
+            .WithDescription("List a chain's treatment categories.");
 
         group.MapPost("/treatment-categories", async (TreatmentCategoryRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateTreatmentCategoryAsync(req.ChainId, req.Name) }))
-            .WithValidation<TreatmentCategoryRequest>();
+            Results.Ok(new IdResponse(await repo.CreateTreatmentCategoryAsync(req.ChainId, req.Name))))
+            .WithValidation<TreatmentCategoryRequest>()
+            .Produces<IdResponse>()
+            .WithDescription("Create a new treatment category under a chain.");
 
         group.MapPost("/treatments", async (TreatmentRequest req, CatalogRepository repo) =>
-            Results.Ok(new
-            {
-                Id = await repo.CreateTreatmentAsync(req.ChainId, req.CategoryId, req.Name, req.Price, req.DurationSlots)
-            })).WithValidation<TreatmentRequest>();
+            Results.Ok(new IdResponse(
+                await repo.CreateTreatmentAsync(req.ChainId, req.CategoryId, req.Name, req.Price, req.DurationSlots))))
+            .WithValidation<TreatmentRequest>()
+            .Produces<IdResponse>()
+            .WithDescription("Create a new treatment under a chain/category.");
 
         group.MapPut("/treatments/{id:int}", async (int id, TreatmentUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.Price, req.DurationSlots, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<TreatmentUpdateRequest>();
+        }).WithValidation<TreatmentUpdateRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Update a treatment's details or active state.");
 
         group.MapPost("/treatments/{id:int}/assign", async (int id, AssignTreatmentRequest req, CatalogRepository repo) =>
         {
             await repo.AssignTreatmentToLocationAsync(req.LocationId, id, req.PriceOverride);
             return Results.NoContent();
-        }).WithValidation<AssignTreatmentRequest>();
+        }).WithValidation<AssignTreatmentRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Assign a treatment to a location, optionally overriding its price there.");
 
         group.MapDelete("/locations/{locationId:int}/treatments/{treatmentId:int}", async (int locationId, int treatmentId, CatalogRepository repo) =>
         {
             await repo.UnassignTreatmentFromLocationAsync(locationId, treatmentId);
             return Results.NoContent();
-        });
+        }).Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Remove a treatment from a location.");
 
         group.MapGet("/therapists", async (CatalogRepository repo) =>
-            Results.Ok(await repo.GetTherapistsAsync()));
+            Results.Ok(await repo.GetTherapistsAsync()))
+            .Produces<IEnumerable<TherapistDto>>()
+            .WithDescription("List every therapist.");
 
         group.MapPost("/therapists", async (TherapistRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateTherapistAsync(req.Name) })).WithValidation<TherapistRequest>();
+            Results.Ok(new IdResponse(await repo.CreateTherapistAsync(req.Name))))
+            .WithValidation<TherapistRequest>()
+            .Produces<IdResponse>()
+            .WithDescription("Create a new therapist.");
 
         group.MapPut("/therapists/{id:int}", async (int id, TherapistUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateTherapistAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<TherapistUpdateRequest>();
+        }).WithValidation<TherapistUpdateRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Update a therapist's name or active state.");
 
         // GET stays under the group's plain AdminAccess -- Manager still needs the room list to
         // power the Scheduling page (room-opening), even though Manager can't add/edit rooms.
         group.MapGet("/rooms", async (int locationId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetRoomsAsync(locationId)));
+            Results.Ok(await repo.GetRoomsAsync(locationId)))
+            .Produces<IEnumerable<RoomDto>>()
+            .WithDescription("List a location's rooms.");
 
         group.MapPost("/rooms", async (RoomRequest req, CatalogRepository repo) =>
-            Results.Ok(new { Id = await repo.CreateRoomAsync(req.LocationId, req.Name) }))
+            Results.Ok(new IdResponse(await repo.CreateRoomAsync(req.LocationId, req.Name))))
             .WithValidation<RoomRequest>()
-            .RequireAuthorization("LocationManagement");
+            .RequireAuthorization("LocationManagement")
+            .Produces<IdResponse>()
+            .WithDescription("Create a new room under a location.");
 
         group.MapPut("/rooms/{id:int}", async (int id, RoomUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateRoomAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<RoomUpdateRequest>().RequireAuthorization("LocationManagement");
+        }).WithValidation<RoomUpdateRequest>().RequireAuthorization("LocationManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Update a room's name or active state.");
     }
 }
+
+// Shared by every Admin endpoint (this file, AdminStaffEndpoints, SchedulingEndpoints has its own
+// copy since it's a different namespace) that used to return an anonymous `new { Id = x }` -- named
+// so it can be used as a type argument to .Produces<T>() for OpenAPI response typing.
+internal sealed record IdResponse(int Id);
 
 internal sealed record ChainRequest(string Name);
 internal sealed record ChainUpdateRequest(string Name, bool IsActive);

@@ -1,0 +1,134 @@
+export type UserRole = 'SuperAdmin' | 'Admin' | 'Manager' | 'Therapist' | 'Customer';
+
+export interface AuthResponse {
+  userId: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  token: string;
+  canEmulate: boolean;
+  isEmulated: boolean;
+  emulatedByName: string | null;
+  refreshToken: string;
+}
+
+export interface Chain {
+  id: number;
+  name: string;
+  isActive?: boolean;
+}
+
+export interface Location {
+  id: number;
+  chainId: number;
+  name: string;
+  address: string | null;
+  openTime: string;
+  closeTime: string;
+  workingDaysMask: number;
+  timeZoneId: string;
+  isActive?: boolean;
+}
+
+export interface TreatmentCategory {
+  id: number;
+  chainId: number;
+  name: string;
+}
+
+export interface Treatment {
+  id: number;
+  categoryId: number;
+  categoryName?: string;
+  name: string;
+  price: number;
+  durationSlots: number;
+  isActive?: boolean;
+}
+
+export interface Therapist {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
+
+export interface Room {
+  id: number;
+  locationId: number;
+  name: string;
+  isActive: boolean;
+}
+
+export interface StaffUser {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: UserRole;
+  chainId: number | null;
+  locationId: number | null;
+  therapistId: number | null;
+  isEmulator: boolean;
+  isActive: boolean;
+  createdDate: string;
+}
+
+export interface CustomerSummary {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+}
+
+export interface AdminBookingTreatment {
+  treatmentName: string;
+  slotCount: number;
+  price: number;
+}
+
+export interface AdminBooking {
+  id: number;
+  locationName: string;
+  roomName: string;
+  therapistName: string;
+  customerName: string;
+  customerEmail: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  treatments: AdminBookingTreatment[];
+}
+
+export type ShiftType = 'Morning' | 'Evening';
+
+export interface TherapistShift {
+  id: number;
+  therapistId: number;
+  therapistName: string;
+  shiftType: ShiftType;
+  startTime: string;
+  endTime: string;
+}
+
+export interface RoomOpening {
+  id: number;
+  roomId: number;
+  roomName: string;
+  treatmentCategoryId: number;
+  categoryName: string;
+  shiftType: ShiftType;
+}
+
+export interface Roster {
+  therapistShifts: TherapistShift[];
+  roomOpenings: RoomOpening[];
+}
+
+export interface Profile {
+  userId: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: UserRole;
+  photoPath: string | null;
+}

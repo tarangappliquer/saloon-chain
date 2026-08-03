@@ -500,3 +500,5 @@ backend/SaloonApi/uploads/
 # CCE (code-context-engine)
 # Claude Code local settings written by cce init
 .claude/settings.local.json
+
+!**/frontend/[Pp]ackages/**

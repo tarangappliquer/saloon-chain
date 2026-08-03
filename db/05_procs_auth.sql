@@ -48,3 +48,45 @@ BEGIN
     WHERE Id = @Id AND IsDelete = 0 AND IsActive = 1;
 END
 GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateRefreshToken
+    @UserId    INT,
+    @TokenHash VARBINARY(32),
+    @ExpiresAt DATETIME2,
+    @Id        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.RefreshTokens (UserId, TokenHash, ExpiresAt)
+    VALUES (@UserId, @TokenHash, @ExpiresAt);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+-- Backs both /api/auth/refresh (mint a new access token) and /api/auth/logout (revoke on sign-out) --
+-- joins straight through to Users so AuthService can re-mint an access token from one round trip
+-- without a second lookup. Caller (AuthService.RefreshAsync) is responsible for checking
+-- ExpiresAt/RevokedDate before trusting the row.
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetRefreshToken
+    @TokenHash VARBINARY(32)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT rt.Id, rt.UserId, rt.ExpiresAt, rt.RevokedDate,
+           u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator
+    FROM dbo.RefreshTokens rt
+    JOIN dbo.Users u ON u.Id = rt.UserId
+    WHERE rt.TokenHash = @TokenHash AND u.IsDelete = 0 AND u.IsActive = 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_RevokeRefreshToken
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.RefreshTokens SET RevokedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND RevokedDate IS NULL;
+END
+GO

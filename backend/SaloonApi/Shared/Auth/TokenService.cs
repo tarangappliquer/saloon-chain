@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -44,4 +45,16 @@ internal sealed class TokenService(IOptions<JwtOptions> options)
             signingCredentials: creds);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    public DateTime RefreshTokenExpiry => DateTime.UtcNow.AddDays(_options.RefreshTokenExpiryDays);
+
+    // Opaque (not a JWT) -- only ever looked up by its hash, never decoded, so it carries no claims
+    // of its own. 32 random bytes is well above the entropy needed to make guessing infeasible.
+    public static string GenerateRefreshToken() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    // Only the hash is persisted (see dbo.RefreshTokens) -- so a DB read alone can never be
+    // replayed as a live credential.
+    public static byte[] HashRefreshToken(string token) =>
+        SHA256.HashData(Encoding.UTF8.GetBytes(token));
 }

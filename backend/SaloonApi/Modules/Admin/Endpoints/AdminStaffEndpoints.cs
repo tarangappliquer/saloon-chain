@@ -10,7 +10,9 @@ internal static class AdminStaffEndpoints
 {
     public static void MapAdminStaffEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/admin/staff").RequireAuthorization("AdminAccess");
+        var group = app.MapGroup("/api/admin/staff").RequireAuthorization("AdminAccess").WithTags("Admin Staff")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         // Admin/Manager are forced to their own scope regardless of what they pass -- previously
         // this endpoint returned every staff member in the system to any AdminAccess caller (the
@@ -30,7 +32,9 @@ internal static class AdminStaffEndpoints
             if (currentUser.IsInRole(UserRole.Manager)) locationId = currentUser.LocationId;
 
             return Results.Ok(await repo.GetStaffAsync(parsedRole, chainId, locationId));
-        });
+        }).Produces<IReadOnlyList<StaffUserDto>>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("List staff users, scoped to the caller's own chain/location where applicable.");
 
         // Who may create whom: SuperAdmin -> Admin/Manager/Therapist (anywhere); Admin -> Manager/
         // Therapist within their own chain; Manager -> Therapist within their own location. Nothing
@@ -58,8 +62,11 @@ internal static class AdminStaffEndpoints
             }
 
             var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, req.TherapistId);
-            return Results.Ok(new { Id = id });
-        }).WithValidation<CreateStaffRequest>();
+            return Results.Ok(new IdResponse(id));
+        }).WithValidation<CreateStaffRequest>()
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Create a new staff login, restricted to roles the caller is allowed to create.");
 
         // "Can mark admin as Emulator" is Super Admin's alone -- compare against the stored value
         // (not a blanket reject on isEmulator:true) because the adminportal always round-trips the
@@ -75,7 +82,11 @@ internal static class AdminStaffEndpoints
 
             await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.ChainId, req.LocationId, req.TherapistId, req.IsEmulator, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<UpdateStaffRequest>();
+        }).WithValidation<UpdateStaffRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .Produces(StatusCodes.Status404NotFound)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Update a staff user's details, scope, or active/emulator state.");
     }
 }
 

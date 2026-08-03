@@ -1,17 +1,25 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <PackageReference Include="Dapper" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="MailKit" />
+    <PackageReference Include="MicroElements.AspNetCore.OpenApi.FluentValidation" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!-- ExcludeAssets="analyzers": Microsoft.AspNetCore.OpenApi's bundled XmlCommentGenerator source
+         generator unconditionally emits code that assigns IOpenApiMediaType.Example, a member that is
+         read-only in the Microsoft.OpenApi 2.11.0 pinned below (CS0200), regardless of whether any
+         XML doc example tags exist. This project's OpenAPI descriptions all come from
+         WithDescription() calls, not XML doc comments, so the generator provides nothing here;
+         dropping its analyzer asset avoids the incompatibility without losing anything in use. -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" ExcludeAssets="analyzers" />
     <!-- Direct reference forces resolution to the pinned patched version above (2.11.0),
          overriding the vulnerable 2.0.0 that Microsoft.AspNetCore.OpenApi 10.0.10 pulls transitively. -->
     <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Scalar.AspNetCore.Microsoft" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Enrichers.Thread" />

@@ -147,6 +147,20 @@ CREATE TABLE dbo.Users (
     UpdatedDate   DATETIME2 NULL
 );
 
+-- Opaque, rotating refresh tokens for /api/auth/refresh: only the SHA-256 hash is stored, never the
+-- raw token, so a DB read can't be replayed as a live credential. Rotation (one-time use) means a
+-- stolen-and-replayed token is caught the moment the legitimate client refreshes next -- both rows
+-- end up revoked, forcing a re-login instead of leaving a duplicate live session silently active.
+CREATE TABLE dbo.RefreshTokens (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    UserId       INT NOT NULL REFERENCES dbo.Users(Id),
+    TokenHash    VARBINARY(32) NOT NULL UNIQUE,
+    ExpiresAt    DATETIME2 NOT NULL,
+    RevokedDate  DATETIME2 NULL,
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX IX_RefreshTokens_UserId ON dbo.RefreshTokens(UserId);
+
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.Locations ADD CONSTRAINT FK_Locations_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);

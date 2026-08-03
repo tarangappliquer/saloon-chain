@@ -27,5 +27,5 @@ internal static class ValidationFilterExtensions
 {
     public static RouteHandlerBuilder WithValidation<T>(this RouteHandlerBuilder builder)
         where T : class =>
-        builder.AddEndpointFilter<ValidationFilter<T>>();
+        builder.AddEndpointFilter<ValidationFilter<T>>().ProducesValidationProblem();
 }

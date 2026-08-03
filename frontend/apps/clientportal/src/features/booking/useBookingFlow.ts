@@ -1,0 +1,167 @@
+import { useCallback, useReducer, useRef } from 'react';
+import { ApiError, bookingApi } from '../../api/client';
+import type { AvailableSlot, HoldResponse } from '../../api/types';
+
+type Step = 'treatments' | 'date' | 'slot' | 'held' | 'confirmed';
+
+interface State {
+  step: Step;
+  selectedTreatmentIds: number[];
+  selectedDate: string | null;
+  dates: string[];
+  slots: AvailableSlot[];
+  hold: HoldResponse | null;
+  heldSlot: AvailableSlot | null;
+  error: string | null;
+  loading: boolean;
+}
+
+type Action =
+  | { type: 'LOADING' }
+  | { type: 'ERROR'; message: string }
+  | { type: 'TOGGLE_TREATMENT'; id: number }
+  | { type: 'DATES_LOADED'; dates: string[] }
+  | { type: 'PICK_DATE'; date: string }
+  | { type: 'SLOTS_LOADED'; slots: AvailableSlot[] }
+  | { type: 'HELD'; hold: HoldResponse; slot: AvailableSlot }
+  | { type: 'CONFIRMED' }
+  | { type: 'RESET' };
+
+const initialState: State = {
+  step: 'treatments',
+  selectedTreatmentIds: [],
+  selectedDate: null,
+  dates: [],
+  slots: [],
+  hold: null,
+  heldSlot: null,
+  error: null,
+  loading: false,
+};
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'LOADING':
+      return { ...state, loading: true, error: null };
+    case 'ERROR':
+      return { ...state, loading: false, error: action.message };
+    case 'TOGGLE_TREATMENT': {
+      const has = state.selectedTreatmentIds.includes(action.id);
+      return {
+        ...state,
+        selectedTreatmentIds: has
+          ? state.selectedTreatmentIds.filter((id) => id !== action.id)
+          : [...state.selectedTreatmentIds, action.id],
+      };
+    }
+    case 'DATES_LOADED':
+      return { ...state, loading: false, dates: action.dates, step: 'date' };
+    case 'PICK_DATE':
+      return { ...state, selectedDate: action.date, slots: [] };
+    case 'SLOTS_LOADED':
+      return { ...state, loading: false, slots: action.slots, step: 'slot' };
+    case 'HELD':
+      return { ...state, loading: false, hold: action.hold, heldSlot: action.slot, step: 'held' };
+    case 'CONFIRMED':
+      return { ...state, loading: false, step: 'confirmed' };
+    case 'RESET':
+      return initialState;
+    default:
+      return state;
+  }
+}
+
+function errorMessage(err: unknown, fallback: string) {
+  return err instanceof ApiError ? err.message : fallback;
+}
+
+export function useBookingFlow(locationId: number | null) {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  // `state.loading` alone doesn't stop a double-click: it's only set via `dispatch`, which doesn't
+  // take effect until the next render, so two clicks in the same tick (before React re-renders
+  // with the disabled button) both slip through and fire duplicate requests. This ref is set
+  // synchronously, before either the dispatch or the await, so the second call in the same tick
+  // sees it immediately and bails.
+  const inFlight = useRef(false);
+
+  const loadDates = useCallback(async () => {
+    if (!locationId || state.selectedTreatmentIds.length === 0) return;
+    dispatch({ type: 'LOADING' });
+    try {
+      const from = new Date().toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 13 * 86_400_000).toISOString().slice(0, 10);
+      const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to);
+      dispatch({ type: 'DATES_LOADED', dates: data });
+    } catch (err) {
+      dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available dates') });
+    }
+  }, [locationId, state.selectedTreatmentIds]);
+
+  const pickDate = useCallback(
+    async (date: string) => {
+      if (!locationId) return;
+      dispatch({ type: 'PICK_DATE', date });
+      dispatch({ type: 'LOADING' });
+      try {
+        const ids = state.selectedTreatmentIds.join(',');
+        const { data } = await bookingApi.apiBookingAvailableSlotsGet(locationId, ids, date);
+        dispatch({ type: 'SLOTS_LOADED', slots: data as unknown as AvailableSlot[] });
+      } catch (err) {
+        dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available slots') });
+      }
+    },
+    [locationId, state.selectedTreatmentIds],
+  );
+
+  const selectSlot = useCallback(
+    async (slot: AvailableSlot) => {
+      if (!locationId || inFlight.current) return;
+      inFlight.current = true;
+      dispatch({ type: 'LOADING' });
+      try {
+        const { data } = await bookingApi.apiBookingHoldPost({
+          locationId,
+          roomId: slot.roomId,
+          therapistId: slot.therapistId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          treatmentIds: state.selectedTreatmentIds,
+        });
+        dispatch({ type: 'HELD', hold: data as unknown as HoldResponse, slot });
+      } catch (err) {
+        dispatch({ type: 'ERROR', message: errorMessage(err, 'That slot was just taken — pick another') });
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [locationId, state.selectedTreatmentIds],
+  );
+
+  const confirm = useCallback(async () => {
+    if (!state.hold || inFlight.current) return;
+    inFlight.current = true;
+    dispatch({ type: 'LOADING' });
+    try {
+      await bookingApi.apiBookingIdConfirmPost(state.hold.bookingId);
+      dispatch({ type: 'CONFIRMED' });
+    } catch (err) {
+      dispatch({ type: 'ERROR', message: errorMessage(err, 'Your hold expired — start again') });
+    } finally {
+      inFlight.current = false;
+    }
+  }, [state.hold]);
+
+  const cancelHold = useCallback(async () => {
+    if (!state.hold) return;
+    try {
+      await bookingApi.apiBookingIdDelete(state.hold.bookingId);
+    } finally {
+      dispatch({ type: 'RESET' });
+    }
+  }, [state.hold]);
+
+  const toggleTreatment = useCallback((id: number) => dispatch({ type: 'TOGGLE_TREATMENT', id }), []);
+  const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
+
+  return { state, toggleTreatment, loadDates, pickDate, selectSlot, confirm, cancelHold, reset };
+}

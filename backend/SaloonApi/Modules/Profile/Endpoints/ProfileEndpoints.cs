@@ -22,13 +22,16 @@ internal static class ProfileEndpoints
 
     public static void MapProfileEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/profile").RequireAuthorization();
+        var group = app.MapGroup("/api/profile").RequireAuthorization().WithTags("Profile")
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         group.MapGet("", async (ICurrentUser currentUser, ProfileRepository repo) =>
         {
             var profile = await repo.GetMyProfileAsync(currentUser.RequireUserId(), currentUser.Role!.Value);
             return profile is null ? Results.NotFound() : Results.Ok(ToResponse(profile));
-        });
+        }).Produces<ProfileResponse>()
+          .Produces(StatusCodes.Status404NotFound)
+          .WithDescription("Get the caller's own profile.");
 
         group.MapPut("", async (UpdateProfileRequest req, ICurrentUser currentUser, ProfileRepository repo) =>
         {
@@ -36,7 +39,9 @@ internal static class ProfileEndpoints
             await repo.UpdateSelfAsync(userId, req.Name, req.Phone);
             var profile = await repo.GetMyProfileAsync(userId, currentUser.Role!.Value);
             return Results.Ok(ToResponse(profile!));
-        }).WithValidation<UpdateProfileRequest>();
+        }).WithValidation<UpdateProfileRequest>()
+          .Produces<ProfileResponse>()
+          .WithDescription("Update the caller's own name/phone.");
 
         group.MapPost("/photo", async (IFormFile file, ICurrentUser currentUser, ProfileRepository repo, IWebHostEnvironment env) =>
         {
@@ -65,8 +70,10 @@ internal static class ProfileEndpoints
 
             var photoPath = $"/uploads/profile-photos/{fileName}";
             await repo.SetPhotoPathAsync(userId, currentUser.Role!.Value, photoPath);
-            return Results.Ok(new { PhotoPath = photoPath });
-        });
+            return Results.Ok(new PhotoResponse(photoPath));
+        }).Produces<PhotoResponse>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("Upload/replace the caller's own profile photo (JPG/PNG/WEBP, max 5 MB).");
     }
 
     private static ProfileResponse ToResponse(ProfileDto p) =>
@@ -75,6 +82,7 @@ internal static class ProfileEndpoints
 
 internal sealed record UpdateProfileRequest(string Name, string? Phone);
 internal sealed record ProfileResponse(int UserId, string Name, string Email, string? Phone, string Role, string? PhotoPath);
+internal sealed record PhotoResponse(string PhotoPath);
 
 internal sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProfileRequest>
 {

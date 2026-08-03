@@ -334,6 +334,44 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateRefreshToken
+    @UserId    INT,
+    @TokenHash VARBINARY(32),
+    @ExpiresAt DATETIME2,
+    @Id        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.RefreshTokens (UserId, TokenHash, ExpiresAt)
+    VALUES (@UserId, @TokenHash, @ExpiresAt);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetRefreshToken
+    @TokenHash VARBINARY(32)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT rt.Id, rt.UserId, rt.ExpiresAt, rt.RevokedDate,
+           u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator
+    FROM dbo.RefreshTokens rt
+    JOIN dbo.Users u ON u.Id = rt.UserId
+    WHERE rt.TokenHash = @TokenHash AND u.IsDelete = 0 AND u.IsActive = 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_RevokeRefreshToken
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.RefreshTokens SET RevokedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND RevokedDate IS NULL;
+END
+GO
+
 -- Admin-portal CRUD + oversight procs. Run after 01-06. All writes take @CreatedBy/@UpdatedBy from
 -- the calling admin's ICurrentUser -- never NULL here (unlike self-registration/system jobs),
 -- because every admin action is behind [Authorize].
