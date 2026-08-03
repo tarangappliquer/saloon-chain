@@ -88,14 +88,18 @@ BEGIN
           SELECT DISTINCT t.CategoryId FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
       );
 
-    -- 4) scheduled treatment lines that day for rooms at this location (confirmed booking, or a
-    -- draft line whose own hold hasn't expired). Status is returned so the API can tell a hard
-    -- conflict (Confirmed) from a temporary one (an active Draft hold) and show the latter as
-    -- disabled rather than hiding the slot outright.
+    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. Therapists
+    -- are a global entity (dbo.Therapists has no LocationId; a therapist's location comes from
+    -- their per-day ShiftAssignments), so the same real person can be booked at a different
+    -- location's room at an overlapping time. Scoping this by @LocationId would hide that
+    -- cross-location therapist conflict here while sp_Booking_ScheduleTreatment's write-time
+    -- recheck (correctly unscoped) still rejects it -- exactly the "slot shown available, then
+    -- rejected on booking" bug this must not reintroduce. Status is returned so the API can tell
+    -- a hard conflict (Confirmed) from a temporary one (an active Draft hold) and show the latter
+    -- as disabled rather than hiding the slot outright.
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
     FROM dbo.BookingTreatments bt
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    JOIN dbo.Rooms r ON r.Id = bt.RoomId AND r.LocationId = @LocationId
     WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
       AND bt.IsDelete = 0 AND b.IsDelete = 0
       AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
