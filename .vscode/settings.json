@@ -17,4 +17,5 @@
 		"editor.defaultFormatter": "ms-dotnettools.csharp"
 	},
 	"dotnet.defaultSolution": "backend/SaloonChains.slnx",
+	"git.autofetch": true,
 }
