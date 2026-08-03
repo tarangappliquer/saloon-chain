@@ -58,26 +58,47 @@ function classNames(className: string | undefined) {
 }
 
 export function SearchableSelect(props: Props) {
-  const { options, placeholder, disabled, className } = props;
-
   if (props.multiple) {
-    const selected = options.filter((o) => props.value.includes(o.value));
-    return (
-      <Select
-        isMulti
-        isClearable
-        isDisabled={disabled}
-        placeholder={placeholder}
-        options={options}
-        value={selected}
-        onChange={(picked: MultiValue<SearchableSelectOption>) => props.onChange(picked.map((o) => o.value))}
-        unstyled
-        classNames={classNames(className)}
-      />
-    );
+    return <MultiSearchableSelect {...props} />;
   }
+  return <SingleSearchableSelect {...(props as SingleProps)} />;
+}
 
-  const selected = options.find((o) => o.value === props.value) ?? null;
+function MultiSearchableSelect({
+  options,
+  placeholder,
+  disabled,
+  className,
+  value,
+  onChange,
+}: MultiProps) {
+  const selectedValues = (value ?? []).map(String);
+  const selected = options.filter((o) => selectedValues.includes(String(o.value)));
+  return (
+    <Select
+      isMulti
+      isClearable
+      isDisabled={disabled}
+      placeholder={placeholder}
+      options={options}
+      value={selected}
+      onChange={(picked: MultiValue<SearchableSelectOption>) => onChange(picked.map((o) => o.value))}
+      unstyled
+      classNames={classNames(className)}
+    />
+  );
+}
+
+function SingleSearchableSelect({
+  options,
+  placeholder,
+  disabled,
+  className,
+  value,
+  onChange,
+}: SingleProps) {
+  const targetValue = String(value ?? '');
+  const selected = options.find((o) => String(o.value) === targetValue) ?? null;
   return (
     <Select
       isClearable
@@ -85,7 +106,7 @@ export function SearchableSelect(props: Props) {
       placeholder={placeholder}
       options={options}
       value={selected}
-      onChange={(picked: SingleValue<SearchableSelectOption>) => props.onChange(picked?.value ?? '')}
+      onChange={(picked: SingleValue<SearchableSelectOption>) => onChange(picked?.value ?? '')}
       unstyled
       classNames={classNames(className)}
     />
