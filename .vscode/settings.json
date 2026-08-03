@@ -15,5 +15,6 @@
 		"editor.formatOnPaste": true,
 		"editor.formatOnType": true,
 		"editor.defaultFormatter": "ms-dotnettools.csharp"
-	}
+	},
+	"dotnet.defaultSolution": "backend/SaloonChains.slnx",
 }
