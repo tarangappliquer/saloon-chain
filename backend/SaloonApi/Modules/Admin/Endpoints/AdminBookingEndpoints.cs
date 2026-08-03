@@ -29,10 +29,12 @@ internal static class AdminBookingEndpoints
 
         group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, IAvailabilityCache cache, SseBroadcaster sse) =>
         {
-            var r = await repo.CancelAsAdminAsync(id);
-            var workDate = DateOnly.FromDateTime(r.WorkDate);
-            await cache.InvalidateAsync(r.LocationId, workDate);
-            sse.Publish(SseBroadcaster.Group(r.LocationId, workDate), "slot-changed");
+            var affected = await repo.CancelAsAdminAsync(id);
+            foreach (var slot in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+            {
+                await cache.InvalidateAsync(slot.LocationId, slot.WorkDate);
+                sse.Publish(SseBroadcaster.Group(slot.LocationId, slot.WorkDate), "slot-changed");
+            }
             return Results.NoContent();
         }).RequireAuthorization("AdminAccess")
           .Produces(StatusCodes.Status204NoContent)

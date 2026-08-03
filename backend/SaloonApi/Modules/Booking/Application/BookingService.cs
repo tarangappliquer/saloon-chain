@@ -40,7 +40,7 @@ internal sealed class BookingService(
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd)).ToList();
-        var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Held")).ToList();
+        var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft")).ToList();
 
         var slots = SlotCalculator.ComputeAvailableSlots(
             date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing);
@@ -49,25 +49,42 @@ internal sealed class BookingService(
         return slots;
     }
 
-    public async Task<(int BookingId, DateTime ExpiresAt)> HoldAsync(
-        int locationId, int roomId, int therapistId, int customerId,
-        DateTime start, DateTime end, IReadOnlyList<int> treatmentIds)
+    // Creates the draft "cart" the instant treatments are picked -- no schedule yet, so nothing to
+    // invalidate in the availability cache/SSE (nothing became unavailable to anyone else).
+    public Task<int> CreateDraftAsync(int locationId, int customerId, IReadOnlyList<int> treatmentIds) =>
+        repo.CreateDraftAsync(locationId, customerId, treatmentIds);
+
+    public Task AddTreatmentAsync(int bookingId, int customerId, int treatmentId) =>
+        repo.AddTreatmentAsync(bookingId, customerId, treatmentId);
+
+    public async Task RemoveTreatmentAsync(int bookingId, int customerId, int treatmentId)
     {
-        var result = await repo.CreateHoldAsync(locationId, roomId, therapistId, customerId, start, end, treatmentIds);
-        await InvalidateAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
-        return result;
+        var freed = await repo.RemoveTreatmentAsync(bookingId, customerId, treatmentId);
+        if (freed is not null)
+            await InvalidateAndNotifyAsync(freed.LocationId, DateOnly.FromDateTime(freed.WorkDate));
     }
+
+    public async Task<DateTime> ScheduleTreatmentAsync(
+        int bookingId, int customerId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
+    {
+        var (expiresAt, locationId) = await repo.ScheduleTreatmentAsync(bookingId, customerId, treatmentId, roomId, therapistId, start, end);
+        await InvalidateAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
+        return expiresAt;
+    }
+
+    public Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId) => repo.GetByIdAsync(bookingId, customerId);
 
     public async Task ConfirmAsync(int bookingId, int customerId)
     {
-        var r = await repo.ConfirmAsync(bookingId, customerId);
-        await InvalidateAndNotifyAsync(r.LocationId, DateOnly.FromDateTime(r.WorkDate));
+        var affected = await repo.ConfirmAsync(bookingId, customerId);
+        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
 
         // Enqueue-only: this must stay fast (no SMTP I/O on the confirm request path) -- actual
         // sending happens on EmailQueueBackgroundService. Details is a fresh read rather than
         // something threaded through ConfirmAsync's return value because sp_Booking_Confirm's
         // shape is deliberately lean (just enough for cache invalidation); the email needs
-        // names and the treatment list that read never carried.
+        // names and each treatment's own therapist/time that read never carried.
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
         if (details is not null)
             emailQueue.Enqueue(BuildConfirmationEmail(details));
@@ -76,23 +93,26 @@ internal sealed class BookingService(
     private static EmailMessage BuildConfirmationEmail(ConfirmationDetailsDto details)
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
-        var when = details.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
 
         // Plain decimal, no currency symbol -- matches how prices are already shown everywhere
         // else in the app (e.g. TreatmentsPage.tsx's toFixed(2)); nothing in this app configures
         // a currency/locale, so "C" formatting would print an ambiguous generic currency sign.
+        // Each treatment gets its own row (name, time, therapist, price) since they're scheduled
+        // independently and may run at different times with different therapists.
         var treatmentRows = new StringBuilder();
         foreach (var t in details.Treatments)
-            treatmentRows.Append(CultureInfo.InvariantCulture, $"<li>{t.TreatmentName} &mdash; {t.Price:F2}</li>");
+        {
+            var when = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
+            treatmentRows.Append(CultureInfo.InvariantCulture,
+                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; {t.Price:F2}</li>");
+        }
 
         var html = $"""
             <p>Hi {details.CustomerName},</p>
             <p>Your appointment is confirmed.</p>
             <p><strong>Appointment number: APT-{appointmentNumber}</strong></p>
             <ul>
-              <li><strong>When:</strong> {when}</li>
               <li><strong>Location:</strong> {details.LocationName}</li>
-              <li><strong>Therapist:</strong> {details.TherapistName}</li>
             </ul>
             <p><strong>Treatments:</strong></p>
             <ul>{treatmentRows}</ul>
@@ -107,8 +127,9 @@ internal sealed class BookingService(
 
     public async Task CancelAsync(int bookingId, int customerId)
     {
-        var r = await repo.CancelAsync(bookingId, customerId);
-        await InvalidateAndNotifyAsync(r.LocationId, DateOnly.FromDateTime(r.WorkDate));
+        var affected = await repo.CancelAsync(bookingId, customerId);
+        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
     }
 
     public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId) => repo.GetMineAsync(customerId);

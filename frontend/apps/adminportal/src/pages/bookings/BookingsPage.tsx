@@ -126,9 +126,6 @@ export function BookingsPage() {
         <table className="w-full border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800">
-              <th className="py-2">Time</th>
-              <th className="py-2">Room</th>
-              <th className="py-2">Therapist</th>
               <th className="py-2">Customer</th>
               <th className="py-2">Treatments</th>
               <th className="py-2">Status</th>
@@ -139,20 +136,31 @@ export function BookingsPage() {
             {bookings.map((b) => (
               <tr key={b.id} className="border-b border-gray-100 align-top dark:border-gray-900">
                 <td className="py-2">
-                  {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}-
-                  {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </td>
-                <td className="py-2">{b.roomName}</td>
-                <td className="py-2">{b.therapistName}</td>
-                <td className="py-2">
                   {b.customerName}
                   <br />
                   <span className="text-xs text-gray-500">{b.customerEmail}</span>
                 </td>
-                <td className="py-2">{b.treatments.map((t) => t.treatmentName).join(', ')}</td>
+                <td className="py-2">
+                  <ul className="space-y-1">
+                    {b.treatments.map((t) => (
+                      <li key={t.treatmentName}>
+                        {t.treatmentName}
+                        {t.startTime && t.endTime && (
+                          <span className="text-xs text-gray-500">
+                            {' — '}
+                            {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}-
+                            {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {' · '}
+                            {t.roomName} · {t.therapistName}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </td>
                 <td className="py-2">{b.status}</td>
                 <td className="py-2 text-right">
-                  {canCancel && (b.status === 'Held' || b.status === 'Confirmed') && (
+                  {canCancel && (b.status === 'Draft' || b.status === 'Confirmed') && (
                     <button type="button" onClick={() => handleCancel(b.id)} className="text-red-600 hover:underline">
                       Cancel
                     </button>

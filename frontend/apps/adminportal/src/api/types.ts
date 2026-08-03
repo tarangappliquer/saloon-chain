@@ -82,6 +82,10 @@ export interface CustomerSummary {
 
 export interface AdminBookingTreatment {
   treatmentName: string;
+  roomName: string | null;
+  therapistName: string | null;
+  startTime: string | null;
+  endTime: string | null;
   slotCount: number;
   price: number;
 }
@@ -89,12 +93,8 @@ export interface AdminBookingTreatment {
 export interface AdminBooking {
   id: number;
   locationName: string;
-  roomName: string;
-  therapistName: string;
   customerName: string;
   customerEmail: string;
-  startTime: string;
-  endTime: string;
   status: string;
   treatments: AdminBookingTreatment[];
 }

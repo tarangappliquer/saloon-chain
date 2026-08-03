@@ -88,14 +88,112 @@ BEGIN
           SELECT DISTINCT t.CategoryId FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
       );
 
-    -- 4) existing bookings that day for rooms at this location (confirmed, or held and not yet
-    -- expired). Status is returned so the API can tell a hard conflict (Confirmed) from a
-    -- temporary one (Held) and show the latter as disabled rather than hiding the slot outright.
-    SELECT b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status
-    FROM dbo.Bookings b
-    JOIN dbo.Rooms r ON r.Id = b.RoomId AND r.LocationId = @LocationId
-    WHERE CAST(b.StartTime AS DATE) = @WorkDate AND b.IsDelete = 0
-      AND (b.Status = 'Confirmed' OR (b.Status = 'Held' AND b.ExpiresAt > SYSUTCDATETIME()));
+    -- 4) scheduled treatment lines that day for rooms at this location (confirmed booking, or a
+    -- draft line whose own hold hasn't expired). Status is returned so the API can tell a hard
+    -- conflict (Confirmed) from a temporary one (an active Draft hold) and show the latter as
+    -- disabled rather than hiding the slot outright.
+    SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    JOIN dbo.Rooms r ON r.Id = bt.RoomId AND r.LocationId = @LocationId
+    WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
+      AND bt.IsDelete = 0 AND b.IsDelete = 0
+      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
+END
+GO
+
+-- Creates the draft "cart" the moment treatments are picked, before any date/time exists --
+-- 1 Bookings row (Status='Draft') + 1 unscheduled BookingTreatments row per treatment. No
+-- room/therapist/time yet, so no lock/conflict-check needed here (that only matters once a
+-- specific slot is claimed -- see sp_Booking_ScheduleTreatment below).
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_CreateDraft
+    @LocationId   INT,
+    @CustomerId   INT,
+    @Treatments   dbo.IntIdList READONLY,
+    @CreatedBy    INT = NULL,
+    @BookingId    INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
+    INSERT INTO dbo.Bookings (LocationId, CustomerId, Status, CreatedBy)
+    VALUES (@LocationId, @CustomerId, 'Draft', @CreatedBy);
+
+    SET @BookingId = SCOPE_IDENTITY();
+
+    INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
+    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, COALESCE(lt.PriceOverride, t.Price), @CreatedBy
+    FROM dbo.Treatments t
+    JOIN @Treatments ti ON ti.Id = t.Id
+    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
+    WHERE t.IsDelete = 0 AND t.IsActive = 1 AND lt.IsDelete = 0 AND lt.IsActive = 1;
+
+    COMMIT TRANSACTION;
+END
+GO
+
+-- Adds one more (unscheduled) treatment line to an existing draft -- the "add treatment" action
+-- from any step of the wizard. Only allowed while the booking is still a Draft the caller owns.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_AddTreatment
+    @BookingId   INT,
+    @CustomerId  INT,
+    @TreatmentId INT,
+    @CreatedBy   INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @LocationId INT, @NextSeq SMALLINT;
+
+    SELECT @LocationId = LocationId FROM dbo.Bookings
+    WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft';
+
+    IF @LocationId IS NULL
+        THROW 50005, 'Booking not found or not editable.', 1;
+
+    SELECT @NextSeq = COALESCE(MAX(SequenceOrder), 0) + 1 FROM dbo.BookingTreatments WHERE BookingId = @BookingId;
+
+    INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
+    SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, COALESCE(lt.PriceOverride, t.Price), @CreatedBy
+    FROM dbo.Treatments t
+    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
+    WHERE t.Id = @TreatmentId AND t.IsDelete = 0 AND t.IsActive = 1 AND lt.IsDelete = 0 AND lt.IsActive = 1;
+
+    IF @@ROWCOUNT = 0
+        THROW 50006, 'Treatment not available at this location.', 1;
+END
+GO
+
+-- Removes one treatment line from a draft (soft-delete) -- frees whatever slot it held, if any,
+-- since the availability query only ever reads non-deleted lines. Returns the freed
+-- (location,room,date) if the line was actually scheduled, so the API can invalidate the
+-- availability cache/SSE for it -- zero rows if it hadn't been scheduled yet.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_RemoveTreatment
+    @BookingId   INT,
+    @CustomerId  INT,
+    @TreatmentId INT,
+    @UpdatedBy   INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Removed TABLE (LocationId INT, RoomId INT, StartTime DATETIME2);
+
+    UPDATE bt
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    OUTPUT b.LocationId, deleted.RoomId, deleted.StartTime INTO @Removed
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
+      AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
+
+    IF @@ROWCOUNT = 0
+        THROW 50007, 'Treatment not found on this booking.', 1;
+
+    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM @Removed WHERE RoomId IS NOT NULL;
 END
 GO
 
@@ -110,18 +208,23 @@ GO
 -- both pass the EXISTS check against not-yet-committed data, and both insert. Always acquire the
 -- room lock before the therapist lock (every caller, every time) so two transactions contending
 -- on both resources can't deadlock by acquiring them in opposite orders.
-CREATE OR ALTER PROCEDURE dbo.sp_Booking_CreateHold
-    @LocationId   INT,
-    @RoomId       INT,
-    @TherapistId  INT,
-    @CustomerId   INT,
-    @StartTime    DATETIME2,
-    @EndTime      DATETIME2,
-    @Treatments   dbo.IntIdList READONLY,
-    @CreatedBy    INT = NULL, -- current logged-in user; equals @CustomerId today, will differ once
-                                -- admin/receptionist can book on a customer's behalf
-    @BookingId    INT OUTPUT,
-    @ExpiresAt    DATETIME2 OUTPUT
+--
+-- Unlike the old per-treatment CreateHold, this UPDATEs the treatment's own existing
+-- BookingTreatments row rather than inserting a new one -- there's always exactly one row per
+-- (booking, treatment), scheduled or not. Re-picking a time is just scheduling the same row again,
+-- so the conflict check explicitly excludes that row (it's about to be overwritten, not a real
+-- conflict with itself).
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_ScheduleTreatment
+    @BookingId   INT,
+    @CustomerId  INT,
+    @TreatmentId INT,
+    @RoomId      INT,
+    @TherapistId INT,
+    @StartTime   DATETIME2,
+    @EndTime     DATETIME2,
+    @UpdatedBy   INT = NULL,
+    @ExpiresAt   DATETIME2 OUTPUT,
+    @LocationId  INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -149,12 +252,27 @@ BEGIN
         THROW 50001, 'Could not acquire booking lock, try again.', 1;
     END
 
+    SELECT TOP 1 @LocationId = b.LocationId
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
+      AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
+
+    IF @LocationId IS NULL
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50008, 'Booking or treatment not found.', 1;
+    END
+
     IF EXISTS (
-        SELECT 1 FROM dbo.Bookings
-        WHERE (RoomId = @RoomId OR TherapistId = @TherapistId)
-          AND IsDelete = 0
-          AND (Status = 'Confirmed' OR (Status = 'Held' AND ExpiresAt > SYSUTCDATETIME()))
-          AND StartTime < @EndTime AND EndTime > @StartTime
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        WHERE (bt.RoomId = @RoomId OR bt.TherapistId = @TherapistId)
+          AND bt.IsDelete = 0 AND b.IsDelete = 0
+          AND NOT (bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId)
+          AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+          AND bt.StartTime < @EndTime AND bt.EndTime > @StartTime
     )
     BEGIN
         ROLLBACK TRANSACTION;
@@ -163,16 +281,10 @@ BEGIN
 
     SET @ExpiresAt = DATEADD(MINUTE, 5, SYSUTCDATETIME());
 
-    INSERT INTO dbo.Bookings (LocationId, RoomId, TherapistId, CustomerId, StartTime, EndTime, Status, ExpiresAt, CreatedBy)
-    VALUES (@LocationId, @RoomId, @TherapistId, @CustomerId, @StartTime, @EndTime, 'Held', @ExpiresAt, @CreatedBy);
-
-    SET @BookingId = SCOPE_IDENTITY();
-
-    INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
-    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, COALESCE(lt.PriceOverride, t.Price), @CreatedBy
-    FROM dbo.Treatments t
-    JOIN @Treatments ti ON ti.Id = t.Id
-    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId;
+    UPDATE dbo.BookingTreatments
+    SET RoomId = @RoomId, TherapistId = @TherapistId, StartTime = @StartTime, EndTime = @EndTime,
+        ExpiresAt = @ExpiresAt, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE BookingId = @BookingId AND TreatmentId = @TreatmentId AND IsDelete = 0;
 
     COMMIT TRANSACTION;
 END
@@ -186,39 +298,58 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    IF NOT EXISTS (
+        SELECT 1 FROM dbo.Bookings
+        WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft'
+    )
+        THROW 50003, 'Booking not found or already finalized.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.BookingTreatments WHERE BookingId = @BookingId AND IsDelete = 0)
+        THROW 50003, 'Booking has no treatments.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.BookingTreatments
+        WHERE BookingId = @BookingId AND IsDelete = 0
+          AND (StartTime IS NULL OR ExpiresAt IS NULL OR ExpiresAt <= SYSUTCDATETIME())
+    )
+        THROW 50003, 'Every treatment needs a time before confirming (a hold may have expired).', 1;
+
     UPDATE dbo.Bookings
-    SET Status = 'Confirmed', ExpiresAt = NULL, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
-    WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0
-      AND Status = 'Held' AND ExpiresAt > SYSUTCDATETIME();
+    SET Status = 'Confirmed', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @BookingId;
 
-    IF @@ROWCOUNT = 0
-        THROW 50003, 'Hold not found or expired.', 1;
+    UPDATE dbo.BookingTreatments
+    SET ExpiresAt = NULL, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE BookingId = @BookingId AND IsDelete = 0;
 
-    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM dbo.Bookings WHERE Id = @BookingId;
+    SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0;
 END
 GO
 
 -- Backs the confirmation email (BookingService.ConfirmAsync, Shared/Email) -- separate from
--- sp_Booking_Confirm's own return value (just LocationId/RoomId/WorkDate, enough for cache
--- invalidation) because the email needs customer/location/therapist names and the treatment list,
--- which that lean shape deliberately doesn't carry.
+-- sp_Booking_Confirm's own return value (just LocationId/RoomId/WorkDate per line, enough for
+-- cache invalidation) because the email needs customer/location names and each treatment's own
+-- therapist/time, which that lean shape deliberately doesn't carry.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetConfirmationDetails
     @BookingId INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT b.Id, c.Name AS CustomerName, c.Email AS CustomerEmail, l.Name AS LocationName,
-           th.Name AS TherapistName, b.StartTime, b.EndTime
+    SELECT b.Id, c.Name AS CustomerName, c.Email AS CustomerEmail, l.Name AS LocationName
     FROM dbo.Bookings b
     JOIN dbo.Users c ON c.Id = b.CustomerId
     JOIN dbo.Locations l ON l.Id = b.LocationId
-    JOIN dbo.Therapists th ON th.Id = b.TherapistId
     WHERE b.Id = @BookingId AND b.IsDelete = 0;
 
-    SELECT bt.TreatmentId, t.Name AS TreatmentName, bt.SlotCount, bt.Price
+    SELECT bt.TreatmentId, t.Name AS TreatmentName, th.Name AS TherapistName,
+           bt.StartTime, bt.EndTime, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+    JOIN dbo.Therapists th ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -235,17 +366,22 @@ BEGIN
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0
-      AND Status IN ('Held','Confirmed');
+      AND Status IN ('Draft','Confirmed');
 
     IF @@ROWCOUNT = 0
         THROW 50004, 'Booking not found.', 1;
 
-    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM dbo.Bookings WHERE Id = @BookingId;
+    SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0 AND bt.StartTime IS NOT NULL;
 END
 GO
 
--- Called every ~30s by a background job -- no logged-in user in that context, so UpdatedBy stays
--- NULL (system-driven). Returns the (location,room,date) tuples that flipped so the API can
+-- Called every ~30s by a background job -- no logged-in user in that context. Sweeps expired
+-- treatment LINES back to unscheduled (NULLing their room/therapist/time/expiry) rather than
+-- deleting them or touching the booking's Status -- the treatment stays in the draft, it just
+-- needs re-picking. Returns the (location,room,date) tuples that freed up so the API can
 -- invalidate the availability cache and nudge SSE subscribers for just those groups.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_ExpireStaleHolds
 AS
@@ -254,12 +390,40 @@ BEGIN
 
     DECLARE @Expired TABLE (LocationId INT, RoomId INT, WorkDate DATE);
 
-    UPDATE dbo.Bookings
-    SET Status = 'Expired', UpdatedDate = SYSUTCDATETIME()
-    OUTPUT inserted.LocationId, inserted.RoomId, CAST(inserted.StartTime AS DATE) INTO @Expired
-    WHERE Status = 'Held' AND ExpiresAt <= SYSUTCDATETIME() AND IsDelete = 0;
+    UPDATE bt
+    SET RoomId = NULL, TherapistId = NULL, StartTime = NULL, EndTime = NULL, ExpiresAt = NULL,
+        UpdatedDate = SYSUTCDATETIME()
+    OUTPUT b.LocationId, deleted.RoomId, CAST(deleted.StartTime AS DATE) INTO @Expired
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE b.Status = 'Draft' AND bt.IsDelete = 0
+      AND bt.ExpiresAt IS NOT NULL AND bt.ExpiresAt <= SYSUTCDATETIME();
 
     SELECT DISTINCT LocationId, RoomId, WorkDate FROM @Expired;
+END
+GO
+
+-- Powers refresh-restore: the booking id lives in the URL, so a reload just re-fetches the
+-- current state of the draft from here instead of trusting anything client-persisted.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetById
+    @BookingId  INT,
+    @CustomerId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
+    FROM dbo.Bookings b
+    JOIN dbo.Locations l ON l.Id = b.LocationId
+    WHERE b.Id = @BookingId AND b.CustomerId = @CustomerId AND b.IsDelete = 0;
+
+    SELECT bt.Id, bt.TreatmentId, t.Name AS TreatmentName, bt.RoomId, bt.TherapistId,
+           th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
+    ORDER BY bt.SequenceOrder;
 END
 GO
 
@@ -269,19 +433,19 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.RoomId, b.TherapistId, th.Name AS TherapistName,
-           b.StartTime, b.EndTime, b.Status
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
     FROM dbo.Bookings b
     JOIN dbo.Locations l ON l.Id = b.LocationId
-    JOIN dbo.Therapists th ON th.Id = b.TherapistId
-    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Held','Confirmed') AND b.IsDelete = 0
-    ORDER BY b.StartTime DESC;
+    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Draft','Confirmed') AND b.IsDelete = 0
+    ORDER BY b.Id DESC;
 
-    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.SequenceOrder, bt.SlotCount, bt.Price
+    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
+           th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.SequenceOrder, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Held','Confirmed') AND b.IsDelete = 0 AND bt.IsDelete = 0;
+    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    WHERE b.CustomerId = @CustomerId AND b.Status IN ('Draft','Confirmed') AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
 GO
 
@@ -351,6 +515,10 @@ BEGIN
 END
 GO
 
+-- Backs both /api/auth/refresh (mint a new access token) and /api/auth/logout (revoke on sign-out) --
+-- joins straight through to Users so AuthService can re-mint an access token from one round trip
+-- without a second lookup. Caller (AuthService.RefreshAsync) is responsible for checking
+-- ExpiresAt/RevokedDate before trusting the row.
 CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetRefreshToken
     @TokenHash VARBINARY(32)
 AS
@@ -770,6 +938,9 @@ GO
 -- Bookings oversight
 -------------------------------------------------------------------------------------------------
 
+-- "For a location on a date" now means "has at least one treatment line scheduled that day" --
+-- schedule lives per-treatment (BookingTreatments), not on the booking itself, since treatments
+-- can be scheduled at independent times. Both queries filter by the line's own StartTime.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetForLocation
     @LocationId INT,
     @WorkDate   DATE
@@ -777,22 +948,29 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.RoomId, r.Name AS RoomName,
-           b.TherapistId, th.Name AS TherapistName, b.CustomerId, c.Name AS CustomerName, c.Email AS CustomerEmail,
-           b.StartTime, b.EndTime, b.Status
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName,
+           c.Email AS CustomerEmail, b.Status
     FROM dbo.Bookings b
     JOIN dbo.Locations l ON l.Id = b.LocationId
-    JOIN dbo.Rooms r ON r.Id = b.RoomId
-    JOIN dbo.Therapists th ON th.Id = b.TherapistId
     JOIN dbo.Users c ON c.Id = b.CustomerId
-    WHERE b.LocationId = @LocationId AND CAST(b.StartTime AS DATE) = @WorkDate AND b.IsDelete = 0
-    ORDER BY b.StartTime;
+    WHERE b.LocationId = @LocationId AND b.IsDelete = 0
+      AND EXISTS (
+          SELECT 1 FROM dbo.BookingTreatments bt
+          WHERE bt.BookingId = b.Id AND bt.IsDelete = 0 AND CAST(bt.StartTime AS DATE) = @WorkDate
+      )
+    ORDER BY b.Id;
 
-    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.SequenceOrder, bt.SlotCount, bt.Price
+    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Name AS RoomName,
+           bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
+           bt.SequenceOrder, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    WHERE b.LocationId = @LocationId AND CAST(b.StartTime AS DATE) = @WorkDate AND b.IsDelete = 0 AND bt.IsDelete = 0;
+    LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
+    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND bt.IsDelete = 0
+      AND CAST(bt.StartTime AS DATE) = @WorkDate
+    ORDER BY bt.StartTime;
 END
 GO
 
@@ -806,12 +984,15 @@ BEGIN
 
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
-    WHERE Id = @BookingId AND IsDelete = 0 AND Status IN ('Held', 'Confirmed');
+    WHERE Id = @BookingId AND IsDelete = 0 AND Status IN ('Draft', 'Confirmed');
 
     IF @@ROWCOUNT = 0
         THROW 50004, 'Booking not found.', 1;
 
-    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM dbo.Bookings WHERE Id = @BookingId;
+    SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
+    FROM dbo.BookingTreatments bt
+    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0 AND bt.StartTime IS NOT NULL;
 END
 GO
 
@@ -1023,4 +1204,3 @@ BEGIN
         INSERT (UserId, PhotoPath, UpdatedDate) VALUES (@UserId, @PhotoPath, SYSUTCDATETIME());
 END
 GO
-

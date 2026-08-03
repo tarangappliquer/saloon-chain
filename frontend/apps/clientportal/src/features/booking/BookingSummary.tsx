@@ -1,38 +1,43 @@
-import type { HeldSlot, Treatment } from '../../api/types';
+import type { BookingTreatmentLine } from '../../api/types';
 import { useCountdown } from './useCountdown';
 
 interface Props {
-  holds: HeldSlot[];
-  treatments: Treatment[];
+  // Caller only renders this once every line is scheduled (allCovered), so startTime/expiresAt
+  // are populated in practice even though the type keeps them nullable.
+  lines: BookingTreatmentLine[];
   onConfirm: () => void;
-  onCancel: () => void;
+  onEdit: () => void;
   loading: boolean;
 }
 
-export function BookingSummary({ holds, treatments, onConfirm, onCancel, loading }: Props) {
-  // All holds are created in the same short window; the earliest expiry drives one countdown
+export function BookingSummary({ lines, onConfirm, onEdit, loading }: Props) {
+  // All lines are scheduled by the time this renders; the earliest expiry drives one countdown
   // for the whole group. If any expires, confirm is blocked regardless.
-  const earliest = holds.reduce<string>(
-    (min, h) => (h.expiresAt < min ? h.expiresAt : min),
-    holds[0]?.expiresAt ?? null,
+  const earliest = lines.reduce<string | null>(
+    (min, l) => (l.expiresAt && (!min || l.expiresAt < min) ? l.expiresAt : min),
+    null,
   );
   const secondsLeft = useCountdown(earliest);
   const expired = secondsLeft <= 0;
-  const treatmentName = (id: number) => treatments.find((t) => t.id === id)?.name ?? 'Treatment';
 
   return (
     <div className="space-y-4 rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-950/30">
-      {holds.map((h) => (
-        <div key={h.bookingId}>
+      {lines.map((line) => (
+        <div key={line.id}>
           <div className="font-medium text-gray-900 dark:text-gray-100">
-            {treatmentName(h.treatmentId)} —{' '}
-            {new Date(h.slot.startTime).toLocaleString(undefined, {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
+            {line.treatmentName}
+            {line.startTime && (
+              <>
+                {' — '}
+                {new Date(line.startTime).toLocaleString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </>
+            )}
           </div>
         </div>
       ))}
@@ -53,10 +58,10 @@ export function BookingSummary({ holds, treatments, onConfirm, onCancel, loading
         <button
           type="button"
           disabled={loading}
-          onClick={onCancel}
+          onClick={onEdit}
           className="rounded-lg border border-gray-300 px-4 py-2.5 text-gray-700 disabled:opacity-40 dark:border-gray-600 dark:text-gray-200"
         >
-          Cancel
+          Edit
         </button>
       </div>
     </div>

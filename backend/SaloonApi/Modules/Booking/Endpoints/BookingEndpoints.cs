@@ -35,22 +35,53 @@ internal static class BookingEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("List open time slots for a treatment combo at a location/date.");
 
-        group.MapPost("/hold", async (HoldRequest req, ICurrentUser currentUser, BookingService svc) =>
+        group.MapPost("/draft", async (DraftRequest req, ICurrentUser currentUser, BookingService svc) =>
         {
-            var (bookingId, expiresAt) = await svc.HoldAsync(
-                req.LocationId, req.RoomId, req.TherapistId, currentUser.RequireUserId(),
-                req.StartTime, req.EndTime, req.TreatmentIds);
-            return Results.Ok(new HoldResponse(bookingId, expiresAt));
-        }).WithValidation<HoldRequest>()
-          .Produces<HoldResponse>()
-          .WithDescription("Temporarily hold a slot while the customer completes checkout.");
+            var bookingId = await svc.CreateDraftAsync(req.LocationId, currentUser.RequireUserId(), req.TreatmentIds);
+            return Results.Ok(new DraftResponse(bookingId));
+        }).WithValidation<DraftRequest>()
+          .Produces<DraftResponse>()
+          .WithDescription("Start a draft booking for one or more treatments, before any time is picked.");
+
+        group.MapGet("/{id:int}", async (int id, ICurrentUser currentUser, BookingService svc) =>
+        {
+            var details = await svc.GetByIdAsync(id, currentUser.RequireUserId());
+            return details is null ? Results.NotFound() : Results.Ok(details);
+        }).Produces<BookingDetailsDto>()
+          .ProducesProblem(StatusCodes.Status404NotFound)
+          .WithDescription("Fetch a draft/booking's current state -- powers refresh-restore from the booking id in the URL.");
+
+        group.MapPost("/{id:int}/treatments", async (int id, AddTreatmentRequest req, ICurrentUser currentUser, BookingService svc) =>
+        {
+            await svc.AddTreatmentAsync(id, currentUser.RequireUserId(), req.TreatmentId);
+            return Results.NoContent();
+        }).WithValidation<AddTreatmentRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Add another treatment to a draft booking.");
+
+        group.MapDelete("/{id:int}/treatments/{treatmentId:int}", async (int id, int treatmentId, ICurrentUser currentUser, BookingService svc) =>
+        {
+            await svc.RemoveTreatmentAsync(id, currentUser.RequireUserId(), treatmentId);
+            return Results.NoContent();
+        }).Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Remove a treatment from a draft booking, freeing its slot if it had one.");
+
+        group.MapPut("/{id:int}/treatments/{treatmentId:int}/schedule", async (
+            int id, int treatmentId, ScheduleRequest req, ICurrentUser currentUser, BookingService svc) =>
+        {
+            var expiresAt = await svc.ScheduleTreatmentAsync(
+                id, currentUser.RequireUserId(), treatmentId, req.RoomId, req.TherapistId, req.StartTime, req.EndTime);
+            return Results.Ok(new ScheduleResponse(expiresAt));
+        }).WithValidation<ScheduleRequest>()
+          .Produces<ScheduleResponse>()
+          .WithDescription("Claim a specific room/therapist/time slot for one treatment on a draft booking.");
 
         group.MapPost("/{id:int}/confirm", async (int id, ICurrentUser currentUser, BookingService svc) =>
         {
             await svc.ConfirmAsync(id, currentUser.RequireUserId());
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Confirm a held booking before it expires.");
+          .WithDescription("Confirm every scheduled treatment on a draft booking before its holds expire.");
 
         group.MapDelete("/{id:int}", async (int id, ICurrentUser currentUser, BookingService svc) =>
         {
@@ -87,19 +118,35 @@ internal static class BookingEndpoints
     }
 }
 
-internal sealed record HoldRequest(
-    int LocationId, int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, List<int> TreatmentIds);
+internal sealed record DraftRequest(int LocationId, List<int> TreatmentIds);
+internal sealed record DraftResponse(int BookingId);
+internal sealed record AddTreatmentRequest(int TreatmentId);
+internal sealed record ScheduleRequest(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
+internal sealed record ScheduleResponse(DateTime ExpiresAt);
 
-internal sealed record HoldResponse(int BookingId, DateTime ExpiresAt);
-
-internal sealed class HoldRequestValidator : AbstractValidator<HoldRequest>
+internal sealed class DraftRequestValidator : AbstractValidator<DraftRequest>
 {
-    public HoldRequestValidator()
+    public DraftRequestValidator()
     {
         RuleFor(x => x.LocationId).GreaterThan(0);
+        RuleFor(x => x.TreatmentIds).NotEmpty();
+    }
+}
+
+internal sealed class AddTreatmentRequestValidator : AbstractValidator<AddTreatmentRequest>
+{
+    public AddTreatmentRequestValidator()
+    {
+        RuleFor(x => x.TreatmentId).GreaterThan(0);
+    }
+}
+
+internal sealed class ScheduleRequestValidator : AbstractValidator<ScheduleRequest>
+{
+    public ScheduleRequestValidator()
+    {
         RuleFor(x => x.RoomId).GreaterThan(0);
         RuleFor(x => x.TherapistId).GreaterThan(0);
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
-        RuleFor(x => x.TreatmentIds).NotEmpty();
     }
 }

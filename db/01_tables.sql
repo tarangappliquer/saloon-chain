@@ -218,16 +218,16 @@ CREATE INDEX IX_RoomCategoryAssignments_Room_Date ON dbo.RoomCategoryAssignments
 CREATE UNIQUE INDEX UQ_RoomCategoryAssignments_Room_Shift_Date
     ON dbo.RoomCategoryAssignments(RoomId, ShiftType, WorkDate) WHERE IsDelete = 0;
 
+-- A booking is a draft/cart container for one or more treatments booked in the same checkout.
+-- It carries no schedule itself -- each treatment is scheduled (room/therapist/time) independently
+-- on its own BookingTreatments row, so treatments can be picked at different times. 'Draft' covers
+-- the whole assembly phase (any mix of scheduled/unscheduled lines; no whole-booking expiry --
+-- only individual lines expire, see BookingTreatments.ExpiresAt below).
 CREATE TABLE dbo.Bookings (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
-    RoomId       INT NOT NULL REFERENCES dbo.Rooms(Id),
-    TherapistId  INT NOT NULL REFERENCES dbo.Therapists(Id),
     CustomerId   INT NOT NULL REFERENCES dbo.Users(Id), -- who the booking is FOR (a Users row with Role='Customer')
-    StartTime    DATETIME2 NOT NULL,
-    EndTime      DATETIME2 NOT NULL,
-    Status       VARCHAR(10) NOT NULL CHECK (Status IN ('Held','Confirmed','Cancelled','Expired')),
-    ExpiresAt    DATETIME2 NULL,
+    Status       VARCHAR(10) NOT NULL CHECK (Status IN ('Draft','Confirmed','Cancelled')),
     RowVersion   ROWVERSION,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
@@ -237,14 +237,20 @@ CREATE TABLE dbo.Bookings (
     UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
     UpdatedDate  DATETIME2 NULL
 );
-CREATE INDEX IX_Bookings_RoomId_StartTime ON dbo.Bookings(RoomId, StartTime) INCLUDE (EndTime, Status, ExpiresAt);
-CREATE INDEX IX_Bookings_TherapistId_StartTime ON dbo.Bookings(TherapistId, StartTime) INCLUDE (EndTime, Status, ExpiresAt);
 CREATE INDEX IX_Bookings_CustomerId ON dbo.Bookings(CustomerId);
 
+-- One row per treatment in a booking. RoomId/TherapistId/StartTime/EndTime/ExpiresAt stay NULL
+-- until that treatment's slot is picked -- each treatment gets its own independent time AND its
+-- own 5-minute hold clock, so picking/expiring/re-picking one treatment never touches another's.
 CREATE TABLE dbo.BookingTreatments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
     BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id),
     TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
+    RoomId         INT NULL REFERENCES dbo.Rooms(Id),
+    TherapistId    INT NULL REFERENCES dbo.Therapists(Id),
+    StartTime      DATETIME2 NULL,
+    EndTime        DATETIME2 NULL,
+    ExpiresAt      DATETIME2 NULL,
     SequenceOrder  SMALLINT NOT NULL,
     SlotCount      SMALLINT NOT NULL,
     Price          DECIMAL(10,2) NOT NULL,
@@ -256,6 +262,8 @@ CREATE TABLE dbo.BookingTreatments (
     UpdatedDate    DATETIME2 NULL
 );
 CREATE INDEX IX_BookingTreatments_BookingId ON dbo.BookingTreatments(BookingId);
+CREATE INDEX IX_BookingTreatments_RoomId_StartTime ON dbo.BookingTreatments(RoomId, StartTime) INCLUDE (EndTime, ExpiresAt);
+CREATE INDEX IX_BookingTreatments_TherapistId_StartTime ON dbo.BookingTreatments(TherapistId, StartTime) INCLUDE (EndTime, ExpiresAt);
 
 -- 1:1 extension of dbo.Users, split by Staff/Customer per the two roles' very different concerns
 -- (a Customer's profile is self-managed and minimal; a Staff profile could grow admin-managed

@@ -29,20 +29,23 @@ export function MyBookingsPage() {
               {b.status}
             </span>
           </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {new Date(b.startTime).toLocaleString(undefined, {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}{' '}
-            · with {b.therapistName}
-          </div>
-          <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+          <ul className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-300">
             {b.treatments.map((t) => (
               <li key={t.treatmentName}>
-                {t.treatmentName} — ${t.price.toFixed(2)}
+                <span className="font-medium">{t.treatmentName}</span> — ${t.price.toFixed(2)}
+                {t.startTime && (
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {' · '}
+                    {new Date(t.startTime).toLocaleString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}{' '}
+                    with {t.therapistName}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

@@ -2,6 +2,10 @@ import type { ReactNode } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { ADMIN_PORTAL_URL } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
+import { ConfirmedStep } from './features/booking/ConfirmedStep';
+import { ScheduleStep } from './features/booking/ScheduleStep';
+import { SummaryStep } from './features/booking/SummaryStep';
+import { TreatmentsStep } from './features/booking/TreatmentsStep';
 import { BookPage } from './pages/BookPage';
 import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
@@ -73,7 +77,12 @@ function AppRoutes() {
               <BookPage />
             </RequireAuth>
           }
-        />
+        >
+          <Route index element={<TreatmentsStep />} />
+          <Route path="confirmed" element={<ConfirmedStep />} />
+          <Route path=":bookingId/schedule" element={<ScheduleStep />} />
+          <Route path=":bookingId/summary" element={<SummaryStep />} />
+        </Route>
         <Route
           path="/my-bookings"
           element={

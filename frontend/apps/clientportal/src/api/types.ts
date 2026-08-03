@@ -31,19 +31,33 @@ export interface AvailableSlot {
   isHeld: boolean;
 }
 
-export interface HoldResponse {
-  bookingId: number;
-  expiresAt: string;
+// One row per treatment in a booking. Schedule fields are null until that treatment's slot is
+// picked — each treatment is scheduled (and held) independently, so it carries its own room/
+// therapist/time/expiry rather than sharing one at the booking level.
+export interface BookingTreatmentLine {
+  id: number;
+  treatmentId: number;
+  treatmentName: string;
+  roomId: number | null;
+  therapistId: number | null;
+  therapistName: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  expiresAt: string | null;
+  slotCount: number;
+  price: number;
 }
 
-// One held booking per treatment — the booking schema models a single contiguous time block
-// (one RoomId/TherapistId/StartTime/EndTime), so treatments booked at independent times are
-// separate bookings, each surfaced here so the summary can label them.
-export interface HeldSlot {
-  bookingId: number;
+export interface BookingDetails {
+  id: number;
+  locationId: number;
+  locationName: string;
+  status: 'Draft' | 'Confirmed' | 'Cancelled';
+  treatments: BookingTreatmentLine[];
+}
+
+export interface ScheduleResponse {
   expiresAt: string;
-  slot: AvailableSlot;
-  treatmentId: number;
 }
 
 export interface AuthResponse {
@@ -60,6 +74,9 @@ export interface AuthResponse {
 
 export interface MyBookingTreatment {
   treatmentName: string;
+  therapistName: string | null;
+  startTime: string | null;
+  endTime: string | null;
   slotCount: number;
   price: number;
 }
@@ -67,9 +84,6 @@ export interface MyBookingTreatment {
 export interface MyBooking {
   id: number;
   locationName: string;
-  therapistName: string;
-  startTime: string;
-  endTime: string;
   status: string;
   treatments: MyBookingTreatment[];
 }
