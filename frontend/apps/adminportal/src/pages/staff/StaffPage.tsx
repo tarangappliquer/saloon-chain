@@ -7,8 +7,10 @@ import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/
 import { normalizeUserRole } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
-const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
-const CAN_SET_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
+// IsEmulator only ever applies to RootSuperAdmin/SuperAdmin/Admin -- Manager/Receptionist/Therapist/
+// Other/Customer are always false (see AdminStaffEndpoints' matching clamp), so the checkbox/toggle
+// is hidden both for a target role outside this set and for a caller outside this set.
+const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
 function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
   if (callerRole === 'RootSuperAdmin') return ['SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
@@ -141,6 +143,7 @@ export function StaffPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
+      const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(form.role) ? form.isEmulator : false;
       if (editingUser) {
         await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
           name: form.name,
@@ -149,7 +152,7 @@ export function StaffPage() {
           chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
           locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
           therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
-          isEmulator: form.isEmulator,
+          isEmulator,
           isActive: editingUser.isActive,
         });
       } else {
@@ -162,7 +165,7 @@ export function StaffPage() {
           chainId: cId,
           locationId: lId,
           therapistId: form.therapistId ? Number(form.therapistId) : null,
-          isEmulator: form.isEmulator,
+          isEmulator,
         });
       }
       handleCancelEdit();
@@ -187,6 +190,9 @@ export function StaffPage() {
     setError(null);
     setSavingId(u.id);
     try {
+      const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(u.role)
+        ? (changes.isEmulator ?? u.isEmulator)
+        : false;
       await adminStaffApi.apiAdminStaffIdPut(u.id, {
         name: u.name,
         phone: u.phone,
@@ -194,9 +200,8 @@ export function StaffPage() {
         chainId: u.chainId,
         locationId: u.locationId,
         therapistId: u.therapistId,
-        isEmulator: u.isEmulator,
-        isActive: u.isActive,
-        ...changes,
+        isEmulator,
+        isActive: changes.isActive ?? u.isActive,
       });
       await loadStaff();
     } catch (err) {
@@ -324,7 +329,10 @@ export function StaffPage() {
                   </label>
                   <SearchableSelect
                     value={form.role}
-                    onChange={(v) => setForm({ ...form, role: v as UserRole })}
+                    onChange={(v) => {
+                      const role = v as UserRole;
+                      setForm({ ...form, role, isEmulator: form.isEmulator && EMULATOR_ELIGIBLE_ROLES.includes(role) });
+                    }}
                     options={effectiveRoleOptions.map((r) => ({ value: r, label: r }))}
                     className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                   />
@@ -368,7 +376,7 @@ export function StaffPage() {
                 </div>
               )}
 
-              {Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) && EMULATOR_ELIGIBLE_ROLES.includes(form.role) && (
+              {Boolean(currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role)) && EMULATOR_ELIGIBLE_ROLES.includes(form.role) && (
                 <div className="flex items-center gap-2.5">
                   <input
                     type="checkbox"
@@ -448,7 +456,7 @@ export function StaffPage() {
                     <td className="px-6 py-4">
                       {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
                         <span className="text-muted-foreground">n/a</span>
-                      ) : Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) ? (
+                      ) : Boolean(currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role)) ? (
                         <Button
                           variant="outline"
                           size="sm"

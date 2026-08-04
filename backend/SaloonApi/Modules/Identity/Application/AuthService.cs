@@ -172,14 +172,16 @@ internal sealed class AuthService(
         return new EmailMessage(To: [new EmailAddress(email, name)], Subject: subject, HtmlBody: html);
     }
 
-    // Any staff role with IsEmulator=1 may open a customer session on that customer's behalf --
-    // "all staff can be a customer" is a deliberate product decision, not scoped to management roles.
-    // The caller is already behind the AdminAccess policy for the initiating endpoint, but that
-    // policy alone doesn't know about IsEmulator, so both checks happen here against a fresh DB
-    // read -- never trust the flag off the caller's JWT, since it can be revoked after the token
-    // was issued.
+    // RootSuperAdmin/SuperAdmin/Admin with IsEmulator=1 may open a customer session on that
+    // customer's behalf -- Manager/Receptionist/Therapist/Other can never hold IsEmulator=true at
+    // all (see AdminStaffEndpoints' matching EmulatorEligibleRoles, which clamps it false for them
+    // on every create/edit), so this check is partly redundant with that clamp, but kept as the
+    // actual authorization gate here rather than trusting the clamp alone. The caller is already
+    // behind the AdminAccess policy for the initiating endpoint, but that policy alone doesn't know
+    // about IsEmulator, so both checks happen here against a fresh DB read -- never trust the flag
+    // off the caller's JWT, since it can be revoked after the token was issued.
     private static readonly UserRole[] EmulatorEligibleRoles =
-        [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager, UserRole.Receptionist, UserRole.Therapist, UserRole.Other];
+        [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin];
 
     public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int emulatorUserId, int customerUserId)
     {

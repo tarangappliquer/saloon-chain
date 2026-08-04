@@ -22,10 +22,8 @@ function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: U
 }
 
 function emptyForm(defaultRole: UserRole = 'Manager') {
-  return { name: '', email: '', phone: '', role: defaultRole, isEmulator: false };
+  return { name: '', email: '', phone: '', role: defaultRole };
 }
-
-const CAN_SET_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
 export function LocationUsersPage() {
   const navigate = useNavigate();
@@ -96,7 +94,6 @@ export function LocationUsersPage() {
       email: u.email,
       phone: u.phone ?? '',
       role: u.role,
-      isEmulator: u.isEmulator,
     });
     setError(null);
   }
@@ -122,7 +119,7 @@ export function LocationUsersPage() {
           chainId: editingUser.chainId,
           locationId: editingUser.locationId,
           therapistId: editingUser.therapistId,
-          isEmulator: form.isEmulator,
+          isEmulator: false,
           isActive: editingUser.isActive,
         });
       } else {
@@ -133,7 +130,7 @@ export function LocationUsersPage() {
           chainId,
           locationId,
           therapistId: null,
-          isEmulator: form.isEmulator,
+          isEmulator: false,
         });
       }
       handleCancelEdit();
@@ -156,7 +153,7 @@ export function LocationUsersPage() {
         chainId: u.chainId,
         locationId: u.locationId,
         therapistId: u.therapistId,
-        isEmulator: u.isEmulator,
+        isEmulator: false,
         isActive: !u.isActive,
       } satisfies UpdateStaffRequest);
       await loadUsers();
@@ -267,20 +264,6 @@ export function LocationUsersPage() {
               </div>
             </div>
 
-            {Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) && (
-              <div className="flex items-center gap-2.5">
-                <input
-                  type="checkbox"
-                  id="isEmulator"
-                  checked={form.isEmulator}
-                  onChange={(e) => setForm({ ...form, isEmulator: e.target.checked })}
-                  className="h-4 w-4 rounded-sm border-input text-primary focus:ring-primary"
-                />
-                <label htmlFor="isEmulator" className="text-xs font-semibold text-foreground cursor-pointer">
-                  Can Emulate (act as a customer on behalf of)
-                </label>
-              </div>
-            )}
 
             <div className="flex items-center gap-3 pt-2">
               <Button type="submit" disabled={submitting} className="font-semibold">

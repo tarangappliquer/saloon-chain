@@ -100,9 +100,10 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
-// Exported for the handful of endpoints (e.g. GET /locations/mine) not yet in the generated SDK --
-// reuses the same auth/refresh-token interceptors instead of a bare fetch/axios call.
-export const axiosInstance = axios.create({ baseURL: API_BASE });
+// Not exported -- every request must go through the generated api-client classes below (adminBookingsApi,
+// adminCatalogApi, etc), never a raw axiosInstance.get/post/put/delete call from page code. This instance
+// exists only to wire the shared auth/refresh-token interceptors into those classes' constructors.
+const axiosInstance = axios.create({ baseURL: API_BASE });
 
 axiosInstance.interceptors.request.use((config) => {
   if (authToken) config.headers.set('Authorization', `Bearer ${authToken}`);

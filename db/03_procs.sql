@@ -2,7 +2,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetChains
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name FROM dbo.SaloonChains WHERE IsDelete = 0 AND IsActive = 1 ORDER BY Name;
+    SELECT Id, Name
+    FROM dbo.SaloonChains
+    WHERE IsDelete = 0 AND IsActive = 1
+    ORDER BY Name;
 END
 GO
 
@@ -28,7 +31,7 @@ BEGIN
     SELECT HolidayDate, Reason
     FROM dbo.LocationHolidays
     WHERE LocationId = @LocationId AND HolidayDate BETWEEN @FromDate AND @ToDate
-      AND IsDelete = 0 AND IsActive = 1
+        AND IsDelete = 0 AND IsActive = 1
     ORDER BY HolidayDate;
 END
 GO
@@ -41,10 +44,10 @@ BEGIN
     SET NOCOUNT ON;
     SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots
     FROM dbo.Treatments t
-    JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
+        JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
-      AND tc.IsDelete = 0 AND tc.IsActive = 1
-      AND (@CategoryId IS NULL OR t.CategoryId = @CategoryId)
+        AND tc.IsDelete = 0 AND tc.IsActive = 1
+        AND (@CategoryId IS NULL OR t.CategoryId = @CategoryId)
     ORDER BY tc.Name, t.Name;
 END
 GO
@@ -59,9 +62,10 @@ BEGIN
 
     -- 1) location hours (+ explicit holiday flag, independent of whether shifts happen to exist that day)
     SELECT l.OpenTime, l.CloseTime, l.WorkingDaysMask,
-           CASE WHEN EXISTS (
-               SELECT 1 FROM dbo.LocationHolidays h
-               WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
+        CASE WHEN EXISTS (
+               SELECT 1
+        FROM dbo.LocationHolidays h
+        WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
            ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsHoliday
     FROM dbo.Locations l
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
@@ -69,19 +73,20 @@ BEGIN
     -- 2) requested treatments (duration/category/price) as offered at this location
     SELECT t.Id, t.CategoryId, t.DurationSlots, t.Price
     FROM dbo.Treatments t
-    JOIN @TreatmentIds ti ON ti.Id = t.Id
+        JOIN @TreatmentIds ti ON ti.Id = t.Id
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     -- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
     SELECT DISTINCT rca.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
     FROM dbo.RoomCategoryAssignments rca
-    JOIN dbo.Rooms r ON r.Id = rca.RoomId AND r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
-    JOIN dbo.ShiftAssignments sa ON sa.LocationId = @LocationId
-        AND sa.WorkDate = rca.WorkDate AND sa.ShiftType = rca.ShiftType
-        AND sa.IsDelete = 0 AND sa.IsActive = 1
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId AND r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
+        JOIN dbo.ShiftAssignments sa ON sa.LocationId = @LocationId
+            AND sa.WorkDate = rca.WorkDate AND sa.ShiftType = rca.ShiftType
+            AND sa.IsDelete = 0 AND sa.IsActive = 1
     WHERE rca.WorkDate = @WorkDate AND rca.IsDelete = 0 AND rca.IsActive = 1
-      AND rca.TreatmentCategoryId IN (
-          SELECT DISTINCT t.CategoryId FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
+        AND rca.TreatmentCategoryId IN (
+          SELECT DISTINCT t.CategoryId
+        FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
       );
 
     -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. Therapists
@@ -95,10 +100,10 @@ BEGIN
     -- as disabled rather than hiding the slot outright.
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
-      AND bt.IsDelete = 0 AND b.IsDelete = 0
-      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
+        AND bt.IsDelete = 0 AND b.IsDelete = 0
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
 END
 GO
 
@@ -119,15 +124,18 @@ BEGIN
 
     BEGIN TRANSACTION;
 
-    INSERT INTO dbo.Bookings (LocationId, CustomerId, Status, CreatedBy)
-    VALUES (@LocationId, @CustomerId, 'Draft', @CreatedBy);
+    INSERT INTO dbo.Bookings
+        (LocationId, CustomerId, Status, CreatedBy)
+    VALUES
+        (@LocationId, @CustomerId, 'Draft', @CreatedBy);
 
     SET @BookingId = SCOPE_IDENTITY();
 
-    INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
+    INSERT INTO dbo.BookingTreatments
+        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
     SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, t.Price, @CreatedBy
     FROM dbo.Treatments t
-    JOIN @Treatments ti ON ti.Id = t.Id
+        JOIN @Treatments ti ON ti.Id = t.Id
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     COMMIT TRANSACTION;
@@ -147,15 +155,19 @@ BEGIN
 
     DECLARE @LocationId INT, @NextSeq SMALLINT;
 
-    SELECT @LocationId = LocationId FROM dbo.Bookings
+    SELECT @LocationId = LocationId
+    FROM dbo.Bookings
     WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft';
 
     IF @LocationId IS NULL
         THROW 50005, 'Booking not found or not editable.', 1;
 
-    SELECT @NextSeq = COALESCE(MAX(SequenceOrder), 0) + 1 FROM dbo.BookingTreatments WHERE BookingId = @BookingId;
+    SELECT @NextSeq = COALESCE(MAX(SequenceOrder), 0) + 1
+    FROM dbo.BookingTreatments
+    WHERE BookingId = @BookingId;
 
-    INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
+    INSERT INTO dbo.BookingTreatments
+        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
     SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, t.Price, @CreatedBy
     FROM dbo.Treatments t
     WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
@@ -180,22 +192,26 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @Removed TABLE (LocationId INT, RoomId INT, StartTime DATETIME2);
+    DECLARE @Removed TABLE (LocationId INT,
+        RoomId INT,
+        StartTime DATETIME2);
 
     UPDATE bt
     SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     OUTPUT b.LocationId, deleted.RoomId, deleted.StartTime INTO @Removed
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
-      AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
+        AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
 
     IF @@ROWCOUNT = 0
         THROW 50007, 'Treatment not found on this booking.', 1;
 
     UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy WHERE Id = @BookingId;
 
-    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate FROM @Removed WHERE RoomId IS NOT NULL;
+    SELECT LocationId, RoomId, CAST(StartTime AS DATE) AS WorkDate
+    FROM @Removed
+    WHERE RoomId IS NOT NULL;
 END
 GO
 
@@ -254,11 +270,12 @@ BEGIN
         THROW 50001, 'Could not acquire booking lock, try again.', 1;
     END
 
-    SELECT TOP 1 @LocationId = b.LocationId
+    SELECT TOP 1
+        @LocationId = b.LocationId
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
-      AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
+        AND b.CustomerId = @CustomerId AND b.IsDelete = 0 AND b.Status = 'Draft';
 
     IF @LocationId IS NULL
     BEGIN
@@ -268,13 +285,13 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-        FROM dbo.BookingTreatments bt
+    FROM dbo.BookingTreatments bt
         JOIN dbo.Bookings b ON b.Id = bt.BookingId
-        WHERE (bt.RoomId = @RoomId OR bt.TherapistId = @TherapistId)
-          AND bt.IsDelete = 0 AND b.IsDelete = 0
-          AND NOT (bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId)
-          AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
-          AND bt.StartTime < @EndTime AND bt.EndTime > @StartTime
+    WHERE (bt.RoomId = @RoomId OR bt.TherapistId = @TherapistId)
+        AND bt.IsDelete = 0 AND b.IsDelete = 0
+        AND NOT (bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId)
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+        AND bt.StartTime < @EndTime AND bt.EndTime > @StartTime
     )
     BEGIN
         ROLLBACK TRANSACTION;
@@ -303,18 +320,22 @@ BEGIN
     SET NOCOUNT ON;
 
     IF NOT EXISTS (
-        SELECT 1 FROM dbo.Bookings
-        WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft'
+        SELECT 1
+    FROM dbo.Bookings
+    WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft'
     )
         THROW 50003, 'Booking not found or already finalized.', 1;
 
-    IF NOT EXISTS (SELECT 1 FROM dbo.BookingTreatments WHERE BookingId = @BookingId AND IsDelete = 0)
+    IF NOT EXISTS (SELECT 1
+    FROM dbo.BookingTreatments
+    WHERE BookingId = @BookingId AND IsDelete = 0)
         THROW 50003, 'Booking has no treatments.', 1;
 
     IF EXISTS (
-        SELECT 1 FROM dbo.BookingTreatments
-        WHERE BookingId = @BookingId AND IsDelete = 0
-          AND (StartTime IS NULL OR ExpiresAt IS NULL OR ExpiresAt <= SYSUTCDATETIME())
+        SELECT 1
+    FROM dbo.BookingTreatments
+    WHERE BookingId = @BookingId AND IsDelete = 0
+        AND (StartTime IS NULL OR ExpiresAt IS NULL OR ExpiresAt <= SYSUTCDATETIME())
     )
         THROW 50003, 'Every treatment needs a time before confirming (a hold may have expired).', 1;
 
@@ -328,7 +349,7 @@ BEGIN
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0;
 END
 GO
@@ -345,15 +366,15 @@ BEGIN
 
     SELECT b.Id, c.Name AS CustomerName, c.Email AS CustomerEmail, l.Name AS LocationName
     FROM dbo.Bookings b
-    JOIN dbo.Users c ON c.Id = b.CustomerId
-    JOIN dbo.Locations l ON l.Id = b.LocationId
+        JOIN dbo.Users c ON c.Id = b.CustomerId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
     WHERE b.Id = @BookingId AND b.IsDelete = 0;
 
     SELECT bt.TreatmentId, t.Name AS TreatmentName, th.Name AS TherapistName,
-           bt.StartTime, bt.EndTime, bt.SlotCount, bt.Price
+        bt.StartTime, bt.EndTime, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+        JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -370,14 +391,14 @@ BEGIN
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0
-      AND Status IN ('Draft','Confirmed');
+        AND Status IN ('Draft','Confirmed');
 
     IF @@ROWCOUNT = 0
         THROW 50004, 'Booking not found.', 1;
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0 AND bt.StartTime IS NOT NULL;
 END
 GO
@@ -392,30 +413,34 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @Expired TABLE (LocationId INT, RoomId INT, WorkDate DATE);
+    DECLARE @Expired TABLE (LocationId INT,
+        RoomId INT,
+        WorkDate DATE);
 
     UPDATE bt
     SET RoomId = NULL, TherapistId = NULL, StartTime = NULL, EndTime = NULL, ExpiresAt = NULL,
         UpdatedDate = SYSUTCDATETIME()
     OUTPUT b.LocationId, deleted.RoomId, CAST(deleted.StartTime AS DATE) INTO @Expired
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE b.Status = 'Draft' AND bt.IsDelete = 0
-      AND bt.ExpiresAt IS NOT NULL AND bt.ExpiresAt <= SYSUTCDATETIME();
+        AND bt.ExpiresAt IS NOT NULL AND bt.ExpiresAt <= SYSUTCDATETIME();
 
     -- Delete draft bookings inactive for 15+ minutes from database
     DELETE FROM dbo.BookingTreatments
     WHERE BookingId IN (
-        SELECT Id FROM dbo.Bookings
-        WHERE Status = 'Draft'
-          AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME())
+        SELECT Id
+    FROM dbo.Bookings
+    WHERE Status = 'Draft'
+        AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME())
     );
 
     DELETE FROM dbo.Bookings
     WHERE Status = 'Draft'
-      AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME());
+        AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME());
 
-    SELECT DISTINCT LocationId, RoomId, WorkDate FROM @Expired;
+    SELECT DISTINCT LocationId, RoomId, WorkDate
+    FROM @Expired;
 END
 GO
 
@@ -430,14 +455,14 @@ BEGIN
 
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
     FROM dbo.Bookings b
-    JOIN dbo.Locations l ON l.Id = b.LocationId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
     WHERE b.Id = @BookingId AND b.CustomerId = @CustomerId AND b.IsDelete = 0;
 
     SELECT bt.Id, bt.TreatmentId, t.Name AS TreatmentName, bt.RoomId, bt.TherapistId,
-           th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
+        th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -451,21 +476,21 @@ BEGIN
 
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
     FROM dbo.Bookings b
-    JOIN dbo.Locations l ON l.Id = b.LocationId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
     WHERE b.CustomerId = @CustomerId
-      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
-      AND b.IsDelete = 0
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+        AND b.IsDelete = 0
     ORDER BY b.Id DESC;
 
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
-           th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.SequenceOrder, bt.SlotCount, bt.Price
+        th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.SequenceOrder, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
-      AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
-      AND b.IsDelete = 0 AND bt.IsDelete = 0;
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+        AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
 GO
 
@@ -484,16 +509,26 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
     @LocationId    INT = NULL,
     @TherapistId   INT = NULL,
     @IsEmulator    BIT = 0,
-    @CreatedBy     INT = NULL, -- NULL for self-registration (no logged-in user yet)
+    @CreatedBy     INT = NULL,
+    -- NULL for self-registration (no logged-in user yet)
     @UserId        INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @Email AND IsDelete = 0)
+    IF EXISTS (SELECT 1
+    FROM dbo.Users
+    WHERE Email = @Email AND IsDelete = 0)
         THROW 50010, 'Email already registered.', 1;
 
-    INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy)
-    VALUES (@Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @IsEmulator, @CreatedBy);
+    -- Defense in depth alongside AdminStaffEndpoints' C#-side clamp -- IsEmulator only ever applies
+    -- to RootSuperAdmin/SuperAdmin/Admin, same restriction as sp_Admin_UpdateUser below.
+    INSERT INTO dbo.Users
+        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy)
+    VALUES
+        (
+            @Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId,
+            CASE WHEN @Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE CAST(0 AS BIT) END,
+            @CreatedBy);
 
     SET @UserId = SCOPE_IDENTITY();
 END
@@ -531,8 +566,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateRefreshToken
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.RefreshTokens (UserId, TokenHash, ExpiresAt)
-    VALUES (@UserId, @TokenHash, @ExpiresAt);
+    INSERT INTO dbo.RefreshTokens
+        (UserId, TokenHash, ExpiresAt)
+    VALUES
+        (@UserId, @TokenHash, @ExpiresAt);
 
     SET @Id = SCOPE_IDENTITY();
 END
@@ -548,9 +585,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT rt.Id, rt.UserId, rt.ExpiresAt, rt.RevokedDate,
-           u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator
+        u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator
     FROM dbo.RefreshTokens rt
-    JOIN dbo.Users u ON u.Id = rt.UserId
+        JOIN dbo.Users u ON u.Id = rt.UserId
     WHERE rt.TokenHash = @TokenHash AND u.IsDelete = 0 AND u.IsActive = 1;
 END
 GO
@@ -586,8 +623,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreatePasswordResetToken
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.PasswordResetTokens (UserId, TokenHash, ExpiresAt)
-    VALUES (@UserId, @TokenHash, @ExpiresAt);
+    INSERT INTO dbo.PasswordResetTokens
+        (UserId, TokenHash, ExpiresAt)
+    VALUES
+        (@UserId, @TokenHash, @ExpiresAt);
 
     SET @Id = SCOPE_IDENTITY();
 END
@@ -600,7 +639,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT prt.Id, prt.UserId, prt.ExpiresAt, prt.ResetDate, u.Name, u.Email
     FROM dbo.PasswordResetTokens prt
-    JOIN dbo.Users u ON u.Id = prt.UserId
+        JOIN dbo.Users u ON u.Id = prt.UserId
     WHERE prt.TokenHash = @TokenHash AND u.IsDelete = 0;
 END
 GO
@@ -654,9 +693,9 @@ BEGIN
     SELECT Id, Name, Email, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, IsActive, CreatedDate
     FROM dbo.Users
     WHERE IsDelete = 0
-      AND ((@Role IS NULL AND Role <> 'Customer') OR Role = @Role)
-      AND (@ChainId IS NULL OR ChainId = @ChainId)
-      AND (@LocationId IS NULL OR LocationId = @LocationId)
+        AND ((@Role IS NULL AND Role <> 'Customer') OR Role = @Role)
+        AND (@ChainId IS NULL OR ChainId = @ChainId)
+        AND (@LocationId IS NULL OR LocationId = @LocationId)
     ORDER BY Role, Name;
 END
 GO
@@ -677,14 +716,14 @@ BEGIN
     SET NOCOUNT ON;
     -- AdminAccess keeps Customer rows out of this proc's caller, but that's a "which endpoint" gate,
     -- not a "which row" one -- nothing stops the request body itself from setting @IsEmulator=1 on
-    -- a row this shouldn't apply to. Enforced here instead of trusting the caller: IsEmulator can be
-    -- true for any staff role (mirrors AuthService.EmulatorEligibleRoles -- "all staff can act as a
-    -- customer" is a deliberate product decision, not every-role-by-accident), so login's CanEmulate
-    -- and the emulate exchange's authorization stay consistent no matter what was requested.
+    -- a row this shouldn't apply to. Enforced here instead of trusting the caller: IsEmulator only
+    -- ever applies to RootSuperAdmin/SuperAdmin/Admin (mirrors AuthService.EmulatorEligibleRoles and
+    -- AdminStaffEndpoints' matching clamp), so login's CanEmulate and the emulate exchange's
+    -- authorization stay consistent no matter what was requested.
     UPDATE dbo.Users
     SET Name = @Name, Phone = @Phone, Role = COALESCE(@Role, Role), ChainId = @ChainId, LocationId = @LocationId,
         TherapistId = @TherapistId,
-        IsEmulator = CASE WHEN COALESCE(@Role, Role) IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other') THEN @IsEmulator ELSE 0 END,
+        IsEmulator = CASE WHEN COALESCE(@Role, Role) IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE 0 END,
         IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0 AND Role <> 'Customer';
 
@@ -725,8 +764,8 @@ BEGIN
     SELECT Id, ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, IsActive
     FROM dbo.Locations
     WHERE IsDelete = 0
-      AND (@ChainId IS NULL OR ChainId = @ChainId)
-      AND (@LocationId IS NULL OR Id = @LocationId)
+        AND (@ChainId IS NULL OR ChainId = @ChainId)
+        AND (@LocationId IS NULL OR Id = @LocationId)
     ORDER BY Name;
 END
 GO
@@ -738,7 +777,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots, t.IsActive
     FROM dbo.Treatments t
-    JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
+        JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0
     ORDER BY tc.Name, t.Name;
 END
@@ -751,7 +790,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateChain
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.SaloonChains (Name, CreatedBy) VALUES (@Name, @CreatedBy);
+    INSERT INTO dbo.SaloonChains
+        (Name, CreatedBy)
+    VALUES
+        (@Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -804,8 +846,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateLocation
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.Locations (ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, CreatedBy)
-    VALUES (@ChainId, @Name, @Address, @OpenTime, @CloseTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
+    INSERT INTO dbo.Locations
+        (ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, CreatedBy)
+    VALUES
+        (@ChainId, @Name, @Address, @OpenTime, @CloseTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -869,7 +913,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatmentCategory
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.TreatmentCategories (LocationId, Name, CreatedBy) VALUES (@LocationId, @Name, @CreatedBy);
+    INSERT INTO dbo.TreatmentCategories
+        (LocationId, Name, CreatedBy)
+    VALUES
+        (@LocationId, @Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -902,8 +949,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatment
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, Price, DurationSlots, CreatedBy)
-    VALUES (@LocationId, @CategoryId, @Name, @Price, @DurationSlots, @CreatedBy);
+    INSERT INTO dbo.Treatments
+        (LocationId, CategoryId, Name, Price, DurationSlots, CreatedBy)
+    VALUES
+        (@LocationId, @CategoryId, @Name, @Price, @DurationSlots, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -948,10 +997,10 @@ BEGIN
     SET NOCOUNT ON;
     SELECT tp.Id, tp.Name, tp.IsActive, tp.ChainId, tp.LocationId
     FROM dbo.TherapistProfile tp
-    LEFT JOIN dbo.Locations l ON l.Id = tp.LocationId
+        LEFT JOIN dbo.Locations l ON l.Id = tp.LocationId
     WHERE tp.IsDelete = 0
-      AND (@LocationId IS NULL OR tp.LocationId = @LocationId OR tp.LocationId IS NULL)
-      AND (@ChainId IS NULL OR tp.ChainId = @ChainId OR l.ChainId = @ChainId OR (tp.ChainId IS NULL AND tp.LocationId IS NULL))
+        AND (@LocationId IS NULL OR tp.LocationId = @LocationId OR tp.LocationId IS NULL)
+        AND (@ChainId IS NULL OR tp.ChainId = @ChainId OR l.ChainId = @ChainId OR (tp.ChainId IS NULL AND tp.LocationId IS NULL))
     ORDER BY tp.Name;
 END
 GO
@@ -963,7 +1012,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTherapist
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.TherapistProfile (Name, CreatedBy) VALUES (@Name, @CreatedBy);
+    INSERT INTO dbo.TherapistProfile
+        (Name, CreatedBy)
+    VALUES
+        (@Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1024,7 +1076,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateRoom
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.Rooms (LocationId, Name, CreatedBy) VALUES (@LocationId, @Name, @CreatedBy);
+    INSERT INTO dbo.Rooms
+        (LocationId, Name, CreatedBy)
+    VALUES
+        (@LocationId, @Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1061,27 +1116,28 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName,
-           c.Email AS CustomerEmail, b.Status
+        c.Email AS CustomerEmail, b.Status
     FROM dbo.Bookings b
-    JOIN dbo.Locations l ON l.Id = b.LocationId
-    JOIN dbo.Users c ON c.Id = b.CustomerId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
+        JOIN dbo.Users c ON c.Id = b.CustomerId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0
-      AND EXISTS (
-          SELECT 1 FROM dbo.BookingTreatments bt
-          WHERE bt.BookingId = b.Id AND bt.IsDelete = 0 AND CAST(bt.StartTime AS DATE) = @WorkDate
+        AND EXISTS (
+          SELECT 1
+        FROM dbo.BookingTreatments bt
+        WHERE bt.BookingId = b.Id AND bt.IsDelete = 0 AND CAST(bt.StartTime AS DATE) = @WorkDate
       )
     ORDER BY b.Id;
 
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Name AS RoomName,
-           bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
-           bt.SequenceOrder, bt.SlotCount, bt.Price
+        bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
+        bt.SequenceOrder, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
-    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
+        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND bt.IsDelete = 0
-      AND CAST(bt.StartTime AS DATE) = @WorkDate
+        AND CAST(bt.StartTime AS DATE) = @WorkDate
     ORDER BY bt.StartTime;
 END
 GO
@@ -1094,7 +1150,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetLocationId
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT LocationId FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0;
+    SELECT LocationId
+    FROM dbo.Bookings
+    WHERE Id = @BookingId AND IsDelete = 0;
 END
 GO
 
@@ -1115,7 +1173,7 @@ BEGIN
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
     FROM dbo.BookingTreatments bt
-    JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0 AND bt.StartTime IS NOT NULL;
 END
 GO
@@ -1133,10 +1191,11 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_SearchCustomers
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT TOP (20) Id, Name, Email, Phone
+    SELECT TOP (20)
+        Id, Name, Email, Phone
     FROM dbo.Users
     WHERE Role = 'Customer' AND IsDelete = 0 AND IsActive = 1
-      AND (Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
+        AND (Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
     ORDER BY Name;
 END
 GO
@@ -1152,7 +1211,7 @@ BEGIN
     SELECT Id, Name, Email, Phone, IsActive, CreatedDate
     FROM dbo.Users
     WHERE Role = 'Customer' AND IsDelete = 0
-      AND (@Search IS NULL OR Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
+        AND (@Search IS NULL OR Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
     ORDER BY Name;
 END
 GO
@@ -1210,14 +1269,14 @@ BEGIN
 
     SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.ShiftType, sa.StartTime, sa.EndTime
     FROM dbo.ShiftAssignments sa
-    JOIN dbo.TherapistProfile th ON th.Id = sa.TherapistId
+        JOIN dbo.TherapistProfile th ON th.Id = sa.TherapistId
     WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0
     ORDER BY sa.ShiftType, th.Name;
 
     SELECT rca.Id, rca.RoomId, r.Name AS RoomName, rca.TreatmentCategoryId, tc.Name AS CategoryName, rca.ShiftType
     FROM dbo.RoomCategoryAssignments rca
-    JOIN dbo.Rooms r ON r.Id = rca.RoomId
-    JOIN dbo.TreatmentCategories tc ON tc.Id = rca.TreatmentCategoryId
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId
+        JOIN dbo.TreatmentCategories tc ON tc.Id = rca.TreatmentCategoryId
     WHERE r.LocationId = @LocationId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0
     ORDER BY rca.ShiftType, r.Name;
 END
@@ -1240,7 +1299,7 @@ BEGIN
     MERGE dbo.ShiftAssignments AS target
     USING (SELECT @LocationId AS LocationId, @TherapistId AS TherapistId, @ShiftType AS ShiftType, @WorkDate AS WorkDate) AS src
         ON target.LocationId = src.LocationId AND target.TherapistId = src.TherapistId
-           AND target.ShiftType = src.ShiftType AND target.WorkDate = src.WorkDate
+        AND target.ShiftType = src.ShiftType AND target.WorkDate = src.WorkDate
     WHEN MATCHED THEN
         UPDATE SET StartTime = @StartTime, EndTime = @EndTime, IsActive = 1, IsDelete = 0,
                    UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
@@ -1248,7 +1307,8 @@ BEGIN
         INSERT (LocationId, TherapistId, ShiftType, WorkDate, StartTime, EndTime, CreatedBy)
         VALUES (@LocationId, @TherapistId, @ShiftType, @WorkDate, @StartTime, @EndTime, @CreatedBy);
 
-    SELECT @Id = Id FROM dbo.ShiftAssignments
+    SELECT @Id = Id
+    FROM dbo.ShiftAssignments
     WHERE LocationId = @LocationId AND TherapistId = @TherapistId AND ShiftType = @ShiftType AND WorkDate = @WorkDate;
 END
 GO
@@ -1276,7 +1336,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetShiftLocationId
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT LocationId FROM dbo.ShiftAssignments WHERE Id = @Id AND IsDelete = 0;
+    SELECT LocationId
+    FROM dbo.ShiftAssignments
+    WHERE Id = @Id AND IsDelete = 0;
 END
 GO
 
@@ -1302,7 +1364,8 @@ BEGIN
         INSERT (RoomId, TreatmentCategoryId, ShiftType, WorkDate, CreatedBy)
         VALUES (@RoomId, @TreatmentCategoryId, @ShiftType, @WorkDate, @CreatedBy);
 
-    SELECT @Id = Id FROM dbo.RoomCategoryAssignments
+    SELECT @Id = Id
+    FROM dbo.RoomCategoryAssignments
     WHERE RoomId = @RoomId AND ShiftType = @ShiftType AND WorkDate = @WorkDate;
 END
 GO
@@ -1331,7 +1394,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT r.LocationId
     FROM dbo.RoomCategoryAssignments rca
-    JOIN dbo.Rooms r ON r.Id = rca.RoomId
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId
     WHERE rca.Id = @Id AND rca.IsDelete = 0;
 END
 GO
@@ -1346,7 +1409,7 @@ BEGIN
     SET NOCOUNT ON;
     SELECT u.Id, u.Name, u.Email, u.Phone, u.Role, sp.PhotoPath
     FROM dbo.Users u
-    LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
+        LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
     WHERE u.Id = @UserId AND u.IsDelete = 0;
 END
 GO
