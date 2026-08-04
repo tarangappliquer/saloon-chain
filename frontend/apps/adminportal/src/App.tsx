@@ -105,7 +105,7 @@ function AppRoutes() {
   return (
     <>
       <Nav />
-      <main className="mx-auto max-w-7xl px-6 py-6">
+      <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
