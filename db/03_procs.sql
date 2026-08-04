@@ -53,9 +53,10 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetAvailabilityData
-    @LocationId   INT,
-    @TreatmentIds dbo.IntIdList READONLY,
-    @WorkDate     DATE
+    @LocationId        INT,
+    @TreatmentIds      dbo.IntIdList READONLY,
+    @WorkDate          DATE,
+    @ExcludeBookingId  INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -127,20 +128,13 @@ BEGIN
     FROM EligibleRooms er
     JOIN EligibleShifts es ON es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay';
 
-    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. Therapists
-    -- are a global entity (dbo.TherapistProfile has no LocationId; a therapist's location comes from
-    -- their per-day ShiftAssignments), so the same real person can be booked at a different
-    -- location's room at an overlapping time. Scoping this by @LocationId would hide that
-    -- cross-location therapist conflict here while sp_Booking_ScheduleTreatment's write-time
-    -- recheck (correctly unscoped) still rejects it -- exactly the "slot shown available, then
-    -- rejected on booking" bug this must not reintroduce. Status is returned so the API can tell
-    -- a hard conflict (Confirmed) from a temporary one (an active Draft hold) and show the latter
-    -- as disabled rather than hiding the slot outright.
+    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location.
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
     FROM dbo.BookingTreatments bt
         JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
         AND bt.IsDelete = 0 AND b.IsDelete = 0
+        AND (@ExcludeBookingId IS NULL OR b.Id <> @ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
 END
 GO

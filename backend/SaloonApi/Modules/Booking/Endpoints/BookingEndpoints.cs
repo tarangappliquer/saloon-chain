@@ -20,7 +20,7 @@ internal static class BookingEndpoints
             .Produces<IReadOnlyList<DateOnly>>()
             .WithDescription("List dates in range that have at least one open slot at a location.");
 
-        group.MapGet("/available-slots", async (int locationId, string treatmentIds, DateOnly date, BookingService svc) =>
+        group.MapGet("/available-slots", async (int locationId, string treatmentIds, DateOnly date, int? excludeBookingId, BookingService svc) =>
         {
             var parts = treatmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
             var ids = new List<int>(parts.Length);
@@ -31,7 +31,7 @@ internal static class BookingEndpoints
                 ids.Add(id);
             }
 
-            return Results.Ok(await svc.GetAvailableSlotsAsync(locationId, ids, date));
+            return Results.Ok(await svc.GetAvailableSlotsAsync(locationId, ids, date, excludeBookingId));
         }).Produces<IReadOnlyList<AvailableSlot>>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("List open time slots for a treatment combo at a location/date.");

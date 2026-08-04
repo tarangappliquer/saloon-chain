@@ -31,13 +31,16 @@ internal sealed class BookingService(
         return dates;
     }
 
-    public async Task<IReadOnlyList<AvailableSlot>> GetAvailableSlotsAsync(int locationId, IReadOnlyList<int> treatmentIds, DateOnly date)
+    public async Task<IReadOnlyList<AvailableSlot>> GetAvailableSlotsAsync(int locationId, IReadOnlyList<int> treatmentIds, DateOnly date, int? excludeBookingId = null)
     {
-        var cached = await cache.GetAsync(locationId, date, treatmentIds);
-        if (cached is not null)
-            return JsonSerializer.Deserialize<List<AvailableSlot>>(cached)!;
+        if (excludeBookingId is null)
+        {
+            var cached = await cache.GetAsync(locationId, date, treatmentIds);
+            if (cached is not null)
+                return JsonSerializer.Deserialize<List<AvailableSlot>>(cached)!;
+        }
 
-        var data = await repo.GetAvailabilityDataAsync(locationId, treatmentIds, date);
+        var data = await repo.GetAvailabilityDataAsync(locationId, treatmentIds, date, excludeBookingId);
         if (data.Location is null || data.Location.IsHoliday) return [];
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
@@ -47,7 +50,10 @@ internal sealed class BookingService(
         var slots = SlotCalculator.ComputeAvailableSlots(
             date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing);
 
-        await cache.SetAsync(locationId, date, treatmentIds, JsonSerializer.Serialize(slots), TimeSpan.FromSeconds(60));
+        if (excludeBookingId is null)
+        {
+            await cache.SetAsync(locationId, date, treatmentIds, JsonSerializer.Serialize(slots), TimeSpan.FromSeconds(60));
+        }
         return slots;
     }
 

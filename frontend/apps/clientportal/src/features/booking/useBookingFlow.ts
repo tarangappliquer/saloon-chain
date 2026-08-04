@@ -138,7 +138,7 @@ export function useBookingFlow(bookingId: number) {
     try {
       const entries = await Promise.all(
         treatmentIds.map(async (id) => {
-          const { data } = await bookingApi.apiBookingAvailableSlotsGet(locationId, String(id), date);
+          const { data } = await bookingApi.apiBookingAvailableSlotsGet(locationId, String(id), date, bookingId);
           return [id, data as unknown as AvailableSlot[]] as const;
         }),
       );
@@ -146,7 +146,7 @@ export function useBookingFlow(bookingId: number) {
     } catch (err) {
       dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available slots') });
     }
-  }, []);
+  }, [bookingId]);
 
   const selectSlot = useCallback(
     async (treatmentId: number, slot: AvailableSlot) => {

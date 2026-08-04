@@ -68,14 +68,15 @@ internal sealed record ConfirmationDetailsDto(
 
 internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
-    public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date)
+    public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date, int? excludeBookingId = null)
     {
         using var db = factory.Create();
         using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetAvailabilityData", new
         {
             LocationId = locationId,
             TreatmentIds = treatmentIds.AsIntIdList(),
-            WorkDate = date.ToDateTime(TimeOnly.MinValue)
+            WorkDate = date.ToDateTime(TimeOnly.MinValue),
+            ExcludeBookingId = excludeBookingId
         });
 
         var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRow>();
