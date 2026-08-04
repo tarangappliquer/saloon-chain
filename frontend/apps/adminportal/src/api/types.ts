@@ -118,6 +118,7 @@ export interface AdminCustomer {
 }
 
 export interface AdminBookingTreatment {
+  roomId?: number | null;
   treatmentName: string;
   roomName: string | null;
   therapistName: string | null;

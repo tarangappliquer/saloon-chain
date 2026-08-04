@@ -23,34 +23,79 @@ function latestEnd(b: MyBooking): number {
 }
 
 function BookingCard({ b }: { b: MyBooking }) {
+  const [expanded, setExpanded] = useState(false);
+  const totalCost = b.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
+
   return (
-    <Card hoverable className="p-6">
-      <div className="flex items-center justify-between">
-        <span className="font-display font-semibold text-foreground text-base">{b.locationName}</span>
-        <Badge status={b.status} />
+    <Card hoverable className="p-6 transition-all duration-200">
+      {/* Booking Header (from Bookings table) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs font-semibold text-muted-foreground">Booking #{b.id}</span>
+            <Badge status={b.status} />
+          </div>
+          <h2 className="font-display text-lg font-bold text-foreground mt-1">{b.locationName}</h2>
+        </div>
+        <div className="flex items-center justify-between sm:justify-end gap-4 pt-2 sm:pt-0 border-t sm:border-0 border-border/50">
+          <div className="text-left sm:text-right">
+            <span className="text-xs text-muted-foreground block">Total Amount</span>
+            <span className="font-mono text-lg font-bold text-primary">${totalCost.toFixed(2)}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-accent/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            <span>{expanded ? 'Hide Details' : `View Details (${b.treatments.length})`}</span>
+            <svg
+              className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <ul className="mt-3 space-y-2 text-sm text-foreground">
-        {b.treatments.map((t) => (
-          <li key={t.treatmentName} className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-border/50 pt-2 first:border-0 first:pt-0">
-            <div>
-              <span className="font-medium text-foreground">{t.treatmentName}</span>
-              {t.startTime && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(t.startTime).toLocaleString(undefined, {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}{' '}
-                  with {t.therapistName}
-                </p>
-              )}
-            </div>
-            <span className="font-mono text-xs font-semibold text-primary mt-1 sm:mt-0">${t.price.toFixed(2)}</span>
-          </li>
-        ))}
-      </ul>
+
+      {/* Accordion Content (BookingTreatments extra info) */}
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-border/70 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Treatment Details ({b.treatments.length})
+          </h3>
+          <ul className="space-y-2 text-sm text-foreground">
+            {b.treatments.map((t, idx) => (
+              <li key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between rounded-lg border border-border/60 bg-accent/30 p-3 gap-2">
+                <div className="space-y-1">
+                  <span className="font-medium text-foreground">{t.treatmentName}</span>
+                  <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                    <span>{t.slotCount * 5} mins</span>
+                    {t.startTime ? (
+                      <span>
+                        {new Date(t.startTime).toLocaleString(undefined, {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                        {t.therapistName ? ` · ${t.therapistName}` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400 font-medium">Unscheduled</span>
+                    )}
+                  </div>
+                </div>
+                <span className="font-mono text-sm font-semibold text-foreground self-end sm:self-center">${t.price.toFixed(2)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   );
 }

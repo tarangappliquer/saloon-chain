@@ -1164,7 +1164,7 @@ BEGIN
       )
     ORDER BY b.Id;
 
-    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Name AS RoomName,
+    SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Id AS RoomId, r.Name AS RoomName,
         bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
         bt.SequenceOrder, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt

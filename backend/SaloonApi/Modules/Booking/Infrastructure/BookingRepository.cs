@@ -45,11 +45,11 @@ internal sealed record AdminBookingHeaderRow(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status);
 
 internal sealed record AdminBookingTreatmentRow(
-    int BookingId, int TreatmentId, string TreatmentName, string? RoomName, int? TherapistId, string? TherapistName,
+    int BookingId, int TreatmentId, string TreatmentName, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName,
     DateTime? StartTime, DateTime? EndTime, short SequenceOrder, short SlotCount, decimal Price);
 
 internal sealed record AdminBookingTreatmentDto(
-    string TreatmentName, string? RoomName, string? TherapistName, DateTime? StartTime, DateTime? EndTime,
+    int? RoomId, string TreatmentName, string? RoomName, string? TherapistName, DateTime? StartTime, DateTime? EndTime,
     short SlotCount, decimal Price);
 
 internal sealed record AdminBookingDto(
@@ -225,7 +225,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
             b.Id, b.LocationName, b.CustomerName, b.CustomerEmail, b.Status,
             treatments.Where(t => t.BookingId == b.Id)
                       .OrderBy(t => t.SequenceOrder)
-                      .Select(t => new AdminBookingTreatmentDto(t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))
+                      .Select(t => new AdminBookingTreatmentDto(t.RoomId, t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))
                       .ToList())).ToList();
     }
 

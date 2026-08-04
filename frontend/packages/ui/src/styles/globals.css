@@ -283,7 +283,8 @@
     color-scheme: var(--color-scheme);
   }
 
-  html, body {
+  html, body, #root {
+    min-height: 100vh;
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);

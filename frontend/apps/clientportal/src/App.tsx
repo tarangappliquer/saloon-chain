@@ -121,47 +121,49 @@ function Nav() {
 
 function AppRoutes() {
   return (
-    <>
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       <EmulationBanner />
       <Nav />
-      <Routes>
-        <Route path="/" element={<Navigate to="/my-bookings" replace />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/emulate" element={<EmulatePage />} />
-        <Route
-          path="/book"
-          element={
-            <RequireAuth>
-              <BookPage />
-            </RequireAuth>
-          }
-        >
-          <Route index element={<TreatmentsStep />} />
-          <Route path="confirmed" element={<ConfirmedStep />} />
-          <Route path=":bookingId/schedule" element={<ScheduleStep />} />
-          <Route path=":bookingId/summary" element={<SummaryStep />} />
-        </Route>
-        <Route
-          path="/my-bookings"
-          element={
-            <RequireAuth>
-              <MyBookingsPage />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <RequireAuth>
-              <ProfilePage />
-            </RequireAuth>
-          }
-        />
-        <Route path="*" element={<Navigate to="/my-bookings" replace />} />
-      </Routes>
-    </>
+      <main className="flex-1">
+        <Routes>
+          <Route path="/" element={<Navigate to="/my-bookings" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/emulate" element={<EmulatePage />} />
+          <Route
+            path="/book"
+            element={
+              <RequireAuth>
+                <BookPage />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<TreatmentsStep />} />
+            <Route path="confirmed" element={<ConfirmedStep />} />
+            <Route path=":bookingId/schedule" element={<ScheduleStep />} />
+            <Route path=":bookingId/summary" element={<SummaryStep />} />
+          </Route>
+          <Route
+            path="/my-bookings"
+            element={
+              <RequireAuth>
+                <MyBookingsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route path="*" element={<Navigate to="/my-bookings" replace />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
 
