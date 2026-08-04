@@ -1,28 +1,39 @@
-import type { InputHTMLAttributes } from 'react';
+import { forwardRef, type InputHTMLAttributes } from "react";
+import { cn } from "../lib/utils";
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  helperText?: string;
 }
 
-export function Input({ label, error, id, className = '', ...props }: InputProps) {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, helperText, id, className = "", ...props }, ref) => {
+    const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
 
-  return (
-    <div className="w-full space-y-1.5">
-      {label && (
-        <label htmlFor={inputId} className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-          {label}
-        </label>
-      )}
-      <input
-        id={inputId}
-        className={`w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-sm transition-all focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:border-purple-500 ${
-          error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''
-        } ${className}`}
-        {...props}
-      />
-      {error && <p className="text-xs font-medium text-red-600 dark:text-red-400">{error}</p>}
-    </div>
-  );
-}
+    return (
+      <div className="w-full space-y-1.5">
+        {label && (
+          <label htmlFor={inputId} className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </label>
+        )}
+        <input
+          ref={ref}
+          id={inputId}
+          className={cn(
+            "flex h-9 w-full rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50",
+            error && "border-destructive focus-visible:outline-destructive",
+            className
+          )}
+          {...props}
+        />
+        {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+        {!error && helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
+      </div>
+    );
+  }
+);
+Input.displayName = "Input";
+
+export { Input };

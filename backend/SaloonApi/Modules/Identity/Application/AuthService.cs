@@ -60,8 +60,10 @@ internal sealed class AuthService(UserRepository repo, RefreshTokenRepository re
         return (accessToken, refreshToken);
     }
 
-    // Staff accounts (SuperAdmin/Admin/Manager/Therapist) are provisioned here, never self-service --
-    // callers must already be behind an admin-only authorization policy.
+    // Staff accounts (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other) are
+    // provisioned here, as is a Customer created on someone's behalf by RootSuperAdmin/SuperAdmin/
+    // Admin/Manager -- never self-service, callers must already be behind an admin-only
+    // authorization policy.
     public async Task<int> CreateStaffAsync(
         string name, string email, string password, UserRole role, int? chainId, int? locationId, int? therapistId)
     {
@@ -69,12 +71,14 @@ internal sealed class AuthService(UserRepository repo, RefreshTokenRepository re
         return await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId);
     }
 
-    // Only SuperAdmin/Admin/Manager rows with IsEmulator=1 may open a customer session on that
-    // customer's behalf (docs/initial-project-spec.md). The caller is already behind the
-    // AdminAccess policy (Therapist/Customer can't reach this endpoint at all), but that policy
-    // alone doesn't know about IsEmulator, so both checks happen here against a fresh DB read --
-    // never trust the flag off the caller's JWT, since it can be revoked after the token was issued.
-    private static readonly UserRole[] EmulatorEligibleRoles = [UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager];
+    // Any staff role with IsEmulator=1 may open a customer session on that customer's behalf --
+    // "all staff can be a customer" is a deliberate product decision, not scoped to management roles.
+    // The caller is already behind the AdminAccess policy for the initiating endpoint, but that
+    // policy alone doesn't know about IsEmulator, so both checks happen here against a fresh DB
+    // read -- never trust the flag off the caller's JWT, since it can be revoked after the token
+    // was issued.
+    private static readonly UserRole[] EmulatorEligibleRoles =
+        [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager, UserRole.Receptionist, UserRole.Therapist, UserRole.Other];
 
     public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int emulatorUserId, int customerUserId)
     {

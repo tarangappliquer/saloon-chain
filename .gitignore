@@ -500,4 +500,5 @@ backend/SaloonApi/uploads/
 # Claude Code local settings written by cce init
 .claude/settings.local.json
 
+/demo
 /frontend/[Pp]ackages/api-client/src/

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader } from '@saloon/ui';
 import { adminCustomersApi, ApiError, authApi, CLIENT_PORTAL_URL } from '../../api/client';
 import type { AuthResponse, CustomerSummary } from '../../api/types';
 
@@ -21,9 +22,6 @@ export function CustomersPage() {
     }
   }
 
-  // Exchanges the admin's session for a short-lived customer token, then hands it to the
-  // clientportal (a separate app/origin) via a redirect -- /emulate there swaps it in and fetches
-  // the profile itself via GET /api/auth/me rather than trusting anything carried in the URL.
   async function emulate(customer: CustomerSummary) {
     setError(null);
     setEmulatingId(customer.id);
@@ -38,62 +36,83 @@ export function CustomersPage() {
   }
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Customers</h1>
-      <p className="mb-4 text-sm text-gray-500">
-        Search for a customer to open the client portal on their behalf. Requires your account to be marked as an
-        emulator on the Staff page.
-      </p>
+    <div className="space-y-6">
+      <PageHeader
+        title="Customer Directory & Emulation"
+        description="Search for registered customers and launch client portal emulation sessions."
+      />
 
-      <form onSubmit={handleSearch} className="mb-6 flex gap-2">
-        <input
-          required
-          placeholder="Search by name or email"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full max-w-sm rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
-        <button type="submit" className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white">
-          Search
-        </button>
-      </form>
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {error}
+        </div>
+      )}
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Customer Search</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 items-end max-w-lg">
+            <Input
+              required
+              label="Customer Name or Email"
+              placeholder="Search by name or email..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full"
+            />
+            <Button type="submit" className="shrink-0 mb-0.5">
+              Search Customers
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      {searched &&
-        (results.length === 0 ? (
-          <p className="text-gray-500">No customers found.</p>
-        ) : (
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800">
-                <th className="py-2">Name</th>
-                <th className="py-2">Email</th>
-                <th className="py-2">Phone</th>
-                <th className="py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((c) => (
-                <tr key={c.id} className="border-b border-gray-100 dark:border-gray-900">
-                  <td className="py-2">{c.name}</td>
-                  <td className="py-2">{c.email}</td>
-                  <td className="py-2">{c.phone ?? '-'}</td>
-                  <td className="py-2 text-right">
-                    <button
-                      type="button"
-                      disabled={emulatingId === c.id}
-                      onClick={() => emulate(c)}
-                      className="text-purple-600 hover:underline disabled:opacity-40"
-                    >
-                      {emulatingId === c.id ? 'Opening…' : 'Log in as customer'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ))}
+      {searched && (
+        <Card>
+          <CardHeader className="border-b border-border/50 pb-4">
+            <CardTitle>Search Results ({results.length})</CardTitle>
+          </CardHeader>
+          {results.length === 0 ? (
+            <CardContent className="py-8 text-center text-xs text-muted-foreground">
+              No matching customers found.
+            </CardContent>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
+                    <th className="px-6 py-3.5">Name</th>
+                    <th className="px-6 py-3.5">Email</th>
+                    <th className="px-6 py-3.5">Phone</th>
+                    <th className="px-6 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {results.map((c) => (
+                    <tr key={c.id} className="hover:bg-accent/40 transition">
+                      <td className="px-6 py-4 font-semibold text-foreground">{c.name}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{c.email}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{c.phone ?? '-'}</td>
+                      <td className="px-6 py-4 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={emulatingId === c.id}
+                          onClick={() => emulate(c)}
+                        >
+                          {emulatingId === c.id ? 'Opening...' : 'Log in as Customer'}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

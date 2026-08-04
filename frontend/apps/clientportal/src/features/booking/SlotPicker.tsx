@@ -1,8 +1,6 @@
 import type { AvailableSlot, BookingTreatmentLine } from '../../api/types';
 
 interface Props {
-  // This booking's own treatment lines -- each already carries its name/duration and current
-  // schedule (nullable until picked), sourced straight from the server.
   lines: BookingTreatmentLine[];
   slotsByTreatment: Record<number, AvailableSlot[]>;
   onSelect: (treatmentId: number, slot: AvailableSlot) => void;
@@ -17,10 +15,6 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-// Two [start, end) intervals overlap when each starts before the other ends. The customer is one
-// person, so a slot that overlaps a hold for a *different* treatment can't be picked — they'd be
-// in two treatments at once. Same-treatment holds are excluded so re-picking (which cancels the
-// old hold) isn't blocked by the old hold itself.
 function overlaps(a: { startTime: string; endTime: string }, b: { startTime: string; endTime: string }) {
   const s1 = new Date(a.startTime).getTime();
   const e1 = new Date(a.endTime).getTime();
@@ -30,7 +24,6 @@ function overlaps(a: { startTime: string; endTime: string }, b: { startTime: str
 }
 
 export function SlotPicker({ lines, slotsByTreatment, onSelect, loading }: Props) {
-  // Scheduled lines — used to grey out conflicting times in each other treatment's grid.
   const scheduled = lines.filter((l) => l.startTime !== null && l.endTime !== null) as (BookingTreatmentLine & {
     startTime: string;
     endTime: string;
@@ -43,43 +36,36 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, loading }: Props
         const slots = slotsByTreatment[line.treatmentId] ?? [];
 
         return (
-          <div key={line.treatmentId}>
-            <h3 className="mb-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
-              {line.treatmentName} <span className="text-gray-400">· {line.slotCount * 5} min</span>
+          <div key={line.treatmentId} className="space-y-2">
+            <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {line.treatmentName} <span className="text-muted-foreground/70">· {line.slotCount * 5} mins</span>
               {held && line.startTime && (
-                <span className="ml-2 text-purple-600 dark:text-purple-400">Held {fmtTime(line.startTime)}</span>
+                <span className="ml-2 font-semibold text-primary">Held {fmtTime(line.startTime)}</span>
               )}
             </h3>
             {slots.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {loading ? 'Loading slots…' : 'No open slots that day — try another date.'}
+              <p className="text-xs text-muted-foreground py-2">
+                {loading ? 'Loading available slots...' : 'No open slots on this date. Try another date.'}
               </p>
             ) : (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
                 {slots.map((slot) => {
                   const selected = held && isSameSlot(line, slot);
-                  // Conflicts with another treatment's held time → the customer can't be in two
-                  // places at once, so block it. Same-treatment holds don't count (re-picking
-                  // cancels the old hold).
                   const conflict = scheduled.some((l) => l.treatmentId !== line.treatmentId && overlaps(l, slot));
-                  // isHeld means someone else currently has this exact slot in checkout -- a soft,
-                  // temporary block from the server rather than a permanent conflict.
                   const unavailable = conflict || slot.isHeld;
-                  // The held slot is this treatment's own block — never disable or fade it, even
-                  // during a refetch (loading) or if it happens to overlap another hold. The user
-                  // must always see their pick at full strength; re-clicking it is a no-op anyway.
+
                   return (
                     <button
                       key={slot.startTime}
                       type="button"
                       disabled={!selected && (loading || unavailable)}
                       onClick={() => onSelect(line.treatmentId, slot)}
-                      className={`rounded-lg border py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 ${
+                      className={`rounded-lg border py-2 text-xs font-mono font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-950/40'
+                          ? 'border-primary bg-primary/10 text-primary shadow-2xs ring-1 ring-primary/30'
                           : unavailable
-                            ? 'border-gray-200 text-gray-300 line-through dark:border-gray-800 dark:text-gray-700'
-                            : 'border-gray-200 hover:border-purple-400 dark:border-gray-700'
+                            ? 'border-border text-muted-foreground/50 line-through bg-muted/20'
+                            : 'border-border bg-card text-foreground hover:border-primary/50 hover:bg-accent/40'
                       }`}
                     >
                       {fmtTime(slot.startTime)}

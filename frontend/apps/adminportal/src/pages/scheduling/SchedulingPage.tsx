@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError, schedulingApi } from '../../api/client';
-import type { Chain, Location, Room, Roster, ShiftType, Therapist, TreatmentCategory } from '../../api/types';
+import type { Location, Room, Roster, ShiftType, Therapist, TreatmentCategory } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
@@ -18,7 +19,6 @@ function emptyRoomForm() {
 }
 
 export function SchedulingPage() {
-  const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(null);
@@ -40,8 +40,7 @@ export function SchedulingPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
-        setChains(cs);
+        const cs = data as unknown as { id: number }[];
         if (cs.length > 0) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
@@ -75,7 +74,7 @@ export function SchedulingPage() {
       .catch(() => {});
   }, [locationId]);
 
-  async function loadRoster() {
+  const loadRoster = useCallback(async () => {
     if (locationId === null) return;
     setLoading(true);
     setError(null);
@@ -87,12 +86,11 @@ export function SchedulingPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [locationId, date]);
 
   useEffect(() => {
     loadRoster();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, date]);
+  }, [loadRoster]);
 
   async function handleAssignShift(e: FormEvent) {
     e.preventDefault();
@@ -159,149 +157,195 @@ export function SchedulingPage() {
   }
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Scheduling</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Roster & Shift Scheduling"
+        description="Schedule therapist shifts and open treatment rooms for specific working dates."
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
+              <SearchableSelect
+                value={String(locationId ?? '')}
+                onChange={(v) => setLocationId(Number(v))}
+                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Date:</span>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-8 text-xs min-w-[140px]"
+              />
+            </div>
+          </div>
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap gap-4 text-sm">
-        <label>
-          Chain{' '}
-          <SearchableSelect
-            value={String(chainId ?? '')}
-            onChange={(v) => setChainId(Number(v))}
-            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label>
-          Location{' '}
-          <SearchableSelect
-            value={String(locationId ?? '')}
-            onChange={(v) => setLocationId(Number(v))}
-            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label>
-          Date{' '}
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-      </div>
-
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {error}
+        </div>
+      )}
 
       {loading ? (
-        <p className="text-gray-500">Loading...</p>
+        <LoadingFallback />
       ) : (
-        <div className="grid gap-8 md:grid-cols-2">
-          <section>
-            <h2 className="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">Therapist Shifts</h2>
-            <form onSubmit={handleAssignShift} className="mb-3 flex flex-wrap gap-2">
-              <SearchableSelect
-                value={shiftForm.therapistId}
-                onChange={(v) => setShiftForm({ ...shiftForm, therapistId: v })}
-                placeholder="Therapist"
-                options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <SearchableSelect
-                value={shiftForm.shiftType}
-                onChange={(v) => setShiftForm({ ...shiftForm, shiftType: v as ShiftType })}
-                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <input
-                required
-                type="time"
-                value={shiftForm.startTime}
-                onChange={(e) => setShiftForm({ ...shiftForm, startTime: e.target.value })}
-                className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <input
-                required
-                type="time"
-                value={shiftForm.endTime}
-                onChange={(e) => setShiftForm({ ...shiftForm, endTime: e.target.value })}
-                className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <button
-                type="submit"
-                disabled={submittingShift}
-                className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-              >
-                Assign
-              </button>
-            </form>
-            {roster.therapistShifts.length === 0 ? (
-              <p className="text-gray-500">No therapists scheduled for this date.</p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {roster.therapistShifts.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between border-b border-gray-100 py-2 dark:border-gray-900">
-                    <span>
-                      {s.therapistName} &middot; {s.shiftType} ({s.startTime}-{s.endTime})
-                    </span>
-                    <button type="button" onClick={() => handleRemoveShift(s.id)} className="text-red-600 hover:underline">
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Therapist Shifts Card */}
+          <Card>
+            <CardHeader className="border-b border-border/50 pb-4">
+              <CardTitle>Therapist Shifts</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <form onSubmit={handleAssignShift} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Therapist
+                    </label>
+                    <SearchableSelect
+                      value={shiftForm.therapistId}
+                      onChange={(v) => setShiftForm({ ...shiftForm, therapistId: v })}
+                      placeholder="Select..."
+                      options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
+                      className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Shift Type
+                    </label>
+                    <SearchableSelect
+                      value={shiftForm.shiftType}
+                      onChange={(v) => setShiftForm({ ...shiftForm, shiftType: v as ShiftType })}
+                      options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
+                      className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    required
+                    type="time"
+                    label="Start Time"
+                    value={shiftForm.startTime}
+                    onChange={(e) => setShiftForm({ ...shiftForm, startTime: e.target.value })}
+                  />
+                  <Input
+                    required
+                    type="time"
+                    label="End Time"
+                    value={shiftForm.endTime}
+                    onChange={(e) => setShiftForm({ ...shiftForm, endTime: e.target.value })}
+                  />
+                </div>
+                <Button type="submit" disabled={submittingShift} className="w-full">
+                  {submittingShift ? 'Assigning...' : 'Assign Therapist Shift'}
+                </Button>
+              </form>
 
-          <section>
-            <h2 className="mb-2 text-lg font-medium text-gray-900 dark:text-gray-100">Room Openings</h2>
-            <form onSubmit={handleOpenRoom} className="mb-3 flex flex-wrap gap-2">
-              <SearchableSelect
-                value={roomForm.roomId}
-                onChange={(v) => setRoomForm({ ...roomForm, roomId: v })}
-                placeholder="Room"
-                options={rooms.map((r) => ({ value: String(r.id), label: r.name }))}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <SearchableSelect
-                value={roomForm.treatmentCategoryId}
-                onChange={(v) => setRoomForm({ ...roomForm, treatmentCategoryId: v })}
-                placeholder="Treatment category"
-                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <SearchableSelect
-                value={roomForm.shiftType}
-                onChange={(v) => setRoomForm({ ...roomForm, shiftType: v as ShiftType })}
-                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
-                className="rounded-lg border border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <button
-                type="submit"
-                disabled={submittingRoom}
-                className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-              >
-                Open
-              </button>
-            </form>
-            {roster.roomOpenings.length === 0 ? (
-              <p className="text-gray-500">No rooms opened for this date.</p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {roster.roomOpenings.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between border-b border-gray-100 py-2 dark:border-gray-900">
-                    <span>
-                      {r.roomName} &middot; {r.categoryName} ({r.shiftType})
-                    </span>
-                    <button type="button" onClick={() => handleCloseRoom(r.id)} className="text-red-600 hover:underline">
-                      Close
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+              <div className="pt-2 border-t border-border/50">
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-3">Scheduled Shifts ({roster.therapistShifts.length})</h4>
+                {roster.therapistShifts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">No therapists scheduled for this date.</p>
+                ) : (
+                  <ul className="divide-y divide-border/50 text-xs">
+                    {roster.therapistShifts.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between py-3">
+                        <div className="space-y-0.5">
+                          <span className="font-semibold text-foreground">{s.therapistName}</span>
+                          <p className="text-muted-foreground font-mono text-xs">
+                            {s.shiftType} ({s.startTime} - {s.endTime})
+                          </p>
+                        </div>
+                        <Button variant="danger" size="sm" onClick={() => handleRemoveShift(s.id)}>
+                          Remove
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Room Openings Card */}
+          <Card>
+            <CardHeader className="border-b border-border/50 pb-4">
+              <CardTitle>Room Openings</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <form onSubmit={handleOpenRoom} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Room
+                    </label>
+                    <SearchableSelect
+                      value={roomForm.roomId}
+                      onChange={(v) => setRoomForm({ ...roomForm, roomId: v })}
+                      placeholder="Select..."
+                      options={rooms.map((r) => ({ value: String(r.id), label: r.name }))}
+                      className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Shift Type
+                    </label>
+                    <SearchableSelect
+                      value={roomForm.shiftType}
+                      onChange={(v) => setRoomForm({ ...roomForm, shiftType: v as ShiftType })}
+                      options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
+                      className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                    Treatment Category
+                  </label>
+                  <SearchableSelect
+                    value={roomForm.treatmentCategoryId}
+                    onChange={(v) => setRoomForm({ ...roomForm, treatmentCategoryId: v })}
+                    placeholder="Select category..."
+                    options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                    className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
+                  />
+                </div>
+                <Button type="submit" disabled={submittingRoom} className="w-full">
+                  {submittingRoom ? 'Opening...' : 'Open Room'}
+                </Button>
+              </form>
+
+              <div className="pt-2 border-t border-border/50">
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-3">Open Rooms ({roster.roomOpenings.length})</h4>
+                {roster.roomOpenings.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">No rooms opened for this date.</p>
+                ) : (
+                  <ul className="divide-y divide-border/50 text-xs">
+                    {roster.roomOpenings.map((r) => (
+                      <li key={r.id} className="flex items-center justify-between py-3">
+                        <div className="space-y-0.5">
+                          <span className="font-semibold text-foreground">{r.roomName}</span>
+                          <p className="text-muted-foreground text-xs">
+                            {r.categoryName} <Badge variant="secondary" showDot={false} className="ml-1 text-[10px]">{r.shiftType}</Badge>
+                          </p>
+                        </div>
+                        <Button variant="danger" size="sm" onClick={() => handleCloseRoom(r.id)}>
+                          Close
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

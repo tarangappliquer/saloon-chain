@@ -24,8 +24,8 @@ internal static class AuthEndpoints
 
         // Shared by every role -- clientportal and adminportal both hit this; the returned Role
         // is what the adminportal uses to decide which routes/nav items to show. CanEmulate only
-        // means anything for SuperAdmin/Admin/Manager (see dbo.Users.IsEmulator) -- the adminportal
-        // uses it to show/hide the "Customers" (emulate) nav item.
+        // means anything for staff rows with IsEmulator=1 (any staff role, see dbo.Users.IsEmulator)
+        // -- the adminportal uses it to show/hide the "Customers" (emulate) nav item.
         group.MapPost("/login", async (LoginRequest req, AuthService auth) =>
         {
             var result = await auth.LoginAsync(req.Email, req.Password);
@@ -66,9 +66,11 @@ internal static class AuthEndpoints
         }).WithValidation<RefreshRequest>()
           .WithDescription("Revoke a refresh token on sign-out.");
 
-        // Admin-as-customer emulation. Only reachable by SuperAdmin/Admin/Manager (AdminAccess
-        // policy) -- AuthService.EmulateCustomerAsync additionally requires the caller's
-        // dbo.Users.IsEmulator flag to be set, re-checked fresh from the database on every call.
+        // Staff-as-customer emulation. Reachable by any staff role (StaffAccess policy, now including
+        // Manager) -- "all staff can be a customer" is a deliberate product decision -- but
+        // AuthService.EmulateCustomerAsync
+        // additionally requires the caller's dbo.Users.IsEmulator flag to be set, re-checked fresh
+        // from the database on every call, so StaffAccess alone doesn't grant emulation.
         // Returns a normal customer AuthResponse (Role=Customer) so the clientportal's existing
         // login flow can consume it unchanged; IsEmulated/EmulatedByName flag it as a staff session.
         group.MapPost("/emulate/{customerId:int}", async (int customerId, AuthService auth, ICurrentUser currentUser) =>
@@ -79,7 +81,7 @@ internal static class AuthEndpoints
                 : Results.Ok(new AuthResponse(
                     result.Value.Id, result.Value.Name, result.Value.Email, nameof(UserRole.Customer), result.Value.Token,
                     CanEmulate: false, IsEmulated: true, EmulatedByName: currentUser.Email));
-        }).RequireAuthorization("AdminAccess")
+        }).RequireAuthorization("StaffAccess")
           .Produces<AuthResponse>()
           .ProducesProblem(StatusCodes.Status401Unauthorized)
           .ProducesProblem(StatusCodes.Status403Forbidden)

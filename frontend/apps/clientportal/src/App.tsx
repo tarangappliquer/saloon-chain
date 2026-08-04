@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { ErrorBoundary, LoadingFallback } from '@saloon/ui';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrandMark, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { ADMIN_PORTAL_URL } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
@@ -18,9 +18,6 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
-// Shown for the whole session while a staff member is emulating this customer -- makes it
-// unmistakable that actions here aren't the customer's own, and "Exit" is the only way back to the
-// admin portal (there's no reverse token exchange, just plain logout + redirect).
 function EmulationBanner() {
   const { user, logout } = useAuth();
   if (!user?.isEmulated) return null;
@@ -31,7 +28,7 @@ function EmulationBanner() {
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-xs font-medium text-amber-900 shadow-inner dark:border-amber-900/50 dark:bg-amber-950/80 dark:text-amber-200">
+    <div className="flex items-center justify-between border-b border-amber-500/30 bg-amber-500/10 px-6 py-2.5 text-xs font-medium text-amber-700 dark:text-amber-300">
       <div className="flex items-center gap-2">
         <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
         <span>
@@ -41,11 +38,28 @@ function EmulationBanner() {
       <button
         type="button"
         onClick={exit}
-        className="rounded-md bg-amber-200/80 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-300 transition dark:bg-amber-900 dark:text-amber-100 dark:hover:bg-amber-800"
+        className="rounded-md bg-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-500/30 transition dark:text-amber-200"
       >
         Exit emulation
       </button>
     </div>
+  );
+}
+
+function NavLink({ to, children }: { to: string; children: ReactNode }) {
+  const location = useLocation();
+  const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
+  return (
+    <Link
+      to={to}
+      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
+        active
+          ? 'bg-primary/10 text-primary shadow-2xs'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      }`}
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -61,46 +75,34 @@ function Nav() {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/80 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-950/80">
-      <nav aria-label="Main Navigation" className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3.5">
+    <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
+      <nav aria-label="Main Navigation" className="mx-auto flex max-w-5xl items-center justify-between px-6 py-2.5">
         <div className="flex items-center gap-6">
-          <Link to="/my-bookings" className="flex items-center gap-2.5 font-bold text-gray-900 dark:text-gray-100">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-600 text-sm font-bold text-white shadow-md shadow-purple-600/30">
-              S
-            </span>
-            <span className="tracking-tight text-lg">Saloon</span>
+          <Link to="/my-bookings" className="flex items-center gap-2 shrink-0">
+            <BrandMark label="Saloon" />
           </Link>
-          <div className="flex items-center gap-1.5 text-sm font-medium">
-            <Link
-              to="/my-bookings"
-              className="rounded-lg px-3 py-1.5 text-gray-700 transition hover:bg-gray-100 hover:text-purple-600 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-purple-400"
-            >
-              My Bookings
-            </Link>
-            <Link
-              to="/book"
-              className="rounded-lg px-3 py-1.5 text-gray-700 transition hover:bg-gray-100 hover:text-purple-600 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-purple-400"
-            >
-              Book
-            </Link>
+          <div className="flex items-center gap-1">
+            <NavLink to="/my-bookings">My Bookings</NavLink>
+            <NavLink to="/book">Book</NavLink>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 text-sm">
+          <ThemeToggle />
           <Link
             to="/profile"
-            className="flex items-center gap-2 rounded-lg p-1 text-gray-700 hover:bg-gray-100 transition dark:text-gray-300 dark:hover:bg-gray-900"
+            className="flex items-center gap-2 rounded-lg border border-border bg-card p-1 pr-3 text-foreground hover:bg-accent transition"
             title="Profile"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100 text-xs font-bold text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
               {initials}
             </span>
-            <span className="hidden font-medium sm:inline">{user.name}</span>
+            <span className="hidden text-xs font-semibold sm:inline">{user.name}</span>
           </Link>
           <button
             type="button"
             onClick={logout}
-            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200"
+            className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition"
           >
             Sign out
           </button>
@@ -157,11 +159,13 @@ function AppRoutes() {
 function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <Suspense fallback={<LoadingFallback />}>
-          <AppRoutes />
-        </Suspense>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Suspense fallback={<LoadingFallback />}>
+            <AppRoutes />
+          </Suspense>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

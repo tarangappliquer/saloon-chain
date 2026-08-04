@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { PageHeader } from '@saloon/ui';
 import { bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { SearchableSelect } from '../components/SearchableSelect';
@@ -9,6 +10,7 @@ export interface BookingContext {
   locationId: number | null;
 }
 
+// oxlint-disable-next-line react/only-export-components
 export function useBookingContext() {
   return useOutletContext<BookingContext>();
 }
@@ -74,30 +76,35 @@ export function BookPage() {
   }, [locationId]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Book a treatment</h1>
-
-      <div className="flex flex-wrap gap-2">
-        {chains.length > 1 && (
-          <SearchableSelect
-            disabled={isEditingBooking}
-            value={String(chainId ?? '')}
-            onChange={(v) => setChainId(Number(v))}
-            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        )}
-
-        {locations.length > 1 && (
-          <SearchableSelect
-            disabled={isEditingBooking}
-            value={String(locationId ?? '')}
-            onChange={(v) => setLocationId(Number(v))}
-            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        )}
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+      <PageHeader
+        title="Book a Treatment"
+        description="Select your preferred salon location and choose from our treatment menu."
+        action={
+          (chains.length > 1 || locations.length > 1) ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {chains.length > 1 && (
+                <SearchableSelect
+                  disabled={isEditingBooking}
+                  value={String(chainId ?? '')}
+                  onChange={(v) => setChainId(Number(v))}
+                  options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
+                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
+                />
+              )}
+              {locations.length > 1 && (
+                <SearchableSelect
+                  disabled={isEditingBooking}
+                  value={String(locationId ?? '')}
+                  onChange={(v) => setLocationId(Number(v))}
+                  options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
+                />
+              )}
+            </div>
+          ) : undefined
+        }
+      />
 
       <Outlet key={locationId} context={{ treatments, locationId } satisfies BookingContext} />
     </div>

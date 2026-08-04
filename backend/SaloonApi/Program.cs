@@ -87,24 +87,30 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization(options =>
 {
-    // Broad-to-narrow: SuperAdmin sees every chain, Admin is scoped to one chain (ICurrentUser.ChainId),
-    // Manager/Therapist to one location (ICurrentUser.LocationId) -- see dbo.Users in 01_tables.sql.
-    // These policies gate *which endpoints* a role may call; per-record chain/location scoping is
-    // left to the endpoint/repository layer to check against ICurrentUser where it matters.
-    options.AddPolicy("SuperAdminOnly", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
-    // Chains are the tenant boundary -- create/activate/delete/assign-admin is Super Admin's alone
-    // per spec (Admin's remit starts at *locations* within a chain, not the chain record itself).
+    // Broad-to-narrow: RootSuperAdmin is the platform owner (no scope at all), SuperAdmin/Admin are
+    // scoped to one chain (ICurrentUser.ChainId), Manager/Receptionist/Therapist/Other to one
+    // location (ICurrentUser.LocationId) -- see dbo.Users in 01_tables.sql. These policies gate
+    // *which endpoints* a role may call; per-record chain/location scoping is left to the endpoint/
+    // repository layer to check against ICurrentUser where it matters.
+    options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
+    // Chains are the tenant boundary -- create/activate/delete, and creating a chain's first
+    // SuperAdmin/Admin, is RootSuperAdmin's alone (a chain's own SuperAdmin doesn't get to create
+    // more chains). Not exposed in the admin portal (single-saloon product decision) but kept
+    // enforced here so re-enabling multi-chain later is a frontend change, not a backend one.
     // Layered on top of a route's existing AdminAccess requirement (see AdminCatalogEndpoints'
     // chains routes), not a replacement for it -- ASP.NET Core ANDs multiple RequireAuthorization
-    // policies together, so the net effect of AdminAccess + ChainManagement is SuperAdmin only.
-    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin)));
-    // Locations/Rooms are Admin's remit, not Manager's (Manager is head of one location, not a
-    // creator of them) -- same layering trick as ChainManagement above.
-    options.AddPolicy("LocationManagement", p => p.RequireRole(nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+    // policies together, so the net effect of AdminAccess + ChainManagement is RootSuperAdmin only
+    // (RootSuperAdmin must therefore also be in AdminAccess below, or the AND never passes).
+    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
+    // Locations/Rooms are SuperAdmin/Admin's remit (within their own chain, see AdminCatalogEndpoints'
+    // ChainId checks), not Manager's/Receptionist's (they run one location day to day, not a creator
+    // of them) -- RootSuperAdmin can do it too, for any chain, same layering trick as ChainManagement above.
+    options.AddPolicy("LocationManagement", p => p.RequireRole(
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
-        nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(
-        nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Therapist)));
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
 });
 
 builder.Services.AddCors(options =>
@@ -195,6 +201,6 @@ app.MapAdminCustomersEndpoints();
 app.MapSchedulingEndpoints();
 app.MapProfileEndpoints();
 
-await AdminSeeder.SeedSuperAdminAsync(app.Services, app.Configuration);
+await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
 
 await app.RunAsync();

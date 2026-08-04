@@ -35,7 +35,7 @@ export function EmulatePage() {
           <button
             type="button"
             onClick={() => navigate('/login', { replace: true })}
-            className="mt-4 text-sm text-purple-600 hover:underline"
+            className="mt-4 text-sm text-primary hover:underline"
           >
             Go to sign in
           </button>

@@ -13,20 +13,23 @@ internal static class AdminCatalogEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        // Read stays under the group's plain AdminAccess -- Manager still needs this list to power
-        // the chain/location pickers on Locations/Treatments/Rooms/Staff/Bookings, even though
-        // Manager can't create/edit chains (see the ChainManagement-gated routes below). Scoping is
-        // still applied: Admin only ever sees their own chain (dbo.Users.ChainId); Manager has no
-        // ChainId (LocationId-scoped instead, see 01_tables.sql), so this passes null for them and
-        // they see every chain, same as before this endpoint had any scoping.
+        // Read stays under the group's plain AdminAccess -- Manager/Receptionist still need this
+        // list to power the chain/location pickers on Locations/Treatments/Rooms/Staff/Bookings,
+        // even though they can't create/edit chains (see the ChainManagement-gated routes below).
+        // Scoping still applies to SuperAdmin/Admin, who only ever see their own chain via ChainId
+        // on dbo.Users. Manager and Receptionist have no ChainId of their own (LocationId-scoped
+        // instead, see 01_tables.sql), so this passes null for them and they see every chain --
+        // moot in practice since there's exactly one chain, but keeps this endpoint correct if a
+        // second chain is ever added. RootSuperAdmin also passes null (it has no chain either, and
+        // is meant to see all of them).
         group.MapGet("/chains", async (ICurrentUser currentUser, CatalogRepository repo) =>
-            Results.Ok(await repo.GetChainsForAdminAsync(currentUser.IsInRole(UserRole.Admin) ? currentUser.ChainId : null)))
+            Results.Ok(await repo.GetChainsForAdminAsync(currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) ? currentUser.ChainId : null)))
             .Produces<IEnumerable<AdminChainDto>>()
-            .WithDescription("List chains visible to the caller (all for SuperAdmin/Manager, own chain only for Admin).");
+            .WithDescription("List chains visible to the caller (all for RootSuperAdmin/Manager/Receptionist, own chain only for SuperAdmin/Admin).");
 
         group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != chainId)
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != chainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetLocationsForAdminAsync(chainId));
@@ -36,7 +39,7 @@ internal static class AdminCatalogEndpoints
 
         group.MapGet("/treatments", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != chainId)
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != chainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetTreatmentsForAdminAsync(chainId));
@@ -49,17 +52,17 @@ internal static class AdminCatalogEndpoints
             .WithValidation<ChainRequest>()
             .RequireAuthorization("ChainManagement")
             .Produces<IdResponse>()
-            .WithDescription("Create a new saloon chain (SuperAdmin only).");
+            .WithDescription("Create a new saloon chain (RootSuperAdmin only).");
 
-        // No Admin-scoping check needed in these three handlers -- ChainManagement now excludes
-        // Admin entirely (see Program.cs), so only SuperAdmin ever reaches them.
+        // No scoping check needed in these three handlers -- ChainManagement admits only
+        // RootSuperAdmin (see Program.cs), which has no chain of its own to be scoped by.
         group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, CatalogRepository repo) =>
         {
             await repo.UpdateChainAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
         }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement")
           .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Rename or activate/deactivate a chain (SuperAdmin only).");
+          .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin only).");
 
         group.MapDelete("/chains/{id:int}", async (int id, CatalogRepository repo) =>
         {
@@ -67,11 +70,11 @@ internal static class AdminCatalogEndpoints
             return Results.NoContent();
         }).RequireAuthorization("ChainManagement")
           .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Soft-delete a chain (SuperAdmin only).");
+          .WithDescription("Soft-delete a chain (RootSuperAdmin only).");
 
         group.MapPost("/locations", async (LocationRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Admin) && currentUser.ChainId != req.ChainId)
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != req.ChainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(new IdResponse(await repo.CreateLocationAsync(
@@ -162,8 +165,8 @@ internal static class AdminCatalogEndpoints
           .Produces(StatusCodes.Status204NoContent)
           .WithDescription("Update a therapist's name or active state.");
 
-        // GET stays under the group's plain AdminAccess -- Manager still needs the room list to
-        // power the Scheduling page (room-opening), even though Manager can't add/edit rooms.
+        // GET stays under the group's plain AdminAccess -- Manager/Receptionist still need the room
+        // list to power the Scheduling page (room-opening), even though they can't add/edit rooms.
         group.MapGet("/rooms", async (int locationId, CatalogRepository repo) =>
             Results.Ok(await repo.GetRoomsAsync(locationId)))
             .Produces<IEnumerable<RoomDto>>()

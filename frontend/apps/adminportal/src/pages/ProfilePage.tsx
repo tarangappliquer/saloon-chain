@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Badge, Button, Card, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { API_BASE, ApiError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import type { Profile } from '../api/types';
@@ -45,7 +46,7 @@ export function ProfilePage() {
       const updated = data as unknown as Profile;
       setProfile(updated);
       updateName(updated.name);
-      setSuccess('Profile updated.');
+      setSuccess('Profile updated successfully.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update profile');
     } finally {
@@ -62,7 +63,7 @@ export function ProfilePage() {
     try {
       const { data: res } = await profileApi.apiProfilePhotoPost(file);
       setProfile((p) => (p ? { ...p, photoPath: res.photoPath } : p));
-      setSuccess('Photo updated.');
+      setSuccess('Profile photo updated.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to upload photo');
     } finally {
@@ -71,70 +72,64 @@ export function ProfilePage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loading) return <LoadingFallback />;
   if (!profile) return null;
 
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">My Profile</h1>
+    <div className="mx-auto max-w-xl space-y-6">
+      <PageHeader
+        title="My Profile"
+        subtitle="Manage your personal account settings and profile details."
+        action={<Badge status={profile.role} />}
+      />
 
-      <div className="mb-6 flex items-center gap-4">
-        <div className="h-20 w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
-          {profile.photoPath && (
-            <img src={`${API_BASE}${profile.photoPath}`} alt="Profile" className="h-full w-full object-cover" />
+      <Card className="p-6">
+        <div className="mb-6 flex items-center gap-6">
+          <div className="h-20 w-20 overflow-hidden rounded-2xl border border-border bg-muted shadow-2xs">
+            {profile.photoPath ? (
+              <img src={`${API_BASE}${profile.photoPath}`} alt="Profile" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center font-display text-2xl font-bold text-muted-foreground">
+                {profile.name.substring(0, 2).toUpperCase()}
+              </div>
+            )}
+          </div>
+          <div className="space-y-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handlePhotoSelected}
+              disabled={uploading}
+              className="text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+            />
+            <p className="text-xs text-muted-foreground">JPG, PNG, or WEBP (Max 5 MB)</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <Input required label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input disabled label="Email Address" value={profile.email} helperText="Email cannot be changed." />
+          <Input label="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
+
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">
+              {error}
+            </div>
           )}
-        </div>
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={handlePhotoSelected}
-            disabled={uploading}
-            className="text-sm"
-          />
-          <p className="mt-1 text-xs text-gray-500">JPG, PNG, or WEBP, up to 5 MB.</p>
-        </div>
-      </div>
+          {success && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              {success}
+            </div>
+          )}
 
-      <form onSubmit={handleSave} className="space-y-3">
-        <div>
-          <label className="mb-1 block text-sm text-gray-500">Name</label>
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-gray-500">Email</label>
-          <input
-            disabled
-            value={profile.email}
-            className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-gray-500 dark:border-gray-700 dark:bg-gray-800"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-gray-500">Phone</label>
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-green-600">{success}</p>}
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-        >
-          Save
-        </button>
-      </form>
+          <div className="pt-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }

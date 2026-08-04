@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../../api/client';
-import type { Chain, Location, Room } from '../../api/types';
+import type { Location, Room } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 export function RoomsPage() {
-  const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(null);
@@ -18,8 +18,7 @@ export function RoomsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
-        setChains(cs);
+        const cs = data as unknown as { id: number }[];
         if (cs.length > 0) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
@@ -82,75 +81,91 @@ export function RoomsPage() {
   }
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Rooms</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Treatment Rooms"
+        description="Configure treatment rooms and spaces per location."
+        action={
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
+            <SearchableSelect
+              value={String(locationId ?? '')}
+              onChange={(v) => setLocationId(Number(v))}
+              options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[180px]"
+            />
+          </div>
+        }
+      />
 
-      <div className="mb-4 flex gap-4 text-sm">
-        <label>
-          Chain{' '}
-          <SearchableSelect
-            value={String(chainId ?? '')}
-            onChange={(v) => setChainId(Number(v))}
-            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label>
-          Location{' '}
-          <SearchableSelect
-            value={String(locationId ?? '')}
-            onChange={(v) => setLocationId(Number(v))}
-            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-      </div>
-
-      <form onSubmit={handleCreate} className="mb-6 flex gap-2">
-        <input
-          required
-          placeholder="Room name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-        />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-        >
-          Add room
-        </button>
-      </form>
-
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : (
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800">
-              <th className="py-2">Name</th>
-              <th className="py-2">Status</th>
-              <th className="py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rooms.map((r) => (
-              <tr key={r.id} className="border-b border-gray-100 dark:border-gray-900">
-                <td className="py-2">{r.name}</td>
-                <td className="py-2">{r.isActive ? 'Active' : 'Inactive'}</td>
-                <td className="py-2 text-right">
-                  <button type="button" onClick={() => toggleActive(r)} className="text-purple-600 hover:underline">
-                    {r.isActive ? 'Deactivate' : 'Activate'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {error}
+        </div>
       )}
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Add Room to Selected Location</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3 items-end max-w-md">
+            <Input
+              required
+              label="Room Name"
+              placeholder="e.g. Room 101 or VIP Suite"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full"
+            />
+            <Button type="submit" disabled={submitting || locationId === null} className="shrink-0 mb-0.5">
+              {submitting ? 'Adding...' : 'Add Room'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Configured Rooms ({rooms.length})</CardTitle>
+        </CardHeader>
+        {loading ? (
+          <CardContent className="py-8">
+            <LoadingFallback />
+          </CardContent>
+        ) : rooms.length === 0 ? (
+          <CardContent className="py-8 text-center text-xs text-muted-foreground">
+            No rooms configured for this location.
+          </CardContent>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
+                  <th className="px-6 py-3.5">Room Name</th>
+                  <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {rooms.map((r) => (
+                  <tr key={r.id} className="hover:bg-accent/40 transition">
+                    <td className="px-6 py-4 font-semibold text-foreground">{r.name}</td>
+                    <td className="px-6 py-4">
+                      <Badge status={r.isActive ? 'Active' : 'Inactive'} />
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => toggleActive(r)}>
+                        {r.isActive ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

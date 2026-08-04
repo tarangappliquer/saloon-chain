@@ -8,8 +8,11 @@ follow when building the rest.
 
 ## 1. What this repo is
 
-A multi-tenant salon/treatment booking platform (`docs/initial-project-apec.md`) for multiple
-saloon chains, each with multiple locations, rooms, therapists, and treatments. Currently
+A salon/treatment booking platform (`docs/initial-project-apec.md`) for a single saloon chain with
+multiple locations, rooms, therapists, and treatments (treatments bind to multiple locations via
+`LocationTreatments`). The schema/API keep the `SaloonChains`/`ChainId` tenant boundary intact even
+though the product only ever has one chain row -- so a return to multi-tenant is a data + UI change,
+not a schema migration, if that's ever needed again (see §4, §8). Currently
 implemented: **one vertical slice, end to end** — customer registration/login, browsing
 treatments, and the full booking flow (select treatments → pick date → pick slot → temporary
 hold → confirm), wired through the real database, cache, and real-time layers. Nothing here is
@@ -255,9 +258,10 @@ and `ICurrentUser` is registered to resolve to that same scoped instance
 (`AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>())`) so the middleware's writes
 and a handler's reads see one instance per request.
 
-There is currently exactly one role: implicit "Customer." When RBAC lands (Super
-Admin/Admin/Manager/Receptionist/Therapist/Customer per spec), it plugs in as claims on the same
-JWT plus `[Authorize(Policy = ...)]` — no auth mechanism change needed.
+RBAC is built (§8): RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other/Customer,
+carried as claims on the same JWT plus `[Authorize(Policy = ...)]` — no separate auth mechanism per
+role. RootSuperAdmin is the platform owner (unscoped, the only role that can create chains); every
+other staff role below it carries a ChainId or LocationId scope (§4).
 
 ### Error handling & validation
 
@@ -420,8 +424,8 @@ yet.
 | Booking flow (hold → confirm) | ✅ Built | `Modules/Booking` |
 | Location holidays | ✅ Built | `LocationHolidays` table, checked in `BookingService` |
 | Admin portal UI | ✅ Built | `frontend/adminportal` |
-| RBAC (5 roles: SuperAdmin/Admin/Manager/Therapist/Customer; Receptionist deferred) | ✅ Built | JWT claims + `[Authorize(Policy=...)]` (`Program.cs`: `ChainManagement`/`LocationManagement`/`AdminAccess`/`StaffAccess`); staff-creation hierarchy enforced in `AdminStaffEndpoints.MapPost` |
-| Emulation (admin-as-customer) | ✅ Built | `POST /api/auth/emulate/{customerId}` in `Modules/Identity`, gated by `dbo.Users.IsEmulator` (SuperAdmin-only to grant) |
+| RBAC (8 roles: RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other/Customer) | ✅ Built | JWT claims + `[Authorize(Policy=...)]` (`Program.cs`: `ChainManagement`/`LocationManagement`/`AdminAccess`/`StaffAccess`); staff-creation hierarchy (RootSuperAdmin→SuperAdmin→Admin→Manager→Receptionist, each creating downward; RootSuperAdmin alone creates chains/a chain's first SuperAdmin/Admin) enforced in `AdminStaffEndpoints.MapPost` |
+| Emulation (staff-as-customer, any staff role: RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other) | ✅ Built | `POST /api/auth/emulate/{customerId}` in `Modules/Identity`, gated by `dbo.Users.IsEmulator` (RootSuperAdmin/SuperAdmin-only to grant, any staff role eligible to hold the flag) |
 | Shift/room-assignment CRUD | ✅ Built (Receptionist assignment deferred) | `Modules/Scheduling` — therapist shift assignment + room-category "opening" for a date, reusing `ShiftAssignments`/`RoomCategoryAssignments` |
 | Real delete (vs. deactivate) | ✅ Built for Chains (SuperAdmin) and Locations (SuperAdmin/Admin) | `IsDelete` soft-delete, `sp_Catalog_DeleteChain`/`sp_Catalog_DeleteLocation`; not extended to other entities |
 | Analytics/reports | ❌ Not started | New module, reads via new SPs — no existing code to extend |

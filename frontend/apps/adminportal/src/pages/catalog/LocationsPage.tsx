@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../../api/client';
-import type { Chain, Location } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import type { Location } from '../../api/types';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -20,12 +20,11 @@ function emptyForm() {
     openTime: '09:00',
     closeTime: '18:00',
     timeZoneId: 'UTC',
-    days: new Set(DAY_BITS.map((d) => d.bit)), // default: open every day
+    days: new Set(DAY_BITS.map((d) => d.bit)),
   };
 }
 
 export function LocationsPage() {
-  const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [form, setForm] = useState(emptyForm());
@@ -37,8 +36,7 @@ export function LocationsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
-        setChains(cs);
+        const cs = data as unknown as { id: number }[];
         if (cs.length > 0) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
@@ -125,110 +123,146 @@ export function LocationsPage() {
   }
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Locations</h1>
+    <div className="space-y-6">
+      <PageHeader title="Locations" description="Manage physical salon locations, operating hours, and active status." />
 
-      <label className="mb-4 block text-sm">
-        Chain{' '}
-        <SearchableSelect
-          value={String(chainId ?? '')}
-          onChange={(v) => setChainId(Number(v))}
-          options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-          className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-        />
-      </label>
-
-      <form onSubmit={handleCreate} className="mb-6 space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-        <div className="flex flex-wrap gap-2">
-          <input
-            required
-            placeholder="Name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-          <input
-            placeholder="Address"
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-          <input
-            required
-            type="time"
-            value={form.openTime}
-            onChange={(e) => setForm({ ...form, openTime: e.target.value })}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-          <input
-            required
-            type="time"
-            value={form.closeTime}
-            onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
-          <input
-            required
-            placeholder="Time zone (e.g. UTC)"
-            value={form.timeZoneId}
-            onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
-            className="rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-          />
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {error}
         </div>
-        <div className="flex gap-3 text-sm">
-          {DAY_BITS.map((d) => (
-            <label key={d.bit} className="flex items-center gap-1">
-              <input type="checkbox" checked={form.days.has(d.bit)} onChange={() => toggleDay(d.bit)} />
-              {d.label}
-            </label>
-          ))}
-        </div>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-lg bg-purple-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-        >
-          Add location
-        </button>
-      </form>
-
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : (
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800">
-              <th className="py-2">Name</th>
-              <th className="py-2">Address</th>
-              <th className="py-2">Hours</th>
-              <th className="py-2">Status</th>
-              <th className="py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {locations.map((l) => (
-              <tr key={l.id} className="border-b border-gray-100 dark:border-gray-900">
-                <td className="py-2">{l.name}</td>
-                <td className="py-2">{l.address ?? '-'}</td>
-                <td className="py-2">
-                  {l.openTime}-{l.closeTime} ({l.timeZoneId})
-                </td>
-                <td className="py-2">{l.isActive === false ? 'Inactive' : 'Active'}</td>
-                <td className="py-2 text-right">
-                  <button type="button" onClick={() => toggleActive(l)} className="mr-3 text-purple-600 hover:underline">
-                    {l.isActive === false ? 'Activate' : 'Deactivate'}
-                  </button>
-                  <button type="button" onClick={() => handleDelete(l)} className="text-red-600 hover:underline">
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Add New Location</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Input
+                required
+                label="Location Name"
+                placeholder="Downtown Salon"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <Input
+                label="Address"
+                placeholder="123 Main St, Suite 100"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+              <Input
+                required
+                label="Time Zone ID"
+                placeholder="UTC or America/New_York"
+                value={form.timeZoneId}
+                onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
+              />
+              <Input
+                required
+                type="time"
+                label="Opening Time"
+                value={form.openTime}
+                onChange={(e) => setForm({ ...form, openTime: e.target.value })}
+              />
+              <Input
+                required
+                type="time"
+                label="Closing Time"
+                value={form.closeTime}
+                onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Operating Days
+              </label>
+              <div className="flex flex-wrap gap-4 text-xs">
+                {DAY_BITS.map((d) => (
+                  <label key={d.bit} className="flex items-center gap-1.5 font-medium text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.days.has(d.bit)}
+                      onChange={() => toggleDay(d.bit)}
+                      className="rounded-sm border-input text-primary focus:ring-primary h-4 w-4"
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Adding...' : 'Add Location'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Salon Locations ({locations.length})</CardTitle>
+        </CardHeader>
+        {loading ? (
+          <CardContent className="py-8">
+            <LoadingFallback />
+          </CardContent>
+        ) : locations.length === 0 ? (
+          <CardContent className="py-8 text-center text-xs text-muted-foreground">
+            No locations configured yet. Add your first location above.
+          </CardContent>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
+                  <th className="px-6 py-3.5">Name</th>
+                  <th className="px-6 py-3.5">Address</th>
+                  <th className="px-6 py-3.5">Hours & Timezone</th>
+                  <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {locations.map((l) => (
+                  <tr key={l.id} className="hover:bg-accent/40 transition">
+                    <td className="px-6 py-4 font-semibold text-foreground">{l.name}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{l.address ?? '-'}</td>
+                    <td className="px-6 py-4 font-mono text-muted-foreground">
+                      {l.openTime} - {l.closeTime} ({l.timeZoneId})
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge status={l.isActive === false ? 'Inactive' : 'Active'} />
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleActive(l)}
+                        >
+                          {l.isActive === false ? 'Activate' : 'Deactivate'}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDelete(l)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

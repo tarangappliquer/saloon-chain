@@ -4,9 +4,12 @@ namespace SaloonApi.Shared.Auth;
 // not a privilege ranking -- don't rely on ordinal comparisons for access checks.
 internal enum UserRole
 {
+    RootSuperAdmin,
     SuperAdmin,
     Admin,
     Manager,
+    Receptionist,
     Therapist,
+    Other,
     Customer
 }

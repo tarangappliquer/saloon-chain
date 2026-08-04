@@ -114,17 +114,34 @@ CREATE TABLE dbo.Therapists (
     UpdatedDate  DATETIME2 NULL
 );
 
--- Single login table for every kind of user -- SuperAdmin, Admin, Manager, Therapist and Customer
--- all authenticate the same way (see sp_Auth_CreateUser/GetUserByEmail) and are told apart only by
--- Role plus the scoping columns below. ChainId/LocationId/TherapistId are deliberately all
--- nullable and mostly mutually exclusive by convention (not enforced -- one column set depends on
--- Role, e.g. SuperAdmin has none set, Admin sets ChainId, Manager/Therapist set LocationId):
---   SuperAdmin: no scope columns set -- sees every chain.
---   Admin:      ChainId set -- scoped to one chain, all its locations.
---   Manager:    LocationId set -- scoped to a single location.
---   Therapist:  LocationId + TherapistId set -- login tied 1:1 to a Therapists row, for staff who
---               need to see their own schedule; TherapistId is what ShiftAssignments/Bookings key on.
---   Customer:   no scope columns set -- self-registered, books for themselves only.
+-- Single login table for every kind of user -- RootSuperAdmin, SuperAdmin, Admin, Manager,
+-- Receptionist, Therapist, Other and Customer all authenticate the same way (see
+-- sp_Auth_CreateUser/GetUserByEmail) and are told apart only by Role plus the scoping columns
+-- below. ChainId/LocationId/TherapistId are deliberately all nullable and mostly mutually
+-- exclusive by convention (not enforced -- one column set depends on Role, e.g. RootSuperAdmin has
+-- none set, SuperAdmin/Admin set ChainId, Manager/Receptionist/Therapist/Other set LocationId).
+-- There is exactly one chain row in practice (single-saloon product decision) but ChainId/
+-- SaloonChains stay in the schema so a second chain is a data change, not a schema migration, if
+-- multi-tenant is ever needed again:
+--   RootSuperAdmin: no scope columns set -- the platform owner; only role that can create chains/
+--                 locations for a chain and provision a chain's first SuperAdmin/Admin (see
+--                 AdminStaffEndpoints.MapPost, Program.cs's ChainManagement policy). Seeded at
+--                 startup by AdminSeeder -- there is no bootstrap workflow for any other role.
+--   SuperAdmin:   ChainId set -- scoped to one chain, all its locations; the top of that chain's
+--                 own staff hierarchy (created by RootSuperAdmin).
+--   Admin:        ChainId set -- scoped to one chain, all its locations; created by RootSuperAdmin
+--                 or that chain's SuperAdmin.
+--   Manager:      LocationId set -- runs a single location day to day, ranks above Receptionist in
+--                 the staff-creation hierarchy (see AdminStaffEndpoints.MapPost).
+--   Receptionist: LocationId set -- front-desk staff scoped to a single location; no staff-creation
+--                 rights of its own.
+--   Therapist:    LocationId + TherapistId set -- login tied 1:1 to a Therapists row, for staff who
+--                 need to see their own schedule; TherapistId is what ShiftAssignments/Bookings key on.
+--   Other:        LocationId set (optional) -- catch-all for staff that don't fit the above (e.g.
+--                 cleaner, cashier); no admin-portal management capability beyond StaffAccess.
+--   Customer:     no scope columns set -- self-registered, or created by RootSuperAdmin/SuperAdmin/
+--                 Admin/Manager on a customer's behalf. Any staff role can also be marked
+--                 IsEmulator to act as a customer (see below).
 CREATE TABLE dbo.Users (
     Id            INT IDENTITY(1,1) PRIMARY KEY,
     Name          NVARCHAR(200)   NOT NULL,
@@ -133,12 +150,12 @@ CREATE TABLE dbo.Users (
     PasswordSalt  VARBINARY(128)  NOT NULL,
     Phone         NVARCHAR(30)    NULL,
     Role          VARCHAR(20)     NOT NULL DEFAULT 'Customer'
-                  CHECK (Role IN ('SuperAdmin', 'Admin', 'Manager', 'Therapist', 'Customer')),
+                  CHECK (Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer')),
     ChainId       INT NULL REFERENCES dbo.SaloonChains(Id),
     LocationId    INT NULL REFERENCES dbo.Locations(Id),
     TherapistId   INT NULL REFERENCES dbo.Therapists(Id),
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
-    IsEmulator    BIT NOT NULL DEFAULT 0, -- SuperAdmin/Admin/Manager only: allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
+    IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
     IsDelete      BIT NOT NULL DEFAULT 0,
     IsActive      BIT NOT NULL DEFAULT 1,
     CreatedBy     INT NULL REFERENCES dbo.Users(Id),
@@ -232,7 +249,7 @@ CREATE TABLE dbo.Bookings (
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
     CreatedBy    INT NULL REFERENCES dbo.Users(Id), -- who created the row (self for customer bookings;
-                                                     -- an Admin/Manager/Therapist when booked on a customer's behalf)
+                                                     -- staff when booked on a customer's behalf)
     CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
     UpdatedDate  DATETIME2 NULL

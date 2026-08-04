@@ -1,4 +1,4 @@
-export type UserRole = 'SuperAdmin' | 'Admin' | 'Manager' | 'Therapist' | 'Customer';
+export type UserRole = 'RootSuperAdmin' | 'SuperAdmin' | 'Admin' | 'Manager' | 'Receptionist' | 'Therapist' | 'Other' | 'Customer';
 
 export interface AuthResponse {
   userId: number;

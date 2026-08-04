@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card } from '@saloon/ui';
+import { Badge, Button, Card, LoadingFallback } from '@saloon/ui';
 import { bookingApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
 
 type Tab = 'upcoming' | 'past' | 'draft';
 
-// A booking has no single time of its own (each treatment is scheduled independently) -- a
-// booking counts as "past" once every treatment has finished; still "upcoming" otherwise
-// (covers not-yet-started and in-progress alike).
 function isPast(b: MyBooking, now: number): boolean {
   const ends = b.treatments.map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
   return ends.length > 0 && now > Math.max(...ends);
@@ -27,28 +24,30 @@ function latestEnd(b: MyBooking): number {
 
 function BookingCard({ b }: { b: MyBooking }) {
   return (
-    <Card>
+    <Card hoverable className="p-6">
       <div className="flex items-center justify-between">
-        <span className="font-medium text-gray-900 dark:text-gray-100">{b.locationName}</span>
+        <span className="font-display font-semibold text-foreground text-base">{b.locationName}</span>
         <Badge status={b.status} />
       </div>
-      <ul className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+      <ul className="mt-3 space-y-2 text-sm text-foreground">
         {b.treatments.map((t) => (
-          <li key={t.treatmentName}>
-            <span className="font-medium">{t.treatmentName}</span> — ${t.price.toFixed(2)}
-            {t.startTime && (
-              <span className="text-gray-500 dark:text-gray-400">
-                {' · '}
-                {new Date(t.startTime).toLocaleString(undefined, {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}{' '}
-                with {t.therapistName}
-              </span>
-            )}
+          <li key={t.treatmentName} className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-border/50 pt-2 first:border-0 first:pt-0">
+            <div>
+              <span className="font-medium text-foreground">{t.treatmentName}</span>
+              {t.startTime && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {new Date(t.startTime).toLocaleString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}{' '}
+                  with {t.therapistName}
+                </p>
+              )}
+            </div>
+            <span className="font-mono text-xs font-semibold text-primary mt-1 sm:mt-0">${t.price.toFixed(2)}</span>
           </li>
         ))}
       </ul>
@@ -65,7 +64,7 @@ export function MyBookingsPage() {
     bookingApi.apiBookingMineGet().then(({ data }) => setBookings(data as unknown as MyBooking[]));
   }, []);
 
-  if (!bookings) return <p className="p-6 text-gray-500">Loading…</p>;
+  if (!bookings) return <LoadingFallback />;
 
   const isDev = import.meta.env.DEV;
   const now = Date.now();
@@ -84,34 +83,33 @@ export function MyBookingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-purple-100 bg-purple-50 p-6 dark:border-purple-900/50 dark:bg-purple-950/30">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 p-6 backdrop-blur-xs">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
             Welcome back{user?.name ? `, ${user.name}` : ''}!
           </h1>
           {user?.email && (
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{user.email}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
           )}
         </div>
-        <Link
-          to="/book"
-          className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-purple-700 transition"
-        >
-          Book new appointment
+        <Link to="/book">
+          <Button variant="primary" size="md">
+            Book new appointment
+          </Button>
         </Link>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex gap-2 border-b border-border pb-1">
         {tabs.map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
               tab === id
-                ? 'border-purple-600 text-purple-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             }`}
           >
             {label}
@@ -121,7 +119,9 @@ export function MyBookingsPage() {
 
       <div className="space-y-4">
         {shown.length === 0 ? (
-          <p className="text-gray-500">No {tab} bookings.</p>
+          <Card className="p-8 text-center">
+            <p className="text-sm text-muted-foreground">No {tab} bookings found.</p>
+          </Card>
         ) : (
           shown.map((b) => <BookingCard key={b.id} b={b} />)
         )}

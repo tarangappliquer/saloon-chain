@@ -475,8 +475,10 @@ BEGIN
 END
 GO
 
--- Shared by self-registration (Role='Customer', @CreatedBy=NULL) and admin-created staff
--- logins (Role='SuperAdmin'/'Admin'/'Manager'/'Therapist', @CreatedBy=the admin's user id).
+-- Shared by self-registration (Role='Customer', @CreatedBy=NULL) and admin-created logins --
+-- staff (Role='RootSuperAdmin'/'SuperAdmin'/'Admin'/'Manager'/'Receptionist'/'Therapist'/'Other')
+-- or a Customer created on their behalf by RootSuperAdmin/SuperAdmin/Admin/Manager (@CreatedBy=the
+-- creator's user id either way).
 CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
     @Name          NVARCHAR(200),
     @Email         NVARCHAR(256),
@@ -609,16 +611,16 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateUser
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- AdminAccess keeps Therapist/Customer rows out of this proc's caller, but that's a "which
-    -- endpoint" gate, not a "which row" one -- nothing stops the request body itself from setting
-    -- @IsEmulator=1 on a Therapist row. Enforced here instead of trusting the caller: IsEmulator can
-    -- only ever be true for SuperAdmin/Admin/Manager (mirrors AuthService.EmulatorEligibleRoles),
-    -- so login's CanEmulate and the emulate exchange's authorization stay consistent no matter what
-    -- was requested.
+    -- AdminAccess keeps Customer rows out of this proc's caller, but that's a "which endpoint" gate,
+    -- not a "which row" one -- nothing stops the request body itself from setting @IsEmulator=1 on
+    -- a row this shouldn't apply to. Enforced here instead of trusting the caller: IsEmulator can be
+    -- true for any staff role (mirrors AuthService.EmulatorEligibleRoles -- "all staff can act as a
+    -- customer" is a deliberate product decision, not every-role-by-accident), so login's CanEmulate
+    -- and the emulate exchange's authorization stay consistent no matter what was requested.
     UPDATE dbo.Users
     SET Name = @Name, Phone = @Phone, ChainId = @ChainId, LocationId = @LocationId,
         TherapistId = @TherapistId,
-        IsEmulator = CASE WHEN Role IN ('SuperAdmin', 'Admin', 'Manager') THEN @IsEmulator ELSE 0 END,
+        IsEmulator = CASE WHEN Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other') THEN @IsEmulator ELSE 0 END,
         IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0 AND Role <> 'Customer';
 
@@ -1022,9 +1024,10 @@ BEGIN
 END
 GO
 
--- Admin-as-customer emulation. Run after 01-07. See docs/initial-project-spec.md: "Super Admin/
--- Admin/Manager can be marked as emulator. emulator can emulate customer and access customer
--- portal on behalf of him."
+-- Staff-as-customer emulation. Run after 01-07. Originally scoped to "Super Admin/Admin/Manager"
+-- per docs/initial-project-spec.md; widened to every staff role (RootSuperAdmin/SuperAdmin/Admin/
+-- Manager/Receptionist/Therapist/Other) so any staff member can be marked as emulator and access
+-- the customer portal on a customer's behalf.
 
 -- Powers the admin-portal "Customers" picker used to start an emulation session -- search only,
 -- no admin listing-all-customers use case exists yet so this always requires @Search.
@@ -1042,7 +1045,7 @@ END
 GO
 
 -- Staff scheduling: therapist shift assignments + room-category openings, for the admin portal's
--- Scheduling page (Admin/Manager -- see docs/architecture.md's "Shift/room-assignment CRUD" gap).
+-- Scheduling page (SuperAdmin/Admin/Manager/Receptionist -- see docs/architecture.md's "Shift/room-assignment CRUD" gap).
 -- Reuses dbo.ShiftAssignments/dbo.RoomCategoryAssignments, which existed as schema only until now
 -- (seeded manually via 06_seed.sql, read only by sp_Booking_GetAvailabilityData for slot math).
 -- Run after 01-08.

@@ -1,20 +1,25 @@
 import type { ReactNode } from 'react';
+import { cn } from '../lib/utils';
 
-interface PageHeaderProps {
+export interface PageHeaderProps {
   title: string;
+  subtitle?: string;
   description?: string;
   action?: ReactNode;
+  children?: ReactNode;
   className?: string;
 }
 
-export function PageHeader({ title, description, action, className = '' }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, description, action, children, className = '' }: PageHeaderProps) {
+  const sub = subtitle || description;
+
   return (
-    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-200/80 dark:border-gray-800/80 ${className}`}>
+    <div className={cn("flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border", className)}>
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">{title}</h1>
-        {description && <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{description}</p>}
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
       </div>
-      {action && <div className="flex items-center gap-3">{action}</div>}
+      {(action || children) && <div className="flex items-center gap-3">{action || children}</div>}
     </div>
   );
 }

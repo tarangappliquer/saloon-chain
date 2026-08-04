@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Badge } from '@saloon/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
-import type { AdminBooking, Chain, Location } from '../../api/types';
+import type { AdminBooking, Location } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 function today(): string {
@@ -11,9 +11,13 @@ function today(): string {
 
 export function BookingsPage() {
   const { user } = useAuth();
-  const canCancel = user?.role === 'SuperAdmin' || user?.role === 'Admin' || user?.role === 'Manager';
+  const canCancel =
+    user?.role === 'RootSuperAdmin' ||
+    user?.role === 'SuperAdmin' ||
+    user?.role === 'Admin' ||
+    user?.role === 'Manager' ||
+    user?.role === 'Receptionist';
 
-  const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(null);
@@ -26,8 +30,7 @@ export function BookingsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
-        setChains(cs);
+        const cs = data as unknown as { id: number }[];
         if (cs.length > 0) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
@@ -45,7 +48,7 @@ export function BookingsPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
   }, [chainId]);
 
-  async function loadBookings() {
+  const loadBookings = useCallback(async () => {
     if (locationId === null) return;
     setLoading(true);
     setError(null);
@@ -57,12 +60,11 @@ export function BookingsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [locationId, date]);
 
   useEffect(() => {
     loadBookings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, date]);
+  }, [loadBookings]);
 
   async function handleCancel(id: number) {
     setError(null);
@@ -75,94 +77,104 @@ export function BookingsPage() {
   }
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-semibold text-gray-900 dark:text-gray-100">Bookings</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Location Bookings"
+        description="Review and manage customer appointments for any location and date."
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
+              <SearchableSelect
+                value={String(locationId ?? '')}
+                onChange={(v) => setLocationId(Number(v))}
+                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Date:</span>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-8 text-xs min-w-[140px]"
+              />
+            </div>
+          </div>
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap gap-4 text-sm">
-        <label>
-          Chain{' '}
-          <SearchableSelect
-            value={String(chainId ?? '')}
-            onChange={(v) => setChainId(Number(v))}
-            options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label>
-          Location{' '}
-          <SearchableSelect
-            value={String(locationId ?? '')}
-            onChange={(v) => setLocationId(Number(v))}
-            options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-        <label>
-          Date{' '}
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-          />
-        </label>
-      </div>
-
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-
-      {loading ? (
-        <p className="text-gray-500">Loading...</p>
-      ) : bookings.length === 0 ? (
-        <p className="text-gray-500">No bookings for this location/date.</p>
-      ) : (
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800">
-              <th className="py-2">Customer</th>
-              <th className="py-2">Treatments</th>
-              <th className="py-2">Status</th>
-              <th className="py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bookings.map((b) => (
-              <tr key={b.id} className="border-b border-gray-100 align-top dark:border-gray-900">
-                <td className="py-2">
-                  {b.customerName}
-                  <br />
-                  <span className="text-xs text-gray-500">{b.customerEmail}</span>
-                </td>
-                <td className="py-2">
-                  <ul className="space-y-1">
-                    {b.treatments.map((t) => (
-                      <li key={t.treatmentName}>
-                        {t.treatmentName}
-                        {t.startTime && t.endTime && (
-                          <span className="text-xs text-gray-500">
-                            {' — '}
-                            {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}-
-                            {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            {' · '}
-                            {t.roomName} · {t.therapistName}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td className="py-2"><Badge status={b.status} /></td>
-                <td className="py-2 text-right">
-                  {canCancel && (b.status === 'Draft' || b.status === 'Confirmed') && (
-                    <button type="button" onClick={() => handleCancel(b.id)} className="text-red-600 hover:underline">
-                      Cancel
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {error}
+        </div>
       )}
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Appointments ({bookings.length})</CardTitle>
+        </CardHeader>
+        {loading ? (
+          <CardContent className="py-8">
+            <LoadingFallback />
+          </CardContent>
+        ) : bookings.length === 0 ? (
+          <CardContent className="py-8 text-center text-xs text-muted-foreground">
+            No bookings found for this location and date.
+          </CardContent>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
+                  <th className="px-6 py-3.5">Customer</th>
+                  <th className="px-6 py-3.5">Treatments & Schedule</th>
+                  <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {bookings.map((b) => (
+                  <tr key={b.id} className="hover:bg-accent/40 transition align-top">
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-foreground">{b.customerName}</div>
+                      <div className="text-muted-foreground text-xs">{b.customerEmail}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <ul className="space-y-1.5">
+                        {b.treatments.map((t) => (
+                          <li key={t.treatmentName} className="flex flex-col">
+                            <span className="font-medium text-foreground">{t.treatmentName}</span>
+                            {t.startTime && t.endTime && (
+                              <span className="text-muted-foreground text-xs font-mono">
+                                {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
+                                {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {' · '}
+                                {t.roomName} · {t.therapistName}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge status={b.status} />
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {canCancel && (b.status === 'Draft' || b.status === 'Confirmed') && (
+                        <Button variant="danger" size="sm" onClick={() => handleCancel(b.id)}>
+                          Cancel Booking
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

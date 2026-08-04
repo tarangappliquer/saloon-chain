@@ -8,8 +8,8 @@ internal interface ICurrentUser
     int? UserId { get; }
     string? Email { get; }
     UserRole? Role { get; }
-    int? ChainId { get; }    // set for Role=Admin: the chain they're scoped to
-    int? LocationId { get; } // set for Role=Manager/Therapist: the location they're scoped to
+    int? ChainId { get; }    // set for Role=SuperAdmin/Admin: the chain they're scoped to
+    int? LocationId { get; } // set for Role=Manager/Receptionist/Therapist/Other: the location they're scoped to
     int? TherapistId { get; } // set for Role=Therapist: the Therapists row this login is tied to
     int? EmulatedByUserId { get; } // set when this token came from /api/auth/emulate: the staff user id acting as this customer
     bool IsAuthenticated { get; }

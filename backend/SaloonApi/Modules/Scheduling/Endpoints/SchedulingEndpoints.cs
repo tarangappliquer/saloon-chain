@@ -9,17 +9,17 @@ internal static class SchedulingEndpoints
 {
     public static void MapSchedulingEndpoints(this IEndpointRouteBuilder app)
     {
-        // SuperAdmin/Admin/Manager all do scheduling per spec -- Manager (head of one location) is
-        // pinned to their own LocationId below; Admin's chain-scoping is accepted at the same trust
-        // level as the Rooms/Therapists catalog endpoints (the location picker feeding this page is
-        // already chain-scoped for Admin).
+        // SuperAdmin/Admin/Manager/Receptionist all do scheduling per spec -- Manager/Receptionist
+        // (staff of one location) are pinned to their own LocationId below; Admin's chain-scoping is
+        // accepted at the same trust level as the Rooms/Therapists catalog endpoints (the location
+        // picker feeding this page is already chain-scoped for Admin).
         var group = app.MapGroup("/api/admin/scheduling").RequireAuthorization("AdminAccess").WithTags("Scheduling")
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapGet("/roster", async (int locationId, DateOnly date, ICurrentUser currentUser, SchedulingRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != locationId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(await repo.GetRosterAsync(locationId, date));
@@ -29,7 +29,7 @@ internal static class SchedulingEndpoints
 
         group.MapPost("/therapist-shifts", async (AssignTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != req.LocationId)
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != req.LocationId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
             var id = await repo.AssignTherapistShiftAsync(
