@@ -3,11 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar } from 'lucide-react';
 import { adminCatalogApi, ApiError } from '../../api/client';
+import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Room } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 export function RoomsPage() {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const paramChainId = searchParams.get('chainId');
   const paramLocationId = searchParams.get('locationId');
@@ -154,9 +156,13 @@ export function RoomsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate(chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons')}
+              onClick={() =>
+                navigate(
+                  currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
+                )
+              }
             >
-              ← Back to Locations
+              ← Back
             </Button>
           </div>
         }
@@ -199,6 +205,7 @@ export function RoomsPage() {
                   value={String(locationId ?? '')}
                   onChange={(v) => handleLocationChange(Number(v))}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                  disabled={currentUser?.role === 'Manager'}
                   className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                 />
               </div>

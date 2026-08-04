@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { ApiError, authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
+import { authApi, axiosInstance, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import type { AuthResponse, UserRole } from '../../api/types';
 
 interface AuthUser {
@@ -27,11 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   async function login(email: string, password: string) {
-    const { data } = await authApi.apiAuthLoginPost({ email, password });
+    // portal: 'Admin' has the API itself reject Receptionist/Therapist/Other/Customer credentials
+    // (403, even though they're valid) -- adminportal has no UI for those roles (every route needs
+    // at least Manager, see App.tsx's ADMIN_ACCESS). Not in the generated SDK's LoginRequest yet
+    // (backward-compatible optional field clientportal never sends), so called directly.
+    const { data } = await axiosInstance.post('/api/auth/login', { email, password, portal: 'Admin' });
     const res = data as unknown as AuthResponse;
-    if (res.role === 'Customer') {
-      throw new ApiError(403, 'This account is not authorized for the admin portal.');
-    }
 
     setAuthToken(res.token);
     setRefreshToken(res.refreshToken);

@@ -33,7 +33,22 @@ internal static class AdminStaffEndpoints
             if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin)) chainId = currentUser.ChainId;
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist)) locationId = currentUser.LocationId;
 
-            return Results.Ok(await repo.GetStaffAsync(parsedRole, chainId, locationId));
+            var staff = await repo.GetStaffAsync(parsedRole, chainId, locationId);
+
+            // Peers and anyone above the caller's own rank are invisible -- a SuperAdmin doesn't see
+            // other SuperAdmins/RootSuperAdmin, an Admin doesn't see other Admins/SuperAdmin/
+            // RootSuperAdmin, a Manager doesn't see other Managers/Admin/SuperAdmin/RootSuperAdmin.
+            UserRole[] hiddenRoles = currentUser.Role switch
+            {
+                UserRole.SuperAdmin => [UserRole.RootSuperAdmin, UserRole.SuperAdmin],
+                UserRole.Admin => [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin],
+                UserRole.Manager => [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager],
+                _ => []
+            };
+            if (hiddenRoles.Length > 0)
+                staff = staff.Where(s => !hiddenRoles.Contains(s.Role)).ToList();
+
+            return Results.Ok(staff);
         }).Produces<IReadOnlyList<StaffUserDto>>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("List staff users, scoped to the caller's own chain/location where applicable.");
@@ -114,6 +129,54 @@ internal static class AdminStaffEndpoints
             if (req.IsEmulator != existing.IsEmulator && !currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin))
                 return Results.Problem("Only Super Admin can change emulator status.", statusCode: StatusCodes.Status403Forbidden);
 
+            // Who may edit whom mirrors POST's creation matrix above (RootSuperAdmin edits anyone,
+            // SuperAdmin edits Admin/Manager/Receptionist/Therapist/Other/Customer in their own chain,
+            // Admin edits Manager/Receptionist/Therapist/Other/Customer in their own chain, Manager
+            // edits Receptionist/Therapist/Other/Customer in their own location). Nothing enforced
+            // this before -- any AdminAccess caller could PUT any staff id in the system and reassign
+            // role/chain/location/active state freely, including promoting a Receptionist straight to
+            // SuperAdmin, or editing a staff member in a chain/location they have no relation to.
+            var newRole = req.Role is null ? existing.Role : Enum.Parse<UserRole>(req.Role);
+
+            if (currentUser.IsInRole(UserRole.RootSuperAdmin))
+            {
+                // No restriction -- Root can edit anyone, any role reassignment.
+            }
+            else if (currentUser.IsInRole(UserRole.SuperAdmin))
+            {
+                // Manager/Receptionist/Therapist/Other targets carry LocationId, not ChainId (see
+                // dbo.Users) -- their chain isn't cheaply checkable here, so (same trust level already
+                // accepted for Admin's location/room/treatment endpoints elsewhere in this file) only
+                // ChainId-bearing targets get an explicit chain-ownership check.
+                if (existing.ChainId is not null && existing.ChainId != currentUser.ChainId)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                if (existing.Role is UserRole.RootSuperAdmin or UserRole.SuperAdmin || newRole is UserRole.RootSuperAdmin or UserRole.SuperAdmin)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                req = req with { ChainId = currentUser.ChainId };
+            }
+            else if (currentUser.IsInRole(UserRole.Admin))
+            {
+                if (existing.ChainId is not null && existing.ChainId != currentUser.ChainId)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                if (existing.Role is UserRole.RootSuperAdmin or UserRole.SuperAdmin or UserRole.Admin
+                    || newRole is UserRole.RootSuperAdmin or UserRole.SuperAdmin or UserRole.Admin)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                req = req with { ChainId = currentUser.ChainId };
+            }
+            else if (currentUser.IsInRole(UserRole.Manager))
+            {
+                if (existing.LocationId != currentUser.LocationId)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                if (existing.Role is UserRole.RootSuperAdmin or UserRole.SuperAdmin or UserRole.Admin or UserRole.Manager
+                    || newRole is UserRole.RootSuperAdmin or UserRole.SuperAdmin or UserRole.Admin or UserRole.Manager)
+                    return Results.Problem("Not authorized to edit this staff member.", statusCode: StatusCodes.Status403Forbidden);
+                req = req with { LocationId = currentUser.LocationId };
+            }
+            else
+            {
+                return Results.Problem("Not authorized to edit staff.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.Role, req.ChainId, req.LocationId, req.TherapistId, req.IsEmulator, req.IsActive);
 
             // Keep the linked dbo.TherapistProfile row's Name/IsActive/scope in step with the staff
@@ -168,5 +231,11 @@ internal sealed class UpdateStaffRequestValidator : AbstractValidator<UpdateStaf
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Phone).MaximumLength(30);
+        // RootSuperAdmin excluded same as CreateStaffRequestValidator -- no "reassign to RootSuperAdmin"
+        // workflow. A malformed/unknown role would otherwise reach UpdateStaffAsync and fail as a raw,
+        // unhandled SQL error against dbo.Users' Role CHECK constraint instead of a clean 400.
+        RuleFor(x => x.Role)
+            .Must(r => r is null || (Enum.TryParse<UserRole>(r, out var role) && role is UserRole.SuperAdmin or UserRole.Admin or UserRole.Manager or UserRole.Receptionist or UserRole.Therapist or UserRole.Other or UserRole.Customer))
+            .WithMessage("Role must be one of SuperAdmin, Admin, Manager, Receptionist, Therapist, Other, Customer.");
     }
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
+import type { UpdateStaffRequest } from '@saloon/api-client';
 
 function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: UserRole; label: string; desc: string }[] {
   const allRoles: { value: UserRole; label: string; desc: string }[] = [
@@ -41,6 +42,7 @@ export function LocationUsersPage() {
   const [editingUser, setEditingUser] = useState<StaffUser | null>(null);
   const [form, setForm] = useState(emptyForm(availableRoles[0]?.value ?? 'Receptionist'));
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -107,6 +109,7 @@ export function LocationUsersPage() {
     e.preventDefault();
     if (!chainId || !locationId) return;
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       if (editingUser) {
@@ -134,6 +137,7 @@ export function LocationUsersPage() {
       handleCancelEdit();
       await loadUsers();
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} location user`);
     } finally {
       setSubmitting(false);
@@ -146,12 +150,13 @@ export function LocationUsersPage() {
       await adminStaffApi.apiAdminStaffIdPut(u.id, {
         name: u.name,
         phone: u.phone,
+        role: u.role,
         chainId: u.chainId,
         locationId: u.locationId,
         therapistId: u.therapistId,
         isEmulator: u.isEmulator,
         isActive: !u.isActive,
-      });
+      } satisfies UpdateStaffRequest);
       await loadUsers();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update user status');
@@ -164,8 +169,16 @@ export function LocationUsersPage() {
         title={`Location User Management ${location ? `— ${location.name}` : ''}`}
         description="Create and manage location staff (Manager, Receptionist, Therapist, Other)."
         action={
-          <Button variant="outline" size="sm" onClick={() => navigate(chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons')}>
-            ← Back to Locations
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              navigate(
+                currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
+              )
+            }
+          >
+            ← Back
           </Button>
         }
       />
@@ -215,6 +228,7 @@ export function LocationUsersPage() {
                 placeholder="e.g. Michael Therapist"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+                error={getFieldError(submitError, 'name')}
               />
 
               <Input
@@ -225,6 +239,7 @@ export function LocationUsersPage() {
                 placeholder="staff@saloon.com"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                error={getFieldError(submitError, 'email')}
               />
             </div>
 
@@ -237,6 +252,7 @@ export function LocationUsersPage() {
                   placeholder="••••••••"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  error={getFieldError(submitError, 'password')}
                 />
               ) : (
                 <Input

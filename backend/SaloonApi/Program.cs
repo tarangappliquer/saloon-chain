@@ -107,11 +107,22 @@ builder.Services.AddAuthorization(options =>
     // policies together, so the net effect of AdminAccess + ChainManagement is RootSuperAdmin only
     // (RootSuperAdmin must therefore also be in AdminAccess below, or the AND never passes).
     options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
+    // A chain's own SuperAdmin may see and edit *their* chain's details (name/active state) -- just
+    // not create or delete chains, which stays RootSuperAdmin-only via ChainManagement above. Scoping
+    // to the caller's own chain is checked in AdminCatalogEndpoints' PUT /chains/{id} handler, same
+    // layering trick as ChainManagement.
+    options.AddPolicy("ChainDetailsManagement", p => p.RequireRole(
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin)));
     // Locations/Rooms are SuperAdmin/Admin's remit (within their own chain, see AdminCatalogEndpoints'
     // ChainId checks), not Manager's/Receptionist's (they run one location day to day, not a creator
     // of them) -- RootSuperAdmin can do it too, for any chain, same layering trick as ChainManagement above.
     options.AddPolicy("LocationManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+    // A location's own Manager may edit *their* location's details -- not create/delete locations,
+    // which stays LocationManagement's remit above. Scoping to the caller's own location is checked
+    // in AdminCatalogEndpoints' PUT /locations/{id} handler.
+    options.AddPolicy("LocationDetailsManagement", p => p.RequireRole(
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(

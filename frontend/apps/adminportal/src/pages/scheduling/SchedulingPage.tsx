@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
+import { useAuth } from '../../features/auth/AuthContext';
 import type { Location, Room, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
@@ -18,6 +19,7 @@ function today(): string {
 
 export function SchedulingPage() {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const paramChainId = searchParams.get('chainId');
   const paramLocationId = searchParams.get('locationId');
@@ -203,9 +205,13 @@ export function SchedulingPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate(chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons')}
+              onClick={() =>
+                navigate(
+                  currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
+                )
+              }
             >
-              ← Back to Locations
+              ← Back
             </Button>
           ) : undefined
         }
@@ -227,6 +233,7 @@ export function SchedulingPage() {
                 value={String(locationId ?? '')}
                 onChange={changeLocation}
                 options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                disabled={currentUser?.role === 'Manager'}
                 className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
               />
             </div>

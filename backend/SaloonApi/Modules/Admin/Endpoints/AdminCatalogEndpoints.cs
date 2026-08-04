@@ -32,18 +32,47 @@ internal static class AdminCatalogEndpoints
             if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != chainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(await repo.GetLocationsForAdminAsync(chainId));
+            var locations = await repo.GetLocationsForAdminAsync(chainId);
+
+            // Manager has no ChainId to clamp the request itself (see above), so instead of rejecting
+            // the whole chain, the sibling locations are filtered out of the result -- this is the
+            // dropdown every location-scoped page (Rooms/Treatments/Locations) builds its picker from,
+            // so leaving it unfiltered would hand a Manager every other location's id/name in their chain.
+            if (currentUser.IsInRole(UserRole.Manager))
+                locations = locations.Where(l => l.Id == currentUser.LocationId);
+
+            return Results.Ok(locations);
         }).Produces<IEnumerable<AdminLocationDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("List a chain's locations, including inactive ones.");
+          .WithDescription("List a chain's locations, including inactive ones (Manager sees only their own).");
 
         // No chain/location ownership check here -- same trust level as GET /rooms: the location id
         // only ever reaches this handler via a dropdown that GET /locations already scoped to the
         // caller's own chain.
-        group.MapGet("/treatments", async (int locationId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentsForAdminAsync(locationId)))
-            .Produces<IEnumerable<AdminTreatmentDto>>()
-            .WithDescription("List a location's treatments, including inactive ones.");
+        // Manager (and Receptionist/Therapist/Other) have no chain id to drive the /locations dropdown
+        // with -- this fetches their own location directly off ICurrentUser.LocationId instead, for
+        // the Manager location-edit page.
+        group.MapGet("/locations/mine", async (ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.LocationId is not { } locationId)
+                return Results.Problem("Caller has no location of their own.", statusCode: StatusCodes.Status403Forbidden);
+
+            var location = await repo.GetLocationByIdForAdminAsync(locationId);
+            return location is null ? Results.NotFound() : Results.Ok(location);
+        }).Produces<AdminLocationDto>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status404NotFound)
+          .WithDescription("Get the caller's own location (Manager/Receptionist/Therapist/Other).");
+
+        group.MapGet("/treatments", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetTreatmentsForAdminAsync(locationId));
+        }).Produces<IEnumerable<AdminTreatmentDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a location's treatments, including inactive ones.");
 
         group.MapPost("/chains", async (ChainRequest req, CatalogRepository repo) =>
             Results.Ok(new IdResponse(await repo.CreateChainAsync(req.Name))))
@@ -52,15 +81,20 @@ internal static class AdminCatalogEndpoints
             .Produces<IdResponse>()
             .WithDescription("Create a new saloon chain (RootSuperAdmin only).");
 
-        // No scoping check needed in these three handlers -- ChainManagement admits only
-        // RootSuperAdmin (see Program.cs), which has no chain of its own to be scoped by.
-        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, CatalogRepository repo) =>
+        // No scoping check needed for POST/DELETE -- ChainManagement admits only RootSuperAdmin (see
+        // Program.cs), which has no chain of its own to be scoped by. PUT uses ChainDetailsManagement
+        // instead, which also admits a chain's own SuperAdmin, so it needs the explicit id check below.
+        group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.SuperAdmin) && currentUser.ChainId != id)
+                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.UpdateChainAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainManagement")
+        }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin only).");
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin any chain, SuperAdmin their own).");
 
         group.MapDelete("/chains/{id:int}", async (int id, CatalogRepository repo) =>
         {
@@ -82,18 +116,24 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Create a new location under a chain.");
 
-        // Admin-owns-this-location isn't checked here (PUT/DELETE only carry the location id, not
-        // its chain) -- accepted at the same trust level Rooms/Therapists already operate at: the
-        // location id only ever reaches this handler via a dropdown that GET /locations already
-        // scoped to the caller's own chain, so an Admin has no way to discover another chain's id.
-        group.MapPut("/locations/{id:int}", async (int id, LocationUpdateRequest req, CatalogRepository repo) =>
+        // Admin-owns-this-location isn't checked here (PUT only carries the location id, not its
+        // chain) -- accepted at the same trust level Rooms/Therapists already operate at: the location
+        // id only ever reaches this handler via a dropdown that GET /locations already scoped to the
+        // caller's own chain, so an Admin has no way to discover another chain's id. Manager is
+        // different -- LocationDetailsManagement admits them with no chain-scoped dropdown to rely on,
+        // so their own location id is checked explicitly.
+        group.MapPut("/locations/{id:int}", async (int id, LocationUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.UpdateLocationAsync(
                 id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationManagement")
+        }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Update a location's details or active state.");
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Update a location's details or active state (Manager limited to their own location).");
 
         group.MapDelete("/locations/{id:int}", async (int id, CatalogRepository repo) =>
         {
@@ -103,38 +143,74 @@ internal static class AdminCatalogEndpoints
           .Produces(StatusCodes.Status204NoContent)
           .WithDescription("Soft-delete a location.");
 
-        group.MapGet("/treatment-categories", async (int locationId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentCategoriesAsync(locationId)))
-            .Produces<IEnumerable<TreatmentCategoryDto>>()
-            .WithDescription("List a location's treatment categories.");
-
-        group.MapPost("/treatment-categories", async (TreatmentCategoryRequest req, CatalogRepository repo) =>
-            Results.Ok(new IdResponse(await repo.CreateTreatmentCategoryAsync(req.LocationId, req.Name))))
-            .WithValidation<TreatmentCategoryRequest>()
-            .Produces<IdResponse>()
-            .WithDescription("Create a new treatment category under a location.");
-
-        group.MapPut("/treatment-categories/{id:int}", async (int id, TreatmentCategoryUpdateRequest req, CatalogRepository repo) =>
+        group.MapGet("/treatment-categories", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetTreatmentCategoriesAsync(locationId));
+        }).Produces<IEnumerable<TreatmentCategoryDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a location's treatment categories.");
+
+        group.MapPost("/treatment-categories", async (TreatmentCategoryRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != req.LocationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new IdResponse(await repo.CreateTreatmentCategoryAsync(req.LocationId, req.Name)));
+        }).WithValidation<TreatmentCategoryRequest>()
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Create a new treatment category under a location.");
+
+        // PUT only carries the category id, not its location -- a Manager's own category list is
+        // fetched and checked for membership rather than trusting the id blind (that list is itself
+        // now scoped to their location by the GET handler above).
+        group.MapPut("/treatment-categories/{id:int}", async (int id, TreatmentCategoryUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentCategoriesAsync(locationId);
+                if (!mine.Any(c => c.Id == id))
+                    return Results.Problem("Not authorized for this treatment category.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             await repo.UpdateTreatmentCategoryAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
         }).WithValidation<TreatmentCategoryUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Rename a treatment category or change its active state.");
 
-        group.MapPost("/treatments", async (TreatmentRequest req, CatalogRepository repo) =>
-            Results.Ok(new IdResponse(
-                await repo.CreateTreatmentAsync(req.LocationId, req.CategoryId, req.Name, req.Price, req.DurationSlots))))
-            .WithValidation<TreatmentRequest>()
-            .Produces<IdResponse>()
-            .WithDescription("Create a new treatment under a location/category.");
-
-        group.MapPut("/treatments/{id:int}", async (int id, TreatmentUpdateRequest req, CatalogRepository repo) =>
+        group.MapPost("/treatments", async (TreatmentRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != req.LocationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new IdResponse(
+                await repo.CreateTreatmentAsync(req.LocationId, req.CategoryId, req.Name, req.Price, req.DurationSlots)));
+        }).WithValidation<TreatmentRequest>()
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Create a new treatment under a location/category.");
+
+        // Same "fetch caller's own list, check membership" as treatment-categories PUT above --
+        // TreatmentUpdateRequest carries a category id, not a location id, to check against directly.
+        group.MapPut("/treatments/{id:int}", async (int id, TreatmentUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentsForAdminAsync(locationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.Price, req.DurationSlots, req.IsActive);
             return Results.NoContent();
         }).WithValidation<TreatmentUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a treatment's details or active state.");
 
         group.MapGet("/therapists", async (CatalogRepository repo) =>
@@ -157,25 +233,48 @@ internal static class AdminCatalogEndpoints
           .WithDescription("Update a therapist's name or active state.");
 
         // GET stays under the group's plain AdminAccess -- Manager/Receptionist still need the room
-        // list to power the Scheduling page (room-opening), even though they can't add/edit rooms.
-        group.MapGet("/rooms", async (int locationId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetRoomsAsync(locationId)))
-            .Produces<IEnumerable<RoomDto>>()
-            .WithDescription("List a location's rooms.");
-
-        group.MapPost("/rooms", async (RoomRequest req, CatalogRepository repo) =>
-            Results.Ok(new IdResponse(await repo.CreateRoomAsync(req.LocationId, req.Name))))
-            .WithValidation<RoomRequest>()
-            .RequireAuthorization("LocationManagement")
-            .Produces<IdResponse>()
-            .WithDescription("Create a new room under a location.");
-
-        group.MapPut("/rooms/{id:int}", async (int id, RoomUpdateRequest req, CatalogRepository repo) =>
+        // list to power the Scheduling page (room-opening).
+        group.MapGet("/rooms", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetRoomsAsync(locationId));
+        }).Produces<IEnumerable<RoomDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a location's rooms.");
+
+        // LocationDetailsManagement (not the create/delete-only LocationManagement) -- rooms belong to
+        // a location the same way its name/hours do, so a location's own Manager can add/edit rooms
+        // too, same trust level as PUT /locations/{id} above.
+        group.MapPost("/rooms", async (RoomRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != req.LocationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new IdResponse(await repo.CreateRoomAsync(req.LocationId, req.Name)));
+        }).WithValidation<RoomRequest>()
+          .RequireAuthorization("LocationDetailsManagement")
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Create a new room under a location.");
+
+        // Same "fetch caller's own list, check membership" as treatment-categories/treatments PUT --
+        // RoomUpdateRequest carries no location id to check against directly.
+        group.MapPut("/rooms/{id:int}", async (int id, RoomUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetRoomsAsync(locationId);
+                if (!mine.Any(r => r.Id == id))
+                    return Results.Problem("Not authorized for this room.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             await repo.UpdateRoomAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
-        }).WithValidation<RoomUpdateRequest>().RequireAuthorization("LocationManagement")
+        }).WithValidation<RoomUpdateRequest>().RequireAuthorization("LocationDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a room's name or active state.");
     }
 }

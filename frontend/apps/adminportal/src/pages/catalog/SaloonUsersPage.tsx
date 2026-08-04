@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import type { Chain, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
@@ -26,6 +26,7 @@ export function SaloonUsersPage() {
   const [editingUser, setEditingUser] = useState<StaffUser | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -81,6 +82,7 @@ export function SaloonUsersPage() {
     e.preventDefault();
     if (!chainId) return;
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       if (editingUser) {
@@ -108,6 +110,7 @@ export function SaloonUsersPage() {
       handleCancelEdit();
       await loadUsers();
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} saloon user`);
     } finally {
       setSubmitting(false);
@@ -120,6 +123,7 @@ export function SaloonUsersPage() {
       await adminStaffApi.apiAdminStaffIdPut(u.id, {
         name: u.name,
         phone: u.phone,
+        role: u.role,
         chainId: u.chainId,
         locationId: u.locationId,
         therapistId: u.therapistId,
@@ -179,6 +183,7 @@ export function SaloonUsersPage() {
                 placeholder="e.g. John Admin"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+                error={getFieldError(submitError, 'name')}
               />
 
               <Input
@@ -189,6 +194,7 @@ export function SaloonUsersPage() {
                 placeholder="admin@saloon.com"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                error={getFieldError(submitError, 'email')}
               />
 
               {!editingUser ? (
@@ -199,6 +205,7 @@ export function SaloonUsersPage() {
                   placeholder="••••••••"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  error={getFieldError(submitError, 'password')}
                 />
               ) : (
                 <Input

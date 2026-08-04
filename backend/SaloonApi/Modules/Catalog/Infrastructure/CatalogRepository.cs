@@ -1,7 +1,7 @@
-using System.Data;
 using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using System.Data;
 
 namespace SaloonApi.Modules.Catalog.Infrastructure;
 
@@ -74,6 +74,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         return await db.QuerySpAsync<AdminLocationDto>("dbo.sp_Admin_GetLocations", new { ChainId = chainId });
+    }
+
+    public async Task<AdminLocationDto?> GetLocationByIdForAdminAsync(int locationId)
+    {
+        using var db = factory.Create();
+        var rows = await db.QuerySpAsync<AdminLocationDto>(
+            "dbo.sp_Admin_GetLocations", new { ChainId = (int?)null, LocationId = locationId });
+        return rows.FirstOrDefault();
     }
 
     public async Task<IEnumerable<AdminTreatmentDto>> GetTreatmentsForAdminAsync(int locationId)

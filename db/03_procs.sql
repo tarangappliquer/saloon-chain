@@ -645,14 +645,19 @@ BEGIN
 END
 GO
 
+-- @LocationId narrows to a single location (a Manager fetching their own location by
+-- ICurrentUser.LocationId, no chain id available to them); @ChainId lists a whole chain as before.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetLocations
-    @ChainId INT
+    @ChainId INT = NULL,
+    @LocationId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     SELECT Id, ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, IsActive
     FROM dbo.Locations
-    WHERE ChainId = @ChainId AND IsDelete = 0
+    WHERE IsDelete = 0
+      AND (@ChainId IS NULL OR ChainId = @ChainId)
+      AND (@LocationId IS NULL OR Id = @LocationId)
     ORDER BY Name;
 END
 GO

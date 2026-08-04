@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
@@ -46,6 +46,7 @@ export function StaffPage() {
     : roleOptions;
 
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -127,6 +128,7 @@ export function StaffPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       if (editingUser) {
@@ -156,6 +158,7 @@ export function StaffPage() {
       handleCancelEdit();
       await loadStaff();
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} staff user`);
     } finally {
       setSubmitting(false);
@@ -177,6 +180,7 @@ export function StaffPage() {
       await adminStaffApi.apiAdminStaffIdPut(u.id, {
         name: u.name,
         phone: u.phone,
+        role: u.role,
         chainId: u.chainId,
         locationId: u.locationId,
         therapistId: u.therapistId,
@@ -285,6 +289,7 @@ export function StaffPage() {
                   placeholder="Staff Name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  error={getFieldError(submitError, 'name')}
                 />
                 <Input
                   required
@@ -294,6 +299,7 @@ export function StaffPage() {
                   placeholder="staff@example.com"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  error={getFieldError(submitError, 'email')}
                 />
                 {!editingUser ? (
                   <Input
@@ -303,6 +309,7 @@ export function StaffPage() {
                     placeholder="••••••••"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    error={getFieldError(submitError, 'password')}
                   />
                 ) : (
                   <Input

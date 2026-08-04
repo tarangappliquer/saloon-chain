@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { SaloonsPage } from './pages/catalog/SaloonsPage';
 import { SaloonUsersPage } from './pages/catalog/SaloonUsersPage';
 import { LocationsPage } from './pages/catalog/LocationsPage';
+import { MyLocationPage } from './pages/catalog/MyLocationPage';
 import { LocationUsersPage } from './pages/catalog/LocationUsersPage';
 import { TreatmentsPage } from './pages/catalog/TreatmentsPage';
 import { StaffPage } from './pages/staff/StaffPage';
@@ -22,6 +23,7 @@ const ROOT_SUPER_ADMIN_ONLY: UserRole[] = ['RootSuperAdmin'];
 const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'];
 const STAFF_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
 const LOCATION_MANAGEMENT: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
+const MANAGER_ONLY: UserRole[] = ['Manager'];
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -61,7 +63,6 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
 function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
-  const isRootSuperAdmin = user.role === 'RootSuperAdmin';
   // const canManageCatalog = ADMIN_ACCESS.includes(user.role);
 
   return (
@@ -73,7 +74,8 @@ function Nav() {
           </Link>
           <div className="flex items-center gap-1 shrink-0">
             <NavLink to="/">Dashboard</NavLink>
-            {isRootSuperAdmin && <NavLink to="/catalog/saloons">Saloons</NavLink>}
+            {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to="/catalog/saloons">Saloons</NavLink>}
+            {user.role === 'Manager' && <NavLink to="/my-location">My Location</NavLink>}
             {/* {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>} */}
             <NavLink to="/bookings">Bookings</NavLink>
             {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
@@ -119,7 +121,7 @@ function AppRoutes() {
           <Route
             path="/catalog/saloons"
             element={
-              <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
+              <RequireRole roles={ADMIN_ACCESS}>
                 <SaloonsPage />
               </RequireRole>
             }
@@ -143,8 +145,16 @@ function AppRoutes() {
           <Route
             path="/catalog/locations/users"
             element={
-              <RequireRole roles={LOCATION_MANAGEMENT}>
+              <RequireRole roles={ADMIN_ACCESS}>
                 <LocationUsersPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/my-location"
+            element={
+              <RequireRole roles={MANAGER_ONLY}>
+                <MyLocationPage />
               </RequireRole>
             }
           />
@@ -175,7 +185,7 @@ function AppRoutes() {
           <Route
             path="/staff/rooms"
             element={
-              <RequireRole roles={LOCATION_MANAGEMENT}>
+              <RequireRole roles={ADMIN_ACCESS}>
                 <RoomsPage />
               </RequireRole>
             }

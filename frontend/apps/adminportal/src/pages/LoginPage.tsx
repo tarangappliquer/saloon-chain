@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
-import { ApiError } from '../api/client';
+import { ApiError, getFieldError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 
 export function LoginPage() {
@@ -10,6 +10,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -23,11 +24,13 @@ export function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       await login(email, password);
       navigate('/');
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
       setSubmitting(false);
@@ -49,6 +52,7 @@ export function LoginPage() {
             placeholder="admin@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            error={getFieldError(submitError, 'email')}
           />
           <Input
             required
@@ -57,6 +61,7 @@ export function LoginPage() {
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            error={getFieldError(submitError, 'password')}
           />
 
           {error && (

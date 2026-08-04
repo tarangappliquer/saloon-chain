@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Building2, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
 import { adminCatalogApi, ApiError } from '../../api/client';
+import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 
 export function SaloonsPage() {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const isRootSuperAdmin = currentUser?.role === 'RootSuperAdmin';
+  const canEditChain = isRootSuperAdmin || currentUser?.role === 'SuperAdmin';
   const [chains, setChains] = useState<Chain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,9 +135,15 @@ export function SaloonsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Saloon Chains"
-        description="Manage saloon chains, tenant boundaries, and chain users (RootSuperAdmin access)."
+        description={
+          isRootSuperAdmin
+            ? 'Manage saloon chains, tenant boundaries, and chain users (RootSuperAdmin access).'
+            : canEditChain
+            ? "View and edit your saloon chain's details."
+            : "View your saloon chain's details."
+        }
         action={
-          !showForm && (
+          !showForm && isRootSuperAdmin && (
             <Button onClick={handleOpenAdd} className="font-semibold">
               + Add Saloon Chain
             </Button>
@@ -249,14 +259,16 @@ export function SaloonsPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleNavigateToUsers(c.id)}
-                        >
-                          <UserPlus className="h-3.5 w-3.5 mr-1" />
-                          Add User
-                        </Button>
+                        {isRootSuperAdmin && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleNavigateToUsers(c.id)}
+                          >
+                            <UserPlus className="h-3.5 w-3.5 mr-1" />
+                            Add User
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -265,17 +277,21 @@ export function SaloonsPage() {
                           <MapPin className="h-3.5 w-3.5 mr-1" />
                           Locations
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          disabled={deletingId === c.id}
-                          onClick={() => handleDelete(c.id)}
-                        >
-                          {deletingId === c.id ? 'Deleting...' : 'Delete'}
-                        </Button>
+                        {canEditChain && (
+                          <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>
+                            Edit
+                          </Button>
+                        )}
+                        {isRootSuperAdmin && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            disabled={deletingId === c.id}
+                            onClick={() => handleDelete(c.id)}
+                          >
+                            {deletingId === c.id ? 'Deleting...' : 'Delete'}
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -26,17 +26,28 @@ internal static class AuthEndpoints
         // is what the adminportal uses to decide which routes/nav items to show. CanEmulate only
         // means anything for staff rows with IsEmulator=1 (any staff role, see dbo.Users.IsEmulator)
         // -- the adminportal uses it to show/hide the "Customers" (emulate) nav item.
+        //
+        // Portal is an optional, backward-compatible hint (clientportal/self-registration never send
+        // it): "Admin" restricts a successful login to RootSuperAdmin/SuperAdmin/Admin/Manager,
+        // rejecting Receptionist/Therapist/Other/Customer even with correct credentials -- moved here
+        // from a frontend-only check in adminportal's AuthContext, which only stopped the UI from
+        // storing the session, not the API from issuing a perfectly usable token for it.
         group.MapPost("/login", async (LoginRequest req, AuthService auth) =>
         {
             var result = await auth.LoginAsync(req.Email, req.Password);
-            return result is null
-                ? Results.Unauthorized()
-                : Results.Ok(new AuthResponse(
-                    result.Value.Id, result.Value.Name, req.Email, result.Value.Role.ToString(), result.Value.Token,
-                    result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken));
+            if (result is null)
+                return Results.Problem("Invalid email or password.", statusCode: StatusCodes.Status401Unauthorized);
+
+            if (req.Portal == "Admin" && result.Value.Role is not (UserRole.RootSuperAdmin or UserRole.SuperAdmin or UserRole.Admin or UserRole.Manager))
+                return Results.Problem("This account is not authorized for the admin portal.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new AuthResponse(
+                result.Value.Id, result.Value.Name, req.Email, result.Value.Role.ToString(), result.Value.Token,
+                result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken));
         }).WithValidation<LoginRequest>()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Log in with email/password, returning an access token and refresh token.");
 
         // Exchanges a refresh token for a new access/refresh pair once the access token has expired --
@@ -110,7 +121,7 @@ internal static class AuthEndpoints
 }
 
 internal sealed record RegisterRequest(string Name, string Email, string Password, string? Phone);
-internal sealed record LoginRequest(string Email, string Password);
+internal sealed record LoginRequest(string Email, string Password, string? Portal = null);
 internal sealed record RefreshRequest(string RefreshToken);
 
 internal sealed record AuthResponse(
