@@ -9,8 +9,9 @@ follow when building the rest.
 ## 1. What this repo is
 
 A salon/treatment booking platform (`docs/initial-project-apec.md`) for a single saloon chain with
-multiple locations, rooms, therapists, and treatments (treatments bind to multiple locations via
-`LocationTreatments`). The schema/API keep the `SaloonChains`/`ChainId` tenant boundary intact even
+multiple locations, rooms, therapists, and treatments (a treatment/category belongs to exactly one
+location -- created there directly, not assigned out from a chain-wide catalog). The schema/API
+keep the `SaloonChains`/`ChainId` tenant boundary intact even
 though the product only ever has one chain row -- so a return to multi-tenant is a data + UI change,
 not a schema migration, if that's ever needed again (see §4, §8). Currently
 implemented: **one vertical slice, end to end** — customer registration/login, browsing
@@ -89,7 +90,7 @@ reset path in dev.
 
 ```text
 SaloonChains → Locations → Rooms
-             → TreatmentCategories → Treatments → LocationTreatments (per-location price override)
+                          → TreatmentCategories → Treatments (both location-scoped, not chain-wide)
 Locations → LocationHolidays        (one-off closures on top of the weekly pattern)
 Locations → ShiftAssignments        (which Therapist works Morning/Evening on which WorkDate)
 Rooms     → RoomCategoryAssignments (which TreatmentCategory a Room serves, per shift/date)
@@ -116,9 +117,8 @@ new table added anywhere gets all 6.
 - `IsDelete BIT NOT NULL DEFAULT 0` — soft-delete flag. Nothing sets it yet (no delete feature is
   built), but every `SELECT` proc already filters `WHERE IsDelete = 0` so the column is inert
   until a delete feature lands, not retrofitted then.
-- `IsActive BIT NOT NULL DEFAULT 1` — a few tables (`Locations`, `Treatments`,
-  `LocationTreatments`) already had this before the convention existed; it's the same column,
-  not a duplicate.
+- `IsActive BIT NOT NULL DEFAULT 1` — a few tables (`Locations`, `Treatments`) already had this
+  before the convention existed; it's the same column, not a duplicate.
 - `CreatedBy`/`UpdatedBy INT NULL` — the current logged-in user's id, i.e. `ICurrentUser.CustomerId`
   (§5). **Nullable is load-bearing, not laziness**: self-registration has no logged-in user yet
   when the `Customers` row is created; the hold-expiry background sweep (`sp_Booking_ExpireStaleHolds`)

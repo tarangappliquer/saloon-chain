@@ -60,6 +60,11 @@ builder.Services.AddOpenApi(options =>
     options.AddFluentValidationRules();
 });
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
 builder.Services.AddFluentValidationRulesToOpenApi();
 

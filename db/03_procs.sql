@@ -39,13 +39,10 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatments
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name,
-           COALESCE(lt.PriceOverride, t.Price) AS Price, t.DurationSlots
+    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots
     FROM dbo.Treatments t
-    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
     JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
-    WHERE t.IsDelete = 0 AND t.IsActive = 1
-      AND lt.IsDelete = 0 AND lt.IsActive = 1
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
       AND tc.IsDelete = 0 AND tc.IsActive = 1
       AND (@CategoryId IS NULL OR t.CategoryId = @CategoryId)
     ORDER BY tc.Name, t.Name;
@@ -70,11 +67,10 @@ BEGIN
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
     -- 2) requested treatments (duration/category/price) as offered at this location
-    SELECT t.Id, t.CategoryId, t.DurationSlots, COALESCE(lt.PriceOverride, t.Price) AS Price
+    SELECT t.Id, t.CategoryId, t.DurationSlots, t.Price
     FROM dbo.Treatments t
     JOIN @TreatmentIds ti ON ti.Id = t.Id
-    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
-    WHERE t.IsDelete = 0 AND t.IsActive = 1 AND lt.IsDelete = 0 AND lt.IsActive = 1;
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     -- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
     SELECT DISTINCT rca.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
@@ -89,7 +85,7 @@ BEGIN
       );
 
     -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. Therapists
-    -- are a global entity (dbo.Therapists has no LocationId; a therapist's location comes from
+    -- are a global entity (dbo.TherapistProfile has no LocationId; a therapist's location comes from
     -- their per-day ShiftAssignments), so the same real person can be booked at a different
     -- location's room at an overlapping time. Scoping this by @LocationId would hide that
     -- cross-location therapist conflict here while sp_Booking_ScheduleTreatment's write-time
@@ -129,11 +125,10 @@ BEGIN
     SET @BookingId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
-    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, COALESCE(lt.PriceOverride, t.Price), @CreatedBy
+    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, t.Price, @CreatedBy
     FROM dbo.Treatments t
     JOIN @Treatments ti ON ti.Id = t.Id
-    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
-    WHERE t.IsDelete = 0 AND t.IsActive = 1 AND lt.IsDelete = 0 AND lt.IsActive = 1;
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     COMMIT TRANSACTION;
 END
@@ -161,10 +156,9 @@ BEGIN
     SELECT @NextSeq = COALESCE(MAX(SequenceOrder), 0) + 1 FROM dbo.BookingTreatments WHERE BookingId = @BookingId;
 
     INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
-    SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, COALESCE(lt.PriceOverride, t.Price), @CreatedBy
+    SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, t.Price, @CreatedBy
     FROM dbo.Treatments t
-    JOIN dbo.LocationTreatments lt ON lt.TreatmentId = t.Id AND lt.LocationId = @LocationId
-    WHERE t.Id = @TreatmentId AND t.IsDelete = 0 AND t.IsActive = 1 AND lt.IsDelete = 0 AND lt.IsActive = 1;
+    WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     IF @@ROWCOUNT = 0
         THROW 50006, 'Treatment not available at this location.', 1;
@@ -359,7 +353,7 @@ BEGIN
            bt.StartTime, bt.EndTime, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -443,7 +437,7 @@ BEGIN
            th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -468,7 +462,7 @@ BEGIN
     FROM dbo.BookingTreatments bt
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
-    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
       AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
       AND b.IsDelete = 0 AND bt.IsDelete = 0;
@@ -602,6 +596,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateUser
     @Id          INT,
     @Name        NVARCHAR(200),
     @Phone       NVARCHAR(30) = NULL,
+    @Role        VARCHAR(20) = NULL,
     @ChainId     INT = NULL,
     @LocationId  INT = NULL,
     @TherapistId INT = NULL,
@@ -618,9 +613,9 @@ BEGIN
     -- customer" is a deliberate product decision, not every-role-by-accident), so login's CanEmulate
     -- and the emulate exchange's authorization stay consistent no matter what was requested.
     UPDATE dbo.Users
-    SET Name = @Name, Phone = @Phone, ChainId = @ChainId, LocationId = @LocationId,
+    SET Name = @Name, Phone = @Phone, Role = COALESCE(@Role, Role), ChainId = @ChainId, LocationId = @LocationId,
         TherapistId = @TherapistId,
-        IsEmulator = CASE WHEN Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other') THEN @IsEmulator ELSE 0 END,
+        IsEmulator = CASE WHEN COALESCE(@Role, Role) IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other') THEN @IsEmulator ELSE 0 END,
         IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0 AND Role <> 'Customer';
 
@@ -663,14 +658,14 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetTreatments
-    @ChainId INT
+    @LocationId INT
 AS
 BEGIN
     SET NOCOUNT ON;
     SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots, t.IsActive
     FROM dbo.Treatments t
     JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
-    WHERE t.ChainId = @ChainId AND t.IsDelete = 0
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0
     ORDER BY tc.Name, t.Name;
 END
 GO
@@ -781,32 +776,49 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatmentCategories
-    @ChainId INT
+    @LocationId INT
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, ChainId, Name
+    SELECT Id, LocationId, Name, IsActive
     FROM dbo.TreatmentCategories
-    WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1
+    WHERE LocationId = @LocationId AND IsDelete = 0
     ORDER BY Name;
 END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatmentCategory
-    @ChainId   INT,
-    @Name      NVARCHAR(200),
-    @CreatedBy INT,
-    @Id        INT OUTPUT
+    @LocationId INT,
+    @Name       NVARCHAR(200),
+    @CreatedBy  INT,
+    @Id         INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.TreatmentCategories (ChainId, Name, CreatedBy) VALUES (@ChainId, @Name, @CreatedBy);
+    INSERT INTO dbo.TreatmentCategories (LocationId, Name, CreatedBy) VALUES (@LocationId, @Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateTreatmentCategory
+    @Id        INT,
+    @Name      NVARCHAR(200),
+    @IsActive  BIT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.TreatmentCategories
+    SET Name = @Name, IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50025, 'Treatment category not found.', 1;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatment
-    @ChainId       INT,
+    @LocationId    INT,
     @CategoryId    INT,
     @Name          NVARCHAR(200),
     @Price         DECIMAL(10,2),
@@ -816,8 +828,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatment
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.Treatments (ChainId, CategoryId, Name, Price, DurationSlots, CreatedBy)
-    VALUES (@ChainId, @CategoryId, @Name, @Price, @DurationSlots, @CreatedBy);
+    INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, Price, DurationSlots, CreatedBy)
+    VALUES (@LocationId, @CategoryId, @Name, @Price, @DurationSlots, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -843,42 +855,6 @@ BEGIN
 END
 GO
 
--- Upsert: a treatment must be explicitly offered at a location (via LocationTreatments) before it
--- shows up in sp_Catalog_GetTreatments/booking availability -- this is how an admin turns that on,
--- optionally overriding the chain-wide price for this location.
-CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AssignTreatmentToLocation
-    @LocationId    INT,
-    @TreatmentId   INT,
-    @PriceOverride DECIMAL(10,2) = NULL,
-    @CreatedBy     INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    MERGE dbo.LocationTreatments AS target
-    USING (SELECT @LocationId AS LocationId, @TreatmentId AS TreatmentId) AS src
-        ON target.LocationId = src.LocationId AND target.TreatmentId = src.TreatmentId
-    WHEN MATCHED THEN
-        UPDATE SET PriceOverride = @PriceOverride, IsActive = 1, IsDelete = 0,
-                   UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
-    WHEN NOT MATCHED THEN
-        INSERT (LocationId, TreatmentId, PriceOverride, CreatedBy)
-        VALUES (@LocationId, @TreatmentId, @PriceOverride, @CreatedBy);
-END
-GO
-
-CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UnassignTreatmentFromLocation
-    @LocationId  INT,
-    @TreatmentId INT,
-    @UpdatedBy   INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    UPDATE dbo.LocationTreatments
-    SET IsActive = 0, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
-    WHERE LocationId = @LocationId AND TreatmentId = @TreatmentId;
-END
-GO
-
 -------------------------------------------------------------------------------------------------
 -- Therapists / Rooms
 -------------------------------------------------------------------------------------------------
@@ -887,7 +863,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTherapists
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, IsActive FROM dbo.Therapists WHERE IsDelete = 0 ORDER BY Name;
+    SELECT Id, Name, IsActive FROM dbo.TherapistProfile WHERE IsDelete = 0 ORDER BY Name;
 END
 GO
 
@@ -898,7 +874,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTherapist
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.Therapists (Name, CreatedBy) VALUES (@Name, @CreatedBy);
+    INSERT INTO dbo.TherapistProfile (Name, CreatedBy) VALUES (@Name, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -911,12 +887,31 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateTherapist
 AS
 BEGIN
     SET NOCOUNT ON;
-    UPDATE dbo.Therapists
+    UPDATE dbo.TherapistProfile
     SET Name = @Name, IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
 
     IF @@ROWCOUNT = 0
         THROW 50024, 'Therapist not found.', 1;
+END
+GO
+
+-- Keeps a TherapistProfile's scope mirrored to whichever Users row currently links to it (see
+-- AdminStaffEndpoints) -- separate from sp_Catalog_UpdateTherapist so the plain Therapists-page
+-- edit form (Name/IsActive only) can never blank these out by omission.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_LinkTherapistScope
+    @Id         INT,
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL,
+    @UserId     INT = NULL,
+    @UpdatedBy  INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.TherapistProfile
+    SET ChainId = @ChainId, LocationId = @LocationId, UserId = @UserId,
+        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
 END
 GO
 
@@ -995,7 +990,7 @@ BEGIN
     JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
     JOIN dbo.Bookings b ON b.Id = bt.BookingId
     LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
-    LEFT JOIN dbo.Therapists th ON th.Id = bt.TherapistId
+    LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND bt.IsDelete = 0
       AND CAST(bt.StartTime AS DATE) = @WorkDate
     ORDER BY bt.StartTime;
@@ -1059,7 +1054,7 @@ BEGIN
 
     SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.ShiftType, sa.StartTime, sa.EndTime
     FROM dbo.ShiftAssignments sa
-    JOIN dbo.Therapists th ON th.Id = sa.TherapistId
+    JOIN dbo.TherapistProfile th ON th.Id = sa.TherapistId
     WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0
     ORDER BY sa.ShiftType, th.Name;
 

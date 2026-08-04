@@ -1,4 +1,5 @@
 using FluentValidation;
+using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Shared.Auth;
@@ -48,7 +49,7 @@ internal static class AdminStaffEndpoints
         // SuperAdmin/Admin/Manager's own scope is clamped server-side rather than checked-and-rejected,
         // so the adminportal form never needs to know (or guess) the caller's own chain/location id --
         // it just omits those fields for non-RootSuperAdmin creators and the server fills them in.
-        group.MapPost("", async (CreateStaffRequest req, ICurrentUser currentUser, AuthService auth) =>
+        group.MapPost("", async (CreateStaffRequest req, ICurrentUser currentUser, AuthService auth, CatalogRepository catalogRepo) =>
         {
             var role = Enum.Parse<UserRole>(req.Role);
 
@@ -82,7 +83,18 @@ internal static class AdminStaffEndpoints
                 return Results.Problem("Not authorized to create staff.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, req.TherapistId);
+            // A Therapist login needs a dbo.TherapistProfile row to be assignable to shifts (ShiftAssignments.TherapistId
+            // is a hard FK to Therapists, not Users) -- auto-create one from the staff member's name rather than
+            // forcing the admin to create it separately on the Therapists page first.
+            var therapistId = req.TherapistId;
+            if (role == UserRole.Therapist && therapistId is null)
+                therapistId = await catalogRepo.CreateTherapistAsync(req.Name);
+
+            var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, therapistId);
+
+            if (role == UserRole.Therapist && therapistId is not null)
+                await catalogRepo.LinkTherapistScopeAsync(therapistId.Value, req.ChainId, req.LocationId, id);
+
             return Results.Ok(new IdResponse(id));
         }).WithValidation<CreateStaffRequest>()
           .Produces<IdResponse>()
@@ -94,7 +106,7 @@ internal static class AdminStaffEndpoints
         // round-trips the current value on every save (see this session's stale-closure fix), so an
         // Admin/Manager/Receptionist saving an unrelated field like phone on an emulator-enabled
         // Admin must still go through.
-        group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, ICurrentUser currentUser, UserRepository repo) =>
+        group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, ICurrentUser currentUser, UserRepository repo, CatalogRepository catalogRepo) =>
         {
             var existing = await repo.GetByIdAsync(id);
             if (existing is null) return Results.NotFound();
@@ -102,13 +114,25 @@ internal static class AdminStaffEndpoints
             if (req.IsEmulator != existing.IsEmulator && !currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin))
                 return Results.Problem("Only Super Admin can change emulator status.", statusCode: StatusCodes.Status403Forbidden);
 
-            await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.ChainId, req.LocationId, req.TherapistId, req.IsEmulator, req.IsActive);
+            await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.Role, req.ChainId, req.LocationId, req.TherapistId, req.IsEmulator, req.IsActive);
+
+            // Keep the linked dbo.TherapistProfile row's Name/IsActive/scope in step with the staff
+            // login that owns it -- otherwise editing/deactivating/moving a Therapist here silently
+            // leaves a stale profile behind (wrong name, still-active, or still scoped to their old
+            // chain/location) that keeps showing up in scheduling.
+            var therapistId = req.TherapistId ?? existing.TherapistId;
+            if (therapistId is not null)
+            {
+                await catalogRepo.UpdateTherapistAsync(therapistId.Value, req.Name, req.IsActive);
+                await catalogRepo.LinkTherapistScopeAsync(therapistId.Value, req.ChainId, req.LocationId, id);
+            }
+
             return Results.NoContent();
         }).WithValidation<UpdateStaffRequest>()
           .Produces(StatusCodes.Status204NoContent)
           .Produces(StatusCodes.Status404NotFound)
           .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("Update a staff user's details, scope, or active/emulator state.");
+          .WithDescription("Update a staff user's details, role, scope, or active/emulator state.");
     }
 }
 
@@ -119,7 +143,7 @@ internal sealed record CreateStaffRequest(
 // Therapist/Other) -- "all staff can act as a customer" is a deliberate product decision (see
 // AuthService.EmulatorEligibleRoles).
 internal sealed record UpdateStaffRequest(
-    string Name, string? Phone, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive);
+    string Name, string? Phone, string? Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive);
 
 internal sealed class CreateStaffRequestValidator : AbstractValidator<CreateStaffRequest>
 {

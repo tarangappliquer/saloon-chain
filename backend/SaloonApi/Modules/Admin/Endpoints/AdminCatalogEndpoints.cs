@@ -37,15 +37,13 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a chain's locations, including inactive ones.");
 
-        group.MapGet("/treatments", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
-        {
-            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != chainId)
-                return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
-
-            return Results.Ok(await repo.GetTreatmentsForAdminAsync(chainId));
-        }).Produces<IEnumerable<AdminTreatmentDto>>()
-          .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("List a chain's treatments, including inactive ones.");
+        // No chain/location ownership check here -- same trust level as GET /rooms: the location id
+        // only ever reaches this handler via a dropdown that GET /locations already scoped to the
+        // caller's own chain.
+        group.MapGet("/treatments", async (int locationId, CatalogRepository repo) =>
+            Results.Ok(await repo.GetTreatmentsForAdminAsync(locationId)))
+            .Produces<IEnumerable<AdminTreatmentDto>>()
+            .WithDescription("List a location's treatments, including inactive ones.");
 
         group.MapPost("/chains", async (ChainRequest req, CatalogRepository repo) =>
             Results.Ok(new IdResponse(await repo.CreateChainAsync(req.Name))))
@@ -105,23 +103,31 @@ internal static class AdminCatalogEndpoints
           .Produces(StatusCodes.Status204NoContent)
           .WithDescription("Soft-delete a location.");
 
-        group.MapGet("/treatment-categories", async (int chainId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentCategoriesAsync(chainId)))
+        group.MapGet("/treatment-categories", async (int locationId, CatalogRepository repo) =>
+            Results.Ok(await repo.GetTreatmentCategoriesAsync(locationId)))
             .Produces<IEnumerable<TreatmentCategoryDto>>()
-            .WithDescription("List a chain's treatment categories.");
+            .WithDescription("List a location's treatment categories.");
 
         group.MapPost("/treatment-categories", async (TreatmentCategoryRequest req, CatalogRepository repo) =>
-            Results.Ok(new IdResponse(await repo.CreateTreatmentCategoryAsync(req.ChainId, req.Name))))
+            Results.Ok(new IdResponse(await repo.CreateTreatmentCategoryAsync(req.LocationId, req.Name))))
             .WithValidation<TreatmentCategoryRequest>()
             .Produces<IdResponse>()
-            .WithDescription("Create a new treatment category under a chain.");
+            .WithDescription("Create a new treatment category under a location.");
+
+        group.MapPut("/treatment-categories/{id:int}", async (int id, TreatmentCategoryUpdateRequest req, CatalogRepository repo) =>
+        {
+            await repo.UpdateTreatmentCategoryAsync(id, req.Name, req.IsActive);
+            return Results.NoContent();
+        }).WithValidation<TreatmentCategoryUpdateRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .WithDescription("Rename a treatment category or change its active state.");
 
         group.MapPost("/treatments", async (TreatmentRequest req, CatalogRepository repo) =>
             Results.Ok(new IdResponse(
-                await repo.CreateTreatmentAsync(req.ChainId, req.CategoryId, req.Name, req.Price, req.DurationSlots))))
+                await repo.CreateTreatmentAsync(req.LocationId, req.CategoryId, req.Name, req.Price, req.DurationSlots))))
             .WithValidation<TreatmentRequest>()
             .Produces<IdResponse>()
-            .WithDescription("Create a new treatment under a chain/category.");
+            .WithDescription("Create a new treatment under a location/category.");
 
         group.MapPut("/treatments/{id:int}", async (int id, TreatmentUpdateRequest req, CatalogRepository repo) =>
         {
@@ -130,21 +136,6 @@ internal static class AdminCatalogEndpoints
         }).WithValidation<TreatmentUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
           .WithDescription("Update a treatment's details or active state.");
-
-        group.MapPost("/treatments/{id:int}/assign", async (int id, AssignTreatmentRequest req, CatalogRepository repo) =>
-        {
-            await repo.AssignTreatmentToLocationAsync(req.LocationId, id, req.PriceOverride);
-            return Results.NoContent();
-        }).WithValidation<AssignTreatmentRequest>()
-          .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Assign a treatment to a location, optionally overriding its price there.");
-
-        group.MapDelete("/locations/{locationId:int}/treatments/{treatmentId:int}", async (int locationId, int treatmentId, CatalogRepository repo) =>
-        {
-            await repo.UnassignTreatmentFromLocationAsync(locationId, treatmentId);
-            return Results.NoContent();
-        }).Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Remove a treatment from a location.");
 
         group.MapGet("/therapists", async (CatalogRepository repo) =>
             Results.Ok(await repo.GetTherapistsAsync()))
@@ -202,11 +193,11 @@ internal sealed record LocationRequest(
 internal sealed record LocationUpdateRequest(
     string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
 
-internal sealed record TreatmentCategoryRequest(int ChainId, string Name);
+internal sealed record TreatmentCategoryRequest(int LocationId, string Name);
+internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive);
 
-internal sealed record TreatmentRequest(int ChainId, int CategoryId, string Name, decimal Price, short DurationSlots);
+internal sealed record TreatmentRequest(int LocationId, int CategoryId, string Name, decimal Price, short DurationSlots);
 internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, decimal Price, short DurationSlots, bool IsActive);
-internal sealed record AssignTreatmentRequest(int LocationId, decimal? PriceOverride);
 
 internal sealed record TherapistRequest(string Name);
 internal sealed record TherapistUpdateRequest(string Name, bool IsActive);
@@ -251,16 +242,21 @@ internal sealed class TreatmentCategoryRequestValidator : AbstractValidator<Trea
 {
     public TreatmentCategoryRequestValidator()
     {
-        RuleFor(x => x.ChainId).GreaterThan(0);
+        RuleFor(x => x.LocationId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
     }
+}
+
+internal sealed class TreatmentCategoryUpdateRequestValidator : AbstractValidator<TreatmentCategoryUpdateRequest>
+{
+    public TreatmentCategoryUpdateRequestValidator() => RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
 }
 
 internal sealed class TreatmentRequestValidator : AbstractValidator<TreatmentRequest>
 {
     public TreatmentRequestValidator()
     {
-        RuleFor(x => x.ChainId).GreaterThan(0);
+        RuleFor(x => x.LocationId).GreaterThan(0);
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Price).GreaterThan(0);
@@ -277,11 +273,6 @@ internal sealed class TreatmentUpdateRequestValidator : AbstractValidator<Treatm
         RuleFor(x => x.Price).GreaterThan(0);
         RuleFor(x => x.DurationSlots).GreaterThan((short)0);
     }
-}
-
-internal sealed class AssignTreatmentRequestValidator : AbstractValidator<AssignTreatmentRequest>
-{
-    public AssignTreatmentRequestValidator() => RuleFor(x => x.LocationId).GreaterThan(0);
 }
 
 internal sealed class TherapistRequestValidator : AbstractValidator<TherapistRequest>

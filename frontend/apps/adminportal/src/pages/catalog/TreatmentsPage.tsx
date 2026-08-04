@@ -1,95 +1,191 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../../api/client';
-import type { Location, Treatment, TreatmentCategory } from '../../api/types';
+import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
+function emptyTreatmentForm() {
+  return { categoryId: '', name: '', price: '', durationSlots: '' };
+}
+
 export function TreatmentsPage() {
-  const [chainId, setChainId] = useState<number | null>(null);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramChainId = searchParams.get('chainId');
+  const paramLocationId = searchParams.get('locationId');
+
+  const [chains, setChains] = useState<Chain[]>([]);
+  const [chainId, setChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
-  const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [creatingCategory, setCreatingCategory] = useState(false);
-  const [creatingTreatment, setCreatingTreatment] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingTreatment, setSavingTreatment] = useState(false);
 
   const [categoryName, setCategoryName] = useState('');
-  const [treatmentForm, setTreatmentForm] = useState({ categoryId: '', name: '', price: '', durationSlots: '' });
-  const [assign, setAssign] = useState<Record<number, { locationId: string; priceOverride: string }>>({});
+  const [editingCategory, setEditingCategory] = useState<TreatmentCategory | null>(null);
+
+  const [treatmentForm, setTreatmentForm] = useState(emptyTreatmentForm());
+  const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(null);
 
   useEffect(() => {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number }[];
-        if (cs.length > 0) setChainId(cs[0].id);
+        const cs = data as unknown as Chain[];
+        setChains(cs);
+        if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
-  }, []);
+  }, [chainId]);
 
-  async function loadChainData(id: number) {
+  useEffect(() => {
+    if (chainId === null) return;
+    adminCatalogApi
+      .apiAdminCatalogLocationsGet(chainId)
+      .then(({ data }) => {
+        const locs = data as unknown as Location[];
+        setLocations(locs);
+        if (paramLocationId) {
+          setLocationId(Number(paramLocationId));
+        } else if (locs.length > 0 && locationId === null) {
+          setLocationId(locs[0].id);
+        }
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
+  }, [chainId, locationId, paramLocationId]);
+
+  const loadLocationData = useCallback(async (id: number) => {
     setLoading(true);
     setError(null);
     try {
-      const [cats, treats, locs] = await Promise.all([
+      const [cats, treats] = await Promise.all([
         adminCatalogApi.apiAdminCatalogTreatmentCategoriesGet(id),
         adminCatalogApi.apiAdminCatalogTreatmentsGet(id),
-        adminCatalogApi.apiAdminCatalogLocationsGet(id),
       ]);
       setCategories(cats.data as unknown as TreatmentCategory[]);
       setTreatments(treats.data as unknown as Treatment[]);
-      setLocations(locs.data as unknown as Location[]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load treatments');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    if (chainId !== null) loadChainData(chainId);
-  }, [chainId]);
+    if (locationId !== null) loadLocationData(locationId);
+  }, [locationId, loadLocationData]);
 
-  async function handleCreateCategory(e: FormEvent) {
-    e.preventDefault();
-    if (chainId === null) return;
+  function handleLocationChange(v: string) {
+    const id = Number(v);
+    setLocationId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('locationId', String(id));
+    if (chainId !== null) next.set('chainId', String(chainId));
+    setSearchParams(next, { replace: true });
+  }
+
+  function handleStartEditCategory(c: TreatmentCategory) {
+    setEditingCategory(c);
+    setCategoryName(c.name);
     setError(null);
-    setCreatingCategory(true);
+  }
+
+  function handleCancelCategoryEdit() {
+    setEditingCategory(null);
+    setCategoryName('');
+    setError(null);
+  }
+
+  async function handleSubmitCategory(e: FormEvent) {
+    e.preventDefault();
+    if (locationId === null) return;
+    setError(null);
+    setSavingCategory(true);
     try {
-      await adminCatalogApi.apiAdminCatalogTreatmentCategoriesPost({ chainId, name: categoryName });
+      if (editingCategory) {
+        await adminCatalogApi.apiAdminCatalogTreatmentCategoriesIdPut(editingCategory.id, {
+          name: categoryName,
+          isActive: editingCategory.isActive !== false,
+        });
+        setEditingCategory(null);
+      } else {
+        await adminCatalogApi.apiAdminCatalogTreatmentCategoriesPost({ locationId, name: categoryName });
+      }
       setCategoryName('');
-      await loadChainData(chainId);
+      await loadLocationData(locationId);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create category');
+      setError(err instanceof ApiError ? err.message : `Failed to ${editingCategory ? 'update' : 'create'} category`);
     } finally {
-      setCreatingCategory(false);
+      setSavingCategory(false);
     }
   }
 
-  async function handleCreateTreatment(e: FormEvent) {
-    e.preventDefault();
-    if (chainId === null || !treatmentForm.categoryId) return;
+  async function toggleCategoryActive(c: TreatmentCategory) {
     setError(null);
-    setCreatingTreatment(true);
     try {
-      await adminCatalogApi.apiAdminCatalogTreatmentsPost({
-        chainId,
-        categoryId: Number(treatmentForm.categoryId),
-        name: treatmentForm.name,
-        price: Number(treatmentForm.price),
-        durationSlots: Number(treatmentForm.durationSlots),
-      });
-      setTreatmentForm({ categoryId: '', name: '', price: '', durationSlots: '' });
-      await loadChainData(chainId);
+      await adminCatalogApi.apiAdminCatalogTreatmentCategoriesIdPut(c.id, { name: c.name, isActive: !c.isActive });
+      if (locationId !== null) await loadLocationData(locationId);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create treatment');
-    } finally {
-      setCreatingTreatment(false);
+      setError(err instanceof ApiError ? err.message : 'Failed to update category');
     }
   }
 
-  async function toggleActive(t: Treatment) {
+  function handleStartEditTreatment(t: Treatment) {
+    setEditingTreatment(t);
+    setTreatmentForm({
+      categoryId: String(t.categoryId),
+      name: t.name,
+      price: String(t.price),
+      durationSlots: String(t.durationSlots),
+    });
+    setError(null);
+  }
+
+  function handleCancelTreatmentEdit() {
+    setEditingTreatment(null);
+    setTreatmentForm(emptyTreatmentForm());
+    setError(null);
+  }
+
+  async function handleSubmitTreatment(e: FormEvent) {
+    e.preventDefault();
+    if (locationId === null || !treatmentForm.categoryId) return;
+    setError(null);
+    setSavingTreatment(true);
+    try {
+      if (editingTreatment) {
+        await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(editingTreatment.id, {
+          categoryId: Number(treatmentForm.categoryId),
+          name: treatmentForm.name,
+          price: Number(treatmentForm.price),
+          durationSlots: Number(treatmentForm.durationSlots),
+          isActive: editingTreatment.isActive !== false,
+        });
+        setEditingTreatment(null);
+      } else {
+        await adminCatalogApi.apiAdminCatalogTreatmentsPost({
+          locationId,
+          categoryId: Number(treatmentForm.categoryId),
+          name: treatmentForm.name,
+          price: Number(treatmentForm.price),
+          durationSlots: Number(treatmentForm.durationSlots),
+        });
+      }
+      setTreatmentForm(emptyTreatmentForm());
+      await loadLocationData(locationId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Failed to ${editingTreatment ? 'update' : 'create'} treatment`);
+    } finally {
+      setSavingTreatment(false);
+    }
+  }
+
+  async function toggleTreatmentActive(t: Treatment) {
     setError(null);
     try {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(t.id, {
@@ -99,29 +195,51 @@ export function TreatmentsPage() {
         durationSlots: t.durationSlots,
         isActive: !t.isActive,
       });
-      if (chainId !== null) await loadChainData(chainId);
+      if (locationId !== null) await loadLocationData(locationId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update treatment');
     }
   }
 
-  async function handleAssign(treatmentId: number) {
-    const a = assign[treatmentId];
-    if (!a?.locationId) return;
-    setError(null);
-    try {
-      await adminCatalogApi.apiAdminCatalogTreatmentsIdAssignPost(treatmentId, {
-        locationId: Number(a.locationId),
-        priceOverride: a.priceOverride ? Number(a.priceOverride) : null,
-      });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to assign treatment to location');
-    }
-  }
+  const selectedChain = chains.find((c) => c.id === chainId);
+  const activeCategoryOptions = categories.filter((c) => c.isActive !== false);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Treatments Catalog" description="Manage treatment categories, catalog items, pricing, and location assignments." />
+      <PageHeader
+        title="Treatments Catalog"
+        description="Manage this location's treatment categories, catalog items, and pricing."
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            {paramLocationId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons')}
+              >
+                ← Back to Locations
+              </Button>
+            )}
+            {chainId !== null && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase text-muted-foreground">Saloon:</span>
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold text-foreground min-w-[160px]">
+                  {selectedChain?.name ?? `Saloon #${chainId}`}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
+              <SearchableSelect
+                value={String(locationId ?? '')}
+                onChange={handleLocationChange}
+                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+              />
+            </div>
+          </div>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
@@ -132,29 +250,47 @@ export function TreatmentsPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-border/50 pb-4">
-            <CardTitle>Treatment Categories</CardTitle>
+            <CardTitle>{editingCategory ? `Edit Category: ${editingCategory.name}` : 'Treatment Categories'}</CardTitle>
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
-            <form onSubmit={handleCreateCategory} className="flex gap-2">
+            <form onSubmit={handleSubmitCategory} className="flex gap-2">
               <Input
                 required
                 placeholder="Category Name"
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
               />
-              <Button type="submit" disabled={creatingCategory} size="md" className="shrink-0">
-                {creatingCategory ? 'Adding...' : 'Add Category'}
+              <Button type="submit" disabled={savingCategory} size="md" className="shrink-0">
+                {savingCategory ? 'Saving...' : editingCategory ? 'Update' : 'Add Category'}
               </Button>
+              {editingCategory && (
+                <Button type="button" variant="outline" size="md" className="shrink-0" onClick={handleCancelCategoryEdit} disabled={savingCategory}>
+                  Cancel
+                </Button>
+              )}
             </form>
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="pt-2">
               {categories.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No categories yet.</p>
               ) : (
-                categories.map((c) => (
-                  <Badge key={c.id} variant="secondary" showDot={false} className="px-3 py-1 text-xs">
-                    {c.name}
-                  </Badge>
-                ))
+                <ul className="divide-y divide-border/50 text-xs">
+                  {categories.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">{c.name}</span>
+                        <Badge status={c.isActive === false ? 'Inactive' : 'Active'} className="text-[10px] py-0 px-1.5" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => handleStartEditCategory(c)}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => toggleCategoryActive(c)}>
+                          {c.isActive === false ? 'Activate' : 'Deactivate'}
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </CardContent>
@@ -162,10 +298,10 @@ export function TreatmentsPage() {
 
         <Card>
           <CardHeader className="border-b border-border/50 pb-4">
-            <CardTitle>Add New Treatment</CardTitle>
+            <CardTitle>{editingTreatment ? `Edit Treatment: ${editingTreatment.name}` : 'Add New Treatment'}</CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleCreateTreatment} className="space-y-3">
+            <form onSubmit={handleSubmitTreatment} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Category
@@ -174,7 +310,7 @@ export function TreatmentsPage() {
                   value={treatmentForm.categoryId}
                   onChange={(v) => setTreatmentForm({ ...treatmentForm, categoryId: v })}
                   placeholder="Select Category..."
-                  options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                  options={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name }))}
                   className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                 />
               </div>
@@ -204,10 +340,15 @@ export function TreatmentsPage() {
                   onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
                 />
               </div>
-              <div className="pt-2">
-                <Button type="submit" disabled={creatingTreatment} className="w-full">
-                  {creatingTreatment ? 'Creating...' : 'Create Treatment'}
+              <div className="flex items-center gap-3 pt-2">
+                <Button type="submit" disabled={savingTreatment} className="flex-1">
+                  {savingTreatment ? 'Saving...' : editingTreatment ? 'Update Treatment' : 'Create Treatment'}
                 </Button>
+                {editingTreatment && (
+                  <Button type="button" variant="outline" onClick={handleCancelTreatmentEdit} disabled={savingTreatment}>
+                    Cancel
+                  </Button>
+                )}
               </div>
             </form>
           </CardContent>
@@ -233,10 +374,9 @@ export function TreatmentsPage() {
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3.5">Category</th>
                   <th className="px-6 py-3.5">Treatment</th>
-                  <th className="px-6 py-3.5">Base Price</th>
+                  <th className="px-6 py-3.5">Price</th>
                   <th className="px-6 py-3.5">Duration</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5">Assign to Location</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -250,34 +390,15 @@ export function TreatmentsPage() {
                     <td className="px-6 py-4">
                       <Badge status={t.isActive === false ? 'Inactive' : 'Active'} />
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <SearchableSelect
-                          value={assign[t.id]?.locationId ?? ''}
-                          onChange={(v) =>
-                            setAssign({ ...assign, [t.id]: { locationId: v, priceOverride: assign[t.id]?.priceOverride ?? '' } })
-                          }
-                          placeholder="Select location..."
-                          options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                          className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
-                        />
-                        <Input
-                          placeholder="Price override"
-                          value={assign[t.id]?.priceOverride ?? ''}
-                          onChange={(e) =>
-                            setAssign({ ...assign, [t.id]: { locationId: assign[t.id]?.locationId ?? '', priceOverride: e.target.value } })
-                          }
-                          className="w-28 h-8 text-xs"
-                        />
-                        <Button variant="outline" size="sm" onClick={() => handleAssign(t.id)}>
-                          Assign
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => handleStartEditTreatment(t)}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => toggleTreatmentActive(t)}>
+                          {t.isActive === false ? 'Activate' : 'Deactivate'}
                         </Button>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => toggleActive(t)}>
-                        {t.isActive === false ? 'Activate' : 'Deactivate'}
-                      </Button>
                     </td>
                   </tr>
                 ))}

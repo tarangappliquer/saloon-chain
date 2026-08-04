@@ -13,24 +13,21 @@ INSERT INTO dbo.Rooms (LocationId, Name) VALUES (@LocationId, 'Room 1'), (@Locat
 DECLARE @Room1 INT = (SELECT Id FROM dbo.Rooms WHERE LocationId = @LocationId AND Name = 'Room 1');
 DECLARE @Room2 INT = (SELECT Id FROM dbo.Rooms WHERE LocationId = @LocationId AND Name = 'Room 2');
 
-INSERT INTO dbo.TreatmentCategories (ChainId, Name) VALUES (@ChainId, 'Hair Care');
+INSERT INTO dbo.TreatmentCategories (LocationId, Name) VALUES (@LocationId, 'Hair Care');
 DECLARE @CategoryId INT = SCOPE_IDENTITY();
 
-INSERT INTO dbo.Treatments (ChainId, CategoryId, Name, Price, DurationSlots) VALUES
-    (@ChainId, @CategoryId, 'Haircut', 25.00, 6),              -- 30 min
-    (@ChainId, @CategoryId, 'Hair Wash & Blowdry', 15.00, 4);  -- 20 min
-
-INSERT INTO dbo.LocationTreatments (LocationId, TreatmentId, IsActive)
-SELECT @LocationId, Id, 1 FROM dbo.Treatments WHERE ChainId = @ChainId;
+INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, Price, DurationSlots) VALUES
+    (@LocationId, @CategoryId, 'Haircut', 25.00, 6),              -- 30 min
+    (@LocationId, @CategoryId, 'Hair Wash & Blowdry', 15.00, 4);  -- 20 min
 
 -- demo holiday: shifts/room assignments below still get generated for this date (uniform loop),
 -- which is exactly what proves the explicit IsHoliday check works even if scheduling forgets it.
 INSERT INTO dbo.LocationHolidays (LocationId, HolidayDate, Reason)
 VALUES (@LocationId, DATEADD(DAY, 5, CAST(GETUTCDATE() AS DATE)), 'Public Holiday');
 
-INSERT INTO dbo.Therapists (Name) VALUES ('Alex Rivera'), ('Sam Chen');
-DECLARE @Therapist1 INT = (SELECT Id FROM dbo.Therapists WHERE Name = 'Alex Rivera');
-DECLARE @Therapist2 INT = (SELECT Id FROM dbo.Therapists WHERE Name = 'Sam Chen');
+INSERT INTO dbo.TherapistProfile (Name) VALUES ('Alex Rivera'), ('Sam Chen');
+DECLARE @Therapist1 INT = (SELECT Id FROM dbo.TherapistProfile WHERE Name = 'Alex Rivera');
+DECLARE @Therapist2 INT = (SELECT Id FROM dbo.TherapistProfile WHERE Name = 'Sam Chen');
 
 ;WITH Dates AS (
     SELECT CAST(GETUTCDATE() AS DATE) AS WorkDate

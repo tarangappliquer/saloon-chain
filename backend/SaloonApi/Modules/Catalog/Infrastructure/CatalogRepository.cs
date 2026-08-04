@@ -16,7 +16,7 @@ internal sealed record TreatmentDto(
 
 internal sealed record LocationHolidayRow(DateTime HolidayDate, string? Reason);
 
-internal sealed record TreatmentCategoryDto(int Id, int ChainId, string Name);
+internal sealed record TreatmentCategoryDto(int Id, int LocationId, string Name, bool IsActive);
 
 internal sealed record TherapistDto(int Id, string Name, bool IsActive);
 
@@ -76,10 +76,10 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return await db.QuerySpAsync<AdminLocationDto>("dbo.sp_Admin_GetLocations", new { ChainId = chainId });
     }
 
-    public async Task<IEnumerable<AdminTreatmentDto>> GetTreatmentsForAdminAsync(int chainId)
+    public async Task<IEnumerable<AdminTreatmentDto>> GetTreatmentsForAdminAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<AdminTreatmentDto>("dbo.sp_Admin_GetTreatments", new { ChainId = chainId });
+        return await db.QuerySpAsync<AdminTreatmentDto>("dbo.sp_Admin_GetTreatments", new { LocationId = locationId });
     }
 
     public async Task<int> CreateChainAsync(string name)
@@ -149,17 +149,17 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteLocation", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
-    public async Task<IEnumerable<TreatmentCategoryDto>> GetTreatmentCategoriesAsync(int chainId)
+    public async Task<IEnumerable<TreatmentCategoryDto>> GetTreatmentCategoriesAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<TreatmentCategoryDto>("dbo.sp_Catalog_GetTreatmentCategories", new { ChainId = chainId });
+        return await db.QuerySpAsync<TreatmentCategoryDto>("dbo.sp_Catalog_GetTreatmentCategories", new { LocationId = locationId });
     }
 
-    public async Task<int> CreateTreatmentCategoryAsync(int chainId, string name)
+    public async Task<int> CreateTreatmentCategoryAsync(int locationId, string name)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@ChainId", chainId);
+        p.Add("@LocationId", locationId);
         p.Add("@Name", name);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
@@ -167,11 +167,18 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return p.Get<int>("@Id");
     }
 
-    public async Task<int> CreateTreatmentAsync(int chainId, int categoryId, string name, decimal price, short durationSlots)
+    public async Task UpdateTreatmentCategoryAsync(int id, string name, bool isActive)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatmentCategory", new
+        { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task<int> CreateTreatmentAsync(int locationId, int categoryId, string name, decimal price, short durationSlots)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@ChainId", chainId);
+        p.Add("@LocationId", locationId);
         p.Add("@CategoryId", categoryId);
         p.Add("@Name", name);
         p.Add("@Price", price);
@@ -197,25 +204,6 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         });
     }
 
-    public async Task AssignTreatmentToLocationAsync(int locationId, int treatmentId, decimal? priceOverride)
-    {
-        using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_AssignTreatmentToLocation", new
-        {
-            LocationId = locationId,
-            TreatmentId = treatmentId,
-            PriceOverride = priceOverride,
-            CreatedBy = currentUser.RequireUserId()
-        });
-    }
-
-    public async Task UnassignTreatmentFromLocationAsync(int locationId, int treatmentId)
-    {
-        using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UnassignTreatmentFromLocation", new
-        { LocationId = locationId, TreatmentId = treatmentId, UpdatedBy = currentUser.RequireUserId() });
-    }
-
     public async Task<IEnumerable<TherapistDto>> GetTherapistsAsync()
     {
         using var db = factory.Create();
@@ -238,6 +226,15 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTherapist", new
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    // Mirrors a TherapistProfile's ChainId/LocationId/UserId to the staff login that links to it --
+    // called from AdminStaffEndpoints on staff create/update, never from the plain Therapists page.
+    public async Task LinkTherapistScopeAsync(int id, int? chainId, int? locationId, int? userId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Catalog_LinkTherapistScope", new
+        { Id = id, ChainId = chainId, LocationId = locationId, UserId = userId, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<RoomDto>> GetRoomsAsync(int locationId)

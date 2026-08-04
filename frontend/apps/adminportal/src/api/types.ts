@@ -1,5 +1,30 @@
 export type UserRole = 'RootSuperAdmin' | 'SuperAdmin' | 'Admin' | 'Manager' | 'Receptionist' | 'Therapist' | 'Other' | 'Customer';
 
+const ROLE_MAP: Record<number, UserRole> = {
+  0: 'RootSuperAdmin',
+  1: 'SuperAdmin',
+  2: 'Admin',
+  3: 'Manager',
+  4: 'Receptionist',
+  5: 'Therapist',
+  6: 'Other',
+  7: 'Customer',
+};
+
+export function normalizeUserRole(role: unknown): UserRole {
+  if (typeof role === 'number' && ROLE_MAP[role]) {
+    return ROLE_MAP[role];
+  }
+  if (typeof role === 'string') {
+    const num = Number(role);
+    if (!isNaN(num) && ROLE_MAP[num]) {
+      return ROLE_MAP[num];
+    }
+    return role as UserRole;
+  }
+  return 'Other';
+}
+
 export interface AuthResponse {
   userId: number;
   name: string;
@@ -32,8 +57,9 @@ export interface Location {
 
 export interface TreatmentCategory {
   id: number;
-  chainId: number;
+  locationId: number;
   name: string;
+  isActive?: boolean;
 }
 
 export interface Treatment {

@@ -1,8 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
-import type { Location, StaffUser, Therapist, UserRole } from '../../api/types';
+import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
+import { normalizeUserRole } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
@@ -16,48 +18,79 @@ function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
 }
 
 function emptyForm(defaultRole: UserRole) {
-  return { name: '', email: '', password: '', role: defaultRole, chainId: '', locationId: '', therapistId: '' };
+  return { name: '', email: '', password: '', phone: '', role: defaultRole, chainId: '', locationId: '', therapistId: '' };
 }
 
 export function StaffPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paramChainId = searchParams.get('chainId');
+  const paramLocationId = searchParams.get('locationId');
+
   const { user: currentUser } = useAuth();
   const roleOptions = creatableRoles(currentUser?.role);
+  const [chains, setChains] = useState<Chain[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
-  const [form, setForm] = useState(emptyForm(roleOptions[0]));
+
+  const [editingUser, setEditingUser] = useState<StaffUser | null>(null);
+  const [form, setForm] = useState(emptyForm(roleOptions[0] ?? ('Admin' as UserRole)));
+
+  const effectiveRoleOptions: UserRole[] = paramLocationId
+    ? roleOptions.filter((r) => r !== 'SuperAdmin' && r !== 'Admin')
+    : paramChainId
+    ? roleOptions.filter((r) => r === 'SuperAdmin' || r === 'Admin' || r === 'Manager' || r === 'Receptionist')
+    : form.locationId
+    ? roleOptions.filter((r) => r !== 'SuperAdmin' && r !== 'Admin')
+    : roleOptions;
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
 
-  async function loadStaff() {
+  useEffect(() => {
+    if (effectiveRoleOptions.length > 0 && !effectiveRoleOptions.includes(form.role)) {
+      setForm((f) => ({ ...f, role: effectiveRoleOptions[0] }));
+    }
+  }, [effectiveRoleOptions, form.role]);
+
+  const loadStaff = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await adminStaffApi.apiAdminStaffGet();
-      setStaff(data as unknown as StaffUser[]);
+      const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : undefined;
+      const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : undefined;
+      const { data } = await adminStaffApi.apiAdminStaffGet(undefined, cId, lId);
+      const rawUsers = data as unknown as StaffUser[];
+      setStaff(rawUsers.map((u) => ({ ...u, role: normalizeUserRole(u.role) })));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load staff');
     } finally {
       setLoading(false);
     }
-  }
+  }, [paramChainId, paramLocationId, form.chainId, form.locationId]);
 
   useEffect(() => {
     loadStaff();
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number }[];
-        if (cs.length > 0) setForm((f) => ({ ...f, chainId: String(cs[0].id) }));
+        const cs = data as unknown as Chain[];
+        setChains(cs);
+        if (paramChainId) {
+          setForm((f) => ({ ...f, chainId: paramChainId, locationId: paramLocationId ?? '' }));
+        } else if (cs.length > 0) {
+          setForm((f) => ({ ...f, chainId: String(cs[0].id) }));
+        }
       })
       .catch(() => {});
     adminCatalogApi
       .apiAdminCatalogTherapistsGet()
       .then(({ data }) => setTherapists(data as unknown as Therapist[]))
       .catch(() => {});
-  }, []);
+  }, [loadStaff, paramChainId, paramLocationId]);
 
   useEffect(() => {
     if (form.chainId) {
@@ -70,24 +103,60 @@ export function StaffPage() {
     }
   }, [form.chainId]);
 
-  async function handleCreate(e: FormEvent) {
+  function handleStartEdit(u: StaffUser) {
+    setEditingUser(u);
+    setForm({
+      name: u.name,
+      email: u.email,
+      password: '',
+      phone: u.phone ?? '',
+      role: u.role,
+      chainId: u.chainId ? String(u.chainId) : '',
+      locationId: u.locationId ? String(u.locationId) : '',
+      therapistId: u.therapistId ? String(u.therapistId) : '',
+    });
+    setError(null);
+  }
+
+  function handleCancelEdit() {
+    setEditingUser(null);
+    setForm({ ...emptyForm(effectiveRoleOptions[0] ?? 'Admin'), chainId: form.chainId, locationId: form.locationId });
+    setError(null);
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      await adminStaffApi.apiAdminStaffPost({
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        role: form.role,
-        chainId: form.chainId ? Number(form.chainId) : null,
-        locationId: form.locationId ? Number(form.locationId) : null,
-        therapistId: form.therapistId ? Number(form.therapistId) : null,
-      });
-      setForm({ ...emptyForm(roleOptions[0]), chainId: form.chainId });
+      if (editingUser) {
+        await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
+          name: form.name,
+          phone: form.phone || null,
+          role: form.role,
+          chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
+          locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
+          therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
+          isEmulator: editingUser.isEmulator,
+          isActive: editingUser.isActive,
+        });
+      } else {
+        const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
+        const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
+        await adminStaffApi.apiAdminStaffPost({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          role: form.role,
+          chainId: cId,
+          locationId: lId,
+          therapistId: form.therapistId ? Number(form.therapistId) : null,
+        });
+      }
+      handleCancelEdit();
       await loadStaff();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create staff user');
+      setError(err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} staff user`);
     } finally {
       setSubmitting(false);
     }
@@ -123,9 +192,45 @@ export function StaffPage() {
     }
   }
 
+  const selectedChain = chains.find((c) => String(c.id) === (paramChainId ?? form.chainId));
+  const selectedLocation = locations.find((l) => String(l.id) === (paramLocationId ?? form.locationId));
+
+  const isLocationMode = Boolean(paramLocationId);
+  const isSaloonMode = Boolean(paramChainId && !paramLocationId);
+
+  const pageTitle = isLocationMode
+    ? `Location User Management — ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
+    : isSaloonMode
+    ? `Saloon User Management — ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+    : 'Staff & User Accounts';
+
+  const pageDesc = isLocationMode
+    ? `Create and manage location staff (Manager, Receptionist, Therapist, Other) for ${selectedLocation?.name ?? 'this location'}.`
+    : isSaloonMode
+    ? `Create and manage saloon chain administrators (SuperAdmin, Admin) for ${selectedChain?.name ?? 'this saloon chain'}.`
+    : 'Manage staff accounts, user roles, location scoping, and access permissions.';
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Staff Accounts" description="Manage staff accounts, roles, access permissions, and customer emulation flags." />
+      <PageHeader
+        title={pageTitle}
+        description={pageDesc}
+        action={
+          (paramLocationId || paramChainId) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                paramLocationId
+                  ? navigate(`/catalog/locations?chainId=${paramChainId}`)
+                  : navigate('/catalog/saloons')
+              }
+            >
+              ← Back to {paramLocationId ? 'Locations' : 'Saloons'}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
@@ -133,14 +238,47 @@ export function StaffPage() {
         </div>
       )}
 
-      {roleOptions.length > 0 && (
+      {effectiveRoleOptions.length > 0 && (
         <Card>
           <CardHeader className="border-b border-border/50 pb-4">
-            <CardTitle>Create Staff Account</CardTitle>
+            <CardTitle>
+              {editingUser
+                ? `Edit User: ${editingUser.name}`
+                : isLocationMode
+                ? `Add User for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
+                : isSaloonMode
+                ? `Add User for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+                : 'Create User Account'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {/* Saloon Chain Scope / Read-only Label */}
+                {paramChainId && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                      Saloon Chain
+                    </label>
+                    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground">
+                      {selectedChain?.name ?? `Chain #${paramChainId}`}
+                    </div>
+                  </div>
+                )}
+
+                {/* Location Scope / Read-only Label */}
+                {paramLocationId && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                      Location Scope
+                    </label>
+                    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground flex items-center justify-between">
+                      <span>{selectedLocation?.name ?? `Location #${paramLocationId}`}</span>
+                      <Badge status="Active" className="text-[10px] py-0 px-1.5" />
+                    </div>
+                  </div>
+                )}
+
                 <Input
                   required
                   label="Name"
@@ -151,19 +289,29 @@ export function StaffPage() {
                 <Input
                   required
                   type="email"
+                  disabled={Boolean(editingUser)}
                   label="Email"
                   placeholder="staff@example.com"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
-                <Input
-                  required
-                  type="password"
-                  label="Password"
-                  placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                />
+                {!editingUser ? (
+                  <Input
+                    required
+                    type="password"
+                    label="Password"
+                    placeholder="••••••••"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                ) : (
+                  <Input
+                    label="Phone"
+                    placeholder="+1 555-0199"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  />
+                )}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                     Role
@@ -171,16 +319,17 @@ export function StaffPage() {
                   <SearchableSelect
                     value={form.role}
                     onChange={(v) => setForm({ ...form, role: v as UserRole })}
-                    options={roleOptions.map((r) => ({ value: r, label: r }))}
+                    options={effectiveRoleOptions.map((r) => ({ value: r, label: r }))}
                     className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                   />
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {(form.role === 'Manager' || form.role === 'Receptionist' || form.role === 'Therapist' || form.role === 'Other') &&
-                  currentUser?.role !== 'Manager' &&
-                  currentUser?.role !== 'Receptionist' && (
+              {!paramLocationId &&
+                (form.role === 'Manager' || form.role === 'Receptionist' || form.role === 'Therapist' || form.role === 'Other') &&
+                currentUser?.role !== 'Manager' &&
+                currentUser?.role !== 'Receptionist' && (
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                         Location Scope
@@ -193,8 +342,11 @@ export function StaffPage() {
                         className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                       />
                     </div>
-                  )}
-                {form.role === 'Therapist' && (
+                  </div>
+                )}
+
+              {form.role === 'Therapist' && (
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                       Linked Therapist Record
@@ -207,13 +359,18 @@ export function StaffPage() {
                       className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
                     />
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              <div className="pt-2">
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Creating...' : 'Create Staff Login'}
+              <div className="flex items-center gap-3 pt-2">
+                <Button type="submit" disabled={submitting} className="font-semibold">
+                  {submitting ? 'Saving...' : editingUser ? 'Update User' : `Create ${form.role} User`}
                 </Button>
+                {editingUser && (
+                  <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={submitting}>
+                    Cancel Edit
+                  </Button>
+                )}
               </div>
             </form>
           </CardContent>
@@ -222,7 +379,14 @@ export function StaffPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Staff Members ({staff.length})</CardTitle>
+          <CardTitle>
+            {isLocationMode
+              ? `Users for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
+              : isSaloonMode
+              ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+              : 'User Members'}{' '}
+            ({staff.length})
+          </CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
@@ -230,7 +394,7 @@ export function StaffPage() {
           </CardContent>
         ) : staff.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
-            No staff users found.
+            No users found for this scope. Create your first user above.
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
@@ -277,14 +441,23 @@ export function StaffPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={savingId === u.id}
-                        onClick={() => toggleActive(u)}
-                      >
-                        {u.isActive ? 'Deactivate' : 'Activate'}
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleStartEdit(u)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={savingId === u.id}
+                          onClick={() => toggleActive(u)}
+                        >
+                          {u.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

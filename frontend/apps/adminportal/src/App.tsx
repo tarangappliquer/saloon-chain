@@ -5,7 +5,10 @@ import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { SaloonsPage } from './pages/catalog/SaloonsPage';
+import { SaloonUsersPage } from './pages/catalog/SaloonUsersPage';
 import { LocationsPage } from './pages/catalog/LocationsPage';
+import { LocationUsersPage } from './pages/catalog/LocationUsersPage';
 import { TreatmentsPage } from './pages/catalog/TreatmentsPage';
 import { StaffPage } from './pages/staff/StaffPage';
 import { TherapistsPage } from './pages/staff/TherapistsPage';
@@ -15,6 +18,7 @@ import { CustomersPage } from './pages/customers/CustomersPage';
 import { SchedulingPage } from './pages/scheduling/SchedulingPage';
 import { ProfilePage } from './pages/ProfilePage';
 
+const ROOT_SUPER_ADMIN_ONLY: UserRole[] = ['RootSuperAdmin'];
 const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'];
 const STAFF_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
 const LOCATION_MANAGEMENT: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
@@ -57,8 +61,8 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
 function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
-  const canManageCatalog = ADMIN_ACCESS.includes(user.role);
-  const canManageLocations = LOCATION_MANAGEMENT.includes(user.role);
+  const isRootSuperAdmin = user.role === 'RootSuperAdmin';
+  // const canManageCatalog = ADMIN_ACCESS.includes(user.role);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
@@ -69,12 +73,8 @@ function Nav() {
           </Link>
           <div className="flex items-center gap-1 shrink-0">
             <NavLink to="/">Dashboard</NavLink>
-            {canManageLocations && <NavLink to="/catalog/locations">Locations</NavLink>}
-            {canManageCatalog && <NavLink to="/catalog/treatments">Treatments</NavLink>}
-            {canManageCatalog && <NavLink to="/staff/users">Staff</NavLink>}
-            {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>}
-            {canManageLocations && <NavLink to="/staff/rooms">Rooms</NavLink>}
-            {canManageCatalog && <NavLink to="/scheduling">Scheduling</NavLink>}
+            {isRootSuperAdmin && <NavLink to="/catalog/saloons">Saloons</NavLink>}
+            {/* {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>} */}
             <NavLink to="/bookings">Bookings</NavLink>
             {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
           </div>
@@ -105,7 +105,7 @@ function AppRoutes() {
   return (
     <>
       <Nav />
-      <main className="mx-auto max-w-6xl px-6 py-6">
+      <main className="mx-auto max-w-7xl px-6 py-6">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
@@ -117,10 +117,34 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/catalog/saloons"
+            element={
+              <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
+                <SaloonsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/catalog/saloons/users"
+            element={
+              <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
+                <SaloonUsersPage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="/catalog/locations"
             element={
               <RequireRole roles={LOCATION_MANAGEMENT}>
                 <LocationsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/catalog/locations/users"
+            element={
+              <RequireRole roles={LOCATION_MANAGEMENT}>
+                <LocationUsersPage />
               </RequireRole>
             }
           />

@@ -79,7 +79,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     }
 
     public async Task UpdateStaffAsync(
-        int id, string name, string? phone, int? chainId, int? locationId, int? therapistId,
+        int id, string name, string? phone, string? role, int? chainId, int? locationId, int? therapistId,
         bool isEmulator, bool isActive)
     {
         using var db = factory.Create();
@@ -88,6 +88,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
             Id = id,
             Name = name,
             Phone = phone,
+            Role = role,
             ChainId = chainId,
             LocationId = locationId,
             TherapistId = therapistId,

@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError } from '../../api/client';
-import type { Location } from '../../api/types';
+import { useAuth } from '../../features/auth/AuthContext';
+import type { Chain, Location } from '../../api/types';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -25,8 +28,18 @@ function emptyForm() {
 }
 
 export function LocationsPage() {
-  const [chainId, setChainId] = useState<number | null>(null);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paramChainId = searchParams.get('chainId');
+  const { user: currentUser } = useAuth();
+  const canAddLocationUser = currentUser && ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'].includes(currentUser.role);
+
+  const [chains, setChains] = useState<Chain[]>([]);
+  const [chainId, setChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
+  const [formChainId, setFormChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
+
   const [locations, setLocations] = useState<Location[]>([]);
+  const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,11 +49,15 @@ export function LocationsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number }[];
-        if (cs.length > 0) setChainId(cs[0].id);
+        const cs = data as unknown as Chain[];
+        setChains(cs);
+        if (cs.length > 0 && chainId === null) {
+          setChainId(cs[0].id);
+          setFormChainId(cs[0].id);
+        }
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
-  }, []);
+  }, [chainId]);
 
   async function loadLocations(id: number) {
     setLoading(true);
@@ -68,26 +85,71 @@ export function LocationsPage() {
     });
   }
 
-  async function handleCreate(e: FormEvent) {
+  function handleStartEdit(loc: Location) {
+    setEditingLocation(loc);
+    setFormChainId(loc.chainId ?? chainId);
+    const dayBits = new Set<number>();
+    DAY_BITS.forEach((d) => {
+      if ((loc.workingDaysMask & d.bit) !== 0) dayBits.add(d.bit);
+    });
+    setForm({
+      name: loc.name,
+      address: loc.address ?? '',
+      openTime: loc.openTime,
+      closeTime: loc.closeTime,
+      timeZoneId: loc.timeZoneId,
+      days: dayBits,
+    });
+    setError(null);
+  }
+
+  function handleCancelForm() {
+    setEditingLocation(null);
+    setForm(emptyForm());
+    if (chainId !== null) setFormChainId(chainId);
+    setError(null);
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (chainId === null) return;
+    const targetChainId = formChainId ?? chainId;
+    if (targetChainId === null) return;
+
     setError(null);
     setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
-      await adminCatalogApi.apiAdminCatalogLocationsPost({
-        chainId,
-        name: form.name,
-        address: form.address || null,
-        openTime: form.openTime,
-        closeTime: form.closeTime,
-        workingDaysMask,
-        timeZoneId: form.timeZoneId,
-      });
-      setForm(emptyForm());
-      await loadLocations(chainId);
+
+      if (editingLocation) {
+        await adminCatalogApi.apiAdminCatalogLocationsIdPut(editingLocation.id, {
+          name: form.name,
+          address: form.address || null,
+          openTime: form.openTime,
+          closeTime: form.closeTime,
+          workingDaysMask,
+          timeZoneId: form.timeZoneId,
+          isActive: editingLocation.isActive !== false,
+        });
+      } else {
+        await adminCatalogApi.apiAdminCatalogLocationsPost({
+          chainId: targetChainId,
+          name: form.name,
+          address: form.address || null,
+          openTime: form.openTime,
+          closeTime: form.closeTime,
+          workingDaysMask,
+          timeZoneId: form.timeZoneId,
+        });
+      }
+
+      handleCancelForm();
+      if (targetChainId !== chainId) {
+        setChainId(targetChainId);
+      } else {
+        await loadLocations(targetChainId);
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create location');
+      setError(err instanceof ApiError ? err.message : `Failed to ${editingLocation ? 'update' : 'create'} location`);
     } finally {
       setSubmitting(false);
     }
@@ -112,7 +174,7 @@ export function LocationsPage() {
   }
 
   async function handleDelete(loc: Location) {
-    if (!window.confirm(`Delete "${loc.name}"? This cannot be undone from the UI.`)) return;
+    if (!window.confirm(`Delete "${loc.name}"? This cannot be undone.`)) return;
     setError(null);
     try {
       await adminCatalogApi.apiAdminCatalogLocationsIdDelete(loc.id);
@@ -122,9 +184,39 @@ export function LocationsPage() {
     }
   }
 
+  function handleNavigateToTreatments(loc: Location) {
+    const cid = loc.chainId ?? chainId ?? '';
+    navigate(`/catalog/treatments?chainId=${cid}&locationId=${loc.id}`);
+  }
+
+  function handleNavigateToUsers(loc: Location) {
+    const cid = loc.chainId ?? chainId ?? '';
+    navigate(`/catalog/locations/users?chainId=${cid}&locationId=${loc.id}`);
+  }
+
+  function handleNavigateToRooms(loc: Location) {
+    const cid = loc.chainId ?? chainId ?? '';
+    navigate(`/staff/rooms?chainId=${cid}&locationId=${loc.id}`);
+  }
+
+  function handleNavigateToSchedule(loc: Location) {
+    const cid = loc.chainId ?? chainId ?? '';
+    navigate(`/scheduling?chainId=${cid}&locationId=${loc.id}`);
+  }
+
+  const activeChain = chains.find((c) => c.id === (formChainId ?? chainId));
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Locations" description="Manage physical salon locations, operating hours, and active status." />
+      <PageHeader
+        title="Salon Locations"
+        description="Manage physical salon locations, operating hours, and active status per saloon chain."
+        action={
+          <Button variant="outline" size="sm" onClick={() => navigate('/catalog/saloons')}>
+            ← Back to Saloons
+          </Button>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
@@ -132,13 +224,25 @@ export function LocationsPage() {
         </div>
       )}
 
+      {/* Add / Edit Location Card */}
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Add New Location</CardTitle>
+          <CardTitle>{editingLocation ? `Edit Location: ${editingLocation.name}` : 'Add New Location'}</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
-          <form onSubmit={handleCreate} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Readonly Saloon Chain Label */}
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  Saloon Chain
+                </label>
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>{activeChain?.name ?? (chainId ? `Saloon Chain #${chainId}` : 'Selected Chain')}</span>
+                  <Badge status="Active" className="text-[10px] py-0 px-1.5" />
+                </div>
+              </div>
+
               <Input
                 required
                 label="Location Name"
@@ -194,18 +298,26 @@ export function LocationsPage() {
               </div>
             </div>
 
-            <div className="pt-2">
+            <div className="flex items-center gap-3 pt-2">
               <Button type="submit" disabled={submitting}>
-                {submitting ? 'Adding...' : 'Add Location'}
+                {submitting ? 'Saving...' : editingLocation ? 'Update Location' : 'Add Location'}
               </Button>
+              {editingLocation && (
+                <Button type="button" variant="outline" onClick={handleCancelForm} disabled={submitting}>
+                  Cancel Edit
+                </Button>
+              )}
             </div>
           </form>
         </CardContent>
       </Card>
 
+      {/* Salon Locations Table Card */}
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Salon Locations ({locations.length})</CardTitle>
+          <CardTitle>
+            Salon Locations {activeChain ? `for ${activeChain.name}` : ''} ({locations.length})
+          </CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
@@ -213,7 +325,7 @@ export function LocationsPage() {
           </CardContent>
         ) : locations.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
-            No locations configured yet. Add your first location above.
+            No locations configured for this saloon chain yet.
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
@@ -240,6 +352,47 @@ export function LocationsPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {canAddLocationUser && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleNavigateToUsers(l)}
+                          >
+                            <UserPlus className="h-3.5 w-3.5 mr-1 text-primary" />
+                            Add User
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleNavigateToRooms(l)}
+                        >
+                          <DoorClosed className="h-3.5 w-3.5 mr-1" />
+                          Rooms
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleNavigateToSchedule(l)}
+                        >
+                          <Calendar className="h-3.5 w-3.5 mr-1" />
+                          Schedule
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleNavigateToTreatments(l)}
+                        >
+                          <Sparkles className="h-3.5 w-3.5 mr-1" />
+                          Treatments
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleStartEdit(l)}
+                        >
+                          Edit
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

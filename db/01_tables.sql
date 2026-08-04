@@ -63,9 +63,13 @@ CREATE TABLE dbo.Rooms (
     UpdatedDate  DATETIME2 NULL
 );
 
+-- LocationId, not ChainId -- a category (and every treatment under it) belongs to exactly one
+-- location, not the whole chain. There is no chain-wide catalog assigned out to locations
+-- anymore (that was dbo.LocationTreatments, now removed): creating a treatment here directly
+-- offers it at the location it was created for.
 CREATE TABLE dbo.TreatmentCategories (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
-    ChainId      INT NOT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
     Name         NVARCHAR(200) NOT NULL,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
@@ -77,7 +81,7 @@ CREATE TABLE dbo.TreatmentCategories (
 
 CREATE TABLE dbo.Treatments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
-    ChainId        INT NOT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId     INT NOT NULL REFERENCES dbo.Locations(Id),
     CategoryId     INT NOT NULL REFERENCES dbo.TreatmentCategories(Id),
     Name           NVARCHAR(200) NOT NULL,
     Price          DECIMAL(10,2) NOT NULL,
@@ -90,22 +94,16 @@ CREATE TABLE dbo.Treatments (
     UpdatedDate    DATETIME2 NULL
 );
 
-CREATE TABLE dbo.LocationTreatments (
-    LocationId     INT NOT NULL REFERENCES dbo.Locations(Id),
-    TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
-    PriceOverride  DECIMAL(10,2) NULL,
-    IsDelete       BIT NOT NULL DEFAULT 0,
-    IsActive       BIT NOT NULL DEFAULT 1,
-    CreatedBy      INT NULL,
-    CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    UpdatedBy      INT NULL,
-    UpdatedDate    DATETIME2 NULL,
-    PRIMARY KEY (LocationId, TreatmentId)
-);
-
-CREATE TABLE dbo.Therapists (
+-- ChainId/LocationId/UserId mirror the scope of whichever dbo.Users row currently links to this
+-- profile (see AdminStaffEndpoints -- kept in sync on staff create/update, not user-editable
+-- directly) -- all nullable, since a profile can exist unlinked (created standalone from the
+-- Therapists page, not yet assigned to a staff login).
+CREATE TABLE dbo.TherapistProfile (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     Name         NVARCHAR(200) NOT NULL,
+    ChainId      INT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId   INT NULL REFERENCES dbo.Locations(Id),
+    UserId       INT NULL,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
     CreatedBy    INT NULL,
@@ -135,7 +133,7 @@ CREATE TABLE dbo.Therapists (
 --                 the staff-creation hierarchy (see AdminStaffEndpoints.MapPost).
 --   Receptionist: LocationId set -- front-desk staff scoped to a single location; no staff-creation
 --                 rights of its own.
---   Therapist:    LocationId + TherapistId set -- login tied 1:1 to a Therapists row, for staff who
+--   Therapist:    LocationId + TherapistId set -- login tied 1:1 to a TherapistProfile row, for staff who
 --                 need to see their own schedule; TherapistId is what ShiftAssignments/Bookings key on.
 --   Other:        LocationId set (optional) -- catch-all for staff that don't fit the above (e.g.
 --                 cleaner, cashier); no admin-portal management capability beyond StaffAccess.
@@ -153,7 +151,7 @@ CREATE TABLE dbo.Users (
                   CHECK (Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer')),
     ChainId       INT NULL REFERENCES dbo.SaloonChains(Id),
     LocationId    INT NULL REFERENCES dbo.Locations(Id),
-    TherapistId   INT NULL REFERENCES dbo.Therapists(Id),
+    TherapistId   INT NULL REFERENCES dbo.TherapistProfile(Id),
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
     IsDelete      BIT NOT NULL DEFAULT 0,
@@ -190,15 +188,14 @@ ALTER TABLE dbo.TreatmentCategories ADD CONSTRAINT FK_TreatmentCategories_Create
 ALTER TABLE dbo.TreatmentCategories ADD CONSTRAINT FK_TreatmentCategories_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.Treatments ADD CONSTRAINT FK_Treatments_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.Treatments ADD CONSTRAINT FK_Treatments_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
-ALTER TABLE dbo.LocationTreatments ADD CONSTRAINT FK_LocationTreatments_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
-ALTER TABLE dbo.LocationTreatments ADD CONSTRAINT FK_LocationTreatments_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
-ALTER TABLE dbo.Therapists ADD CONSTRAINT FK_Therapists_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
-ALTER TABLE dbo.Therapists ADD CONSTRAINT FK_Therapists_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
+ALTER TABLE dbo.TherapistProfile ADD CONSTRAINT FK_TherapistProfile_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
+ALTER TABLE dbo.TherapistProfile ADD CONSTRAINT FK_TherapistProfile_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
+ALTER TABLE dbo.TherapistProfile ADD CONSTRAINT FK_TherapistProfile_User FOREIGN KEY (UserId) REFERENCES dbo.Users(Id);
 
 CREATE TABLE dbo.ShiftAssignments (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
-    TherapistId  INT NOT NULL REFERENCES dbo.Therapists(Id),
+    TherapistId  INT NOT NULL REFERENCES dbo.TherapistProfile(Id),
     ShiftType    VARCHAR(10) NOT NULL CHECK (ShiftType IN ('Morning','Evening')),
     WorkDate     DATE NOT NULL,
     StartTime    TIME NOT NULL,
@@ -264,7 +261,7 @@ CREATE TABLE dbo.BookingTreatments (
     BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id),
     TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
     RoomId         INT NULL REFERENCES dbo.Rooms(Id),
-    TherapistId    INT NULL REFERENCES dbo.Therapists(Id),
+    TherapistId    INT NULL REFERENCES dbo.TherapistProfile(Id),
     StartTime      DATETIME2 NULL,
     EndTime        DATETIME2 NULL,
     ExpiresAt      DATETIME2 NULL,

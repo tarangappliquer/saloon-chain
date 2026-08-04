@@ -242,8 +242,8 @@ Content-Type: application/json
 DELETE {{baseUrl}}/api/admin/catalog/locations/{{locationId}}
 Authorization: Bearer {{authToken}}
 
-### List a chain's treatment categories
-GET {{baseUrl}}/api/admin/catalog/treatment-categories?chainId={{chainId}}
+### List a location's treatment categories
+GET {{baseUrl}}/api/admin/catalog/treatment-categories?locationId={{locationId}}
 Authorization: Bearer {{authToken}}
 
 ### Create a treatment category
@@ -252,12 +252,12 @@ Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
 {
-  "chainId": {{chainId}},
+  "locationId": {{locationId}},
   "name": "New Category"
 }
 
-### List a chain's treatments, including inactive ones
-GET {{baseUrl}}/api/admin/catalog/treatments?chainId={{chainId}}
+### List a location's treatments, including inactive ones
+GET {{baseUrl}}/api/admin/catalog/treatments?locationId={{locationId}}
 Authorization: Bearer {{authToken}}
 
 ### Create a treatment
@@ -266,7 +266,7 @@ Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
 {
-  "chainId": {{chainId}},
+  "locationId": {{locationId}},
   "categoryId": {{categoryId}},
   "name": "New Treatment",
   "price": 49.99,
@@ -285,20 +285,6 @@ Content-Type: application/json
   "durationSlots": 6,
   "isActive": true
 }
-
-### Assign a treatment to a location, optionally overriding its price
-POST {{baseUrl}}/api/admin/catalog/treatments/{{treatmentId}}/assign
-Authorization: Bearer {{authToken}}
-Content-Type: application/json
-
-{
-  "locationId": {{locationId}},
-  "priceOverride": null
-}
-
-### Remove a treatment from a location
-DELETE {{baseUrl}}/api/admin/catalog/locations/{{locationId}}/treatments/{{treatmentId}}
-Authorization: Bearer {{authToken}}
 
 ### List every therapist
 GET {{baseUrl}}/api/admin/catalog/therapists
