@@ -108,7 +108,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("LocationManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist)));
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
 });

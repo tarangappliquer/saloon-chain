@@ -15,7 +15,7 @@ import { CustomersPage } from './pages/customers/CustomersPage';
 import { SchedulingPage } from './pages/scheduling/SchedulingPage';
 import { ProfilePage } from './pages/ProfilePage';
 
-const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist'];
+const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'];
 const STAFF_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
 const LOCATION_MANAGEMENT: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
