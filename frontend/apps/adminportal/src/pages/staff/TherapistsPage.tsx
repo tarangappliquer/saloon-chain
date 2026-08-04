@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, ApiError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Therapist } from '../../api/types';
 
 export function TherapistsPage() {
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,12 +31,14 @@ export function TherapistsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       await adminCatalogApi.apiAdminCatalogTherapistsPost({ name });
       setName('');
       await load();
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Failed to create therapist');
     } finally {
       setSubmitting(false);
@@ -77,6 +80,7 @@ export function TherapistsPage() {
               placeholder="Full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              error={getFieldError(submitError, 'name')}
               className="w-full"
             />
             <Button type="submit" disabled={submitting} className="shrink-0 mb-0.5">

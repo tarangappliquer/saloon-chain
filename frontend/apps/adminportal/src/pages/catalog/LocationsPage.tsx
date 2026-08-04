@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
-import { adminCatalogApi, ApiError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 
@@ -42,6 +42,7 @@ export function LocationsPage() {
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -101,6 +102,7 @@ export function LocationsPage() {
       days: dayBits,
     });
     setError(null);
+    setSubmitError(null);
   }
 
   function handleCancelForm() {
@@ -108,6 +110,7 @@ export function LocationsPage() {
     setForm(emptyForm());
     if (chainId !== null) setFormChainId(chainId);
     setError(null);
+    setSubmitError(null);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -116,6 +119,7 @@ export function LocationsPage() {
     if (targetChainId === null) return;
 
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
@@ -149,6 +153,7 @@ export function LocationsPage() {
         await loadLocations(targetChainId);
       }
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingLocation ? 'update' : 'create'} location`);
     } finally {
       setSubmitting(false);
@@ -249,12 +254,14 @@ export function LocationsPage() {
                 placeholder="Downtown Salon"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
+                error={getFieldError(submitError, 'name')}
               />
               <Input
                 label="Address"
                 placeholder="123 Main St, Suite 100"
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
+                error={getFieldError(submitError, 'address')}
               />
               <Input
                 required
@@ -262,6 +269,7 @@ export function LocationsPage() {
                 placeholder="UTC or America/New_York"
                 value={form.timeZoneId}
                 onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
+                error={getFieldError(submitError, 'timeZoneId')}
               />
               <Input
                 required
@@ -276,6 +284,7 @@ export function LocationsPage() {
                 label="Closing Time"
                 value={form.closeTime}
                 onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
+                error={getFieldError(submitError, 'closeTime')}
               />
             </div>
 

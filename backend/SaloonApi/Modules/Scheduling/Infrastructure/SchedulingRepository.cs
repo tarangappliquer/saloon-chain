@@ -52,6 +52,12 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         await db.ExecuteSpAsync("dbo.sp_Scheduling_RemoveTherapistShift", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
+    public async Task<int?> GetShiftLocationIdAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int?>("dbo.sp_Scheduling_GetShiftLocationId", new { Id = id });
+    }
+
     public async Task<int> OpenRoomAsync(int roomId, int treatmentCategoryId, string shiftType, DateOnly date)
     {
         using var db = factory.Create();
@@ -70,5 +76,11 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Scheduling_CloseRoom", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task<int?> GetRoomOpeningLocationIdAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int?>("dbo.sp_Scheduling_GetRoomOpeningLocationId", new { Id = id });
     }
 }

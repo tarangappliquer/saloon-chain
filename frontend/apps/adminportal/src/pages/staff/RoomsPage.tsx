@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar } from 'lucide-react';
-import { adminCatalogApi, ApiError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Room } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
@@ -24,6 +24,7 @@ export function RoomsPage() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -95,18 +96,21 @@ export function RoomsPage() {
     setEditingRoom(r);
     setName(r.name);
     setError(null);
+    setSubmitError(null);
   }
 
   function handleCancelEdit() {
     setEditingRoom(null);
     setName('');
     setError(null);
+    setSubmitError(null);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!locationId) return;
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       if (editingRoom) {
@@ -117,6 +121,7 @@ export function RoomsPage() {
       handleCancelEdit();
       await loadRooms(locationId);
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingRoom ? 'update' : 'create'} room`);
     } finally {
       setSubmitting(false);
@@ -216,6 +221,7 @@ export function RoomsPage() {
                 placeholder="e.g. Room 101 or VIP Suite"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                error={getFieldError(submitError, 'name')}
               />
             </div>
 

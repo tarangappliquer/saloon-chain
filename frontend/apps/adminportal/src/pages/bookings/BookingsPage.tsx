@@ -89,6 +89,7 @@ export function BookingsPage() {
                 value={String(locationId ?? '')}
                 onChange={(v) => setLocationId(Number(v))}
                 options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                disabled={user?.role === 'Manager'}
                 className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
               />
             </div>

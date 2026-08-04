@@ -213,23 +213,47 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a treatment's details or active state.");
 
-        group.MapGet("/therapists", async (CatalogRepository repo) =>
-            Results.Ok(await repo.GetTherapistsAsync()))
-            .Produces<IEnumerable<TherapistDto>>()
-            .WithDescription("List every therapist.");
+        // Same clamp-not-reject convention as GET /chains -- SuperAdmin/Admin only ever see their own
+        // chain's therapists, Manager only their own location's. Previously unscoped: any AdminAccess
+        // caller saw and could edit every therapist in the system regardless of chain/location.
+        group.MapGet("/therapists", async (ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            int? chainId = currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) ? currentUser.ChainId : null;
+            int? locationId = currentUser.IsInRole(UserRole.Manager) ? currentUser.LocationId : null;
+            return Results.Ok(await repo.GetTherapistsAsync(chainId, locationId));
+        }).Produces<IEnumerable<TherapistDto>>()
+          .WithDescription("List therapists visible to the caller (all for RootSuperAdmin, own chain for SuperAdmin/Admin, own location for Manager).");
 
+        // No chain/location to scope at creation -- a therapist row starts unlinked and is only tied
+        // to a chain/location once assigned to a staff login (see AdminStaffEndpoints' LinkTherapistScopeAsync calls).
         group.MapPost("/therapists", async (TherapistRequest req, CatalogRepository repo) =>
             Results.Ok(new IdResponse(await repo.CreateTherapistAsync(req.Name))))
             .WithValidation<TherapistRequest>()
             .Produces<IdResponse>()
             .WithDescription("Create a new therapist.");
 
-        group.MapPut("/therapists/{id:int}", async (int id, TherapistUpdateRequest req, CatalogRepository repo) =>
+        // Same "fetch caller's own list, check membership" as Rooms/Treatments PUT -- TherapistUpdateRequest
+        // carries no chain/location id to check against directly.
+        group.MapPut("/therapists/{id:int}", async (int id, TherapistUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin))
+            {
+                var mine = await repo.GetTherapistsAsync(chainId: currentUser.ChainId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this therapist.", statusCode: StatusCodes.Status403Forbidden);
+            }
+            else if (currentUser.IsInRole(UserRole.Manager))
+            {
+                var mine = await repo.GetTherapistsAsync(locationId: currentUser.LocationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this therapist.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             await repo.UpdateTherapistAsync(id, req.Name, req.IsActive);
             return Results.NoContent();
         }).WithValidation<TherapistUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a therapist's name or active state.");
 
         // GET stays under the group's plain AdminAccess -- Manager/Receptionist still need the room

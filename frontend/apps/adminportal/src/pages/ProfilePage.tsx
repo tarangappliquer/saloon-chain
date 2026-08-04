@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Badge, Button, Card, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { API_BASE, ApiError, profileApi } from '../api/client';
+import { API_BASE, ApiError, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import type { Profile } from '../api/types';
 
@@ -10,6 +10,7 @@ export function ProfilePage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,6 +40,7 @@ export function ProfilePage() {
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitError(null);
     setSuccess(null);
     setSaving(true);
     try {
@@ -48,6 +50,7 @@ export function ProfilePage() {
       updateName(updated.name);
       setSuccess('Profile updated successfully.');
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Failed to update profile');
     } finally {
       setSaving(false);
@@ -108,9 +111,15 @@ export function ProfilePage() {
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
-          <Input required label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input required label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
           <Input disabled label="Email Address" value={profile.email} helperText="Email cannot be changed." />
-          <Input label="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
+          <Input
+            label="Phone Number"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+1 (555) 000-0000"
+            error={getFieldError(submitError, 'phone')}
+          />
 
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">

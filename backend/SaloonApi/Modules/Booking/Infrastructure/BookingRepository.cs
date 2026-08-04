@@ -228,6 +228,12 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
                       .ToList())).ToList();
     }
 
+    public async Task<int?> GetLocationIdAsync(int bookingId)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int?>("dbo.sp_Booking_GetLocationId", new { BookingId = bookingId });
+    }
+
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsAdminAsync(int bookingId)
     {
         using var db = factory.Create();

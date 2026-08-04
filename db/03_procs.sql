@@ -864,11 +864,26 @@ GO
 -- Therapists / Rooms
 -------------------------------------------------------------------------------------------------
 
+-- @LocationId matches TherapistProfile.LocationId directly. @ChainId matches either
+-- TherapistProfile.ChainId OR (via the linked Location) l.ChainId -- a Manager-created therapist
+-- only ever gets LocationId set (see sp_Catalog_LinkTherapistScope/AdminStaffEndpoints), never
+-- ChainId, so matching ChainId alone would silently drop those rows from an Admin's own-chain view.
+-- A therapist with NEITHER set (created standalone from the Therapists page, not yet assigned to a
+-- staff login) always matches -- unassigned rows are a shared pool visible to any caller until
+-- claimed, not invisible to everyone.
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTherapists
+    @ChainId INT = NULL,
+    @LocationId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, IsActive FROM dbo.TherapistProfile WHERE IsDelete = 0 ORDER BY Name;
+    SELECT tp.Id, tp.Name, tp.IsActive, tp.ChainId, tp.LocationId
+    FROM dbo.TherapistProfile tp
+    LEFT JOIN dbo.Locations l ON l.Id = tp.LocationId
+    WHERE tp.IsDelete = 0
+      AND (@LocationId IS NULL OR tp.LocationId = @LocationId OR tp.LocationId IS NULL)
+      AND (@ChainId IS NULL OR tp.ChainId = @ChainId OR l.ChainId = @ChainId OR (tp.ChainId IS NULL AND tp.LocationId IS NULL))
+    ORDER BY tp.Name;
 END
 GO
 
@@ -1002,6 +1017,18 @@ BEGIN
 END
 GO
 
+-- Pre-check for POST /api/admin/bookings/{id}/cancel -- Manager is location-scoped and must be
+-- rejected before sp_Booking_CancelAsAdmin runs (that proc has no caller-scoping of its own, "Admin
+-- override" above), not after, so AdminBookingEndpoints resolves the booking's location here first.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetLocationId
+    @BookingId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT LocationId FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0;
+END
+GO
+
 -- Admin override: unlike sp_Booking_Cancel, does not require the caller to own the booking.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_CancelAsAdmin
     @BookingId INT,
@@ -1117,6 +1144,18 @@ BEGIN
 END
 GO
 
+-- Ownership lookup for DELETE /therapist-shifts/{id} -- the request carries only the shift id, not
+-- its location, so SchedulingEndpoints checks the returned LocationId against the caller's own
+-- before deleting (Manager/Receptionist are otherwise able to remove any shift in the system by id).
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetShiftLocationId
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT LocationId FROM dbo.ShiftAssignments WHERE Id = @Id AND IsDelete = 0;
+END
+GO
+
 -- Upsert keyed on UQ_RoomCategoryAssignments_Room_Shift_Date: a room serves one category per
 -- shift/date, so "opening" it again with a different category just changes which one.
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_OpenRoom
@@ -1156,6 +1195,20 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50031, 'Room opening not found.', 1;
+END
+GO
+
+-- Ownership lookup for DELETE /room-openings/{id} -- same reasoning as sp_Scheduling_GetShiftLocationId
+-- above, resolved through the opening's Room since RoomCategoryAssignments has no LocationId of its own.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetRoomOpeningLocationId
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT r.LocationId
+    FROM dbo.RoomCategoryAssignments rca
+    JOIN dbo.Rooms r ON r.Id = rca.RoomId
+    WHERE rca.Id = @Id AND rca.IsDelete = 0;
 END
 GO
 

@@ -37,10 +37,25 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // Populated only for a FluentValidation 400 (ASP.NET's ValidationProblemDetails `errors` dict,
+  // keyed by the C# request property name e.g. "Email", "Password") -- undefined for every other
+  // error shape (plain ProblemDetails, network failure, etc).
+  fieldErrors?: Record<string, string[]>;
+  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>) {
     super(message);
     this.status = status;
+    this.fieldErrors = fieldErrors;
   }
+}
+
+// Case-insensitive lookup into ApiError.fieldErrors -- ASP.NET keys errors by the C# property name
+// (PascalCase, e.g. "Email"), which rarely matches a form's own field-name casing exactly. Returns
+// the first message for that field, or undefined if the error wasn't a validation error / didn't
+// name this field.
+export function getFieldError(err: unknown, field: string): string | undefined {
+  if (!(err instanceof ApiError) || !err.fieldErrors) return undefined;
+  const key = Object.keys(err.fieldErrors).find((k) => k.toLowerCase() === field.toLowerCase());
+  return key ? err.fieldErrors[key][0] : undefined;
 }
 
 // Paths that must never trigger a refresh-and-retry: a 401 from /login or /register is a real
@@ -99,9 +114,11 @@ axiosInstance.interceptors.response.use(
     // Backend error bodies are RFC7807 ProblemDetails (AppExceptionHandler) or a FluentValidation
     // ValidationProblem -- both carry `title`, never `message`. Falling back to `message` first
     // meant every real error (hold expired, slot taken, validation failure) surfaced as the bare
-    // HTTP status text instead of the server's actual reason.
-    const body = error.response?.data as { title?: string; message?: string } | undefined;
-    throw new ApiError(error.response?.status ?? 0, body?.title ?? body?.message ?? error.message);
+    // HTTP status text instead of the server's actual reason. Only the ValidationProblem carries
+    // `errors` (per-field messages), which callers read via getFieldError() to bind a message to the
+    // specific form field that failed instead of just showing the generic title.
+    const body = error.response?.data as { title?: string; detail?:string, message?: string; errors?: Record<string, string[]> } | undefined;
+    throw new ApiError(error.response?.status ?? 0, body?.detail ?? body?.title ?? body?.message ?? error.message, body?.errors);
   },
 );
 

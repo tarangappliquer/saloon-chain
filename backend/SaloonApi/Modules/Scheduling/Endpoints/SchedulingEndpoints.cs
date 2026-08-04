@@ -1,4 +1,5 @@
 using FluentValidation;
+using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Scheduling.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Validation;
@@ -40,26 +41,48 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Assign a therapist to a shift at a location/date.");
 
-        group.MapDelete("/therapist-shifts/{id:int}", async (int id, SchedulingRepository repo) =>
+        // Neither Delete/Post request below carries a location id -- these were previously wide open,
+        // letting Manager/Receptionist remove any shift or open any room in the system by id/RoomId,
+        // not just their own location's. Resolved via a lookup instead of trusting the id (same "fetch
+        // caller's own scope, check membership" pattern as the catalog endpoints' by-id PUTs).
+        group.MapDelete("/therapist-shifts/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist)
+                && await repo.GetShiftLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this shift.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.RemoveTherapistShiftAsync(id);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Remove a therapist's shift assignment.");
 
-        group.MapPost("/room-openings", async (OpenRoomRequest req, SchedulingRepository repo) =>
+        group.MapPost("/room-openings", async (OpenRoomRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId is { } locationId)
+            {
+                var myRooms = await catalogRepo.GetRoomsAsync(locationId);
+                if (!myRooms.Any(r => r.Id == req.RoomId))
+                    return Results.Problem("Not authorized for this room.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
             var id = await repo.OpenRoomAsync(req.RoomId, req.TreatmentCategoryId, req.ShiftType, req.WorkDate);
             return Results.Ok(new IdResponse(id));
         }).WithValidation<OpenRoomRequest>()
           .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Open a room for a treatment category during a shift/date.");
 
-        group.MapDelete("/room-openings/{id:int}", async (int id, SchedulingRepository repo) =>
+        group.MapDelete("/room-openings/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist)
+                && await repo.GetRoomOpeningLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this room opening.", statusCode: StatusCodes.Status403Forbidden);
+
             await repo.CloseRoomAsync(id);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Close a room opening.");
     }
 }

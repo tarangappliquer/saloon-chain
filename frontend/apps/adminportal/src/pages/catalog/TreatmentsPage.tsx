@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, ApiError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
@@ -30,9 +30,11 @@ export function TreatmentsPage() {
 
   const [categoryName, setCategoryName] = useState('');
   const [editingCategory, setEditingCategory] = useState<TreatmentCategory | null>(null);
+  const [categorySubmitError, setCategorySubmitError] = useState<unknown>(null);
 
   const [treatmentForm, setTreatmentForm] = useState(emptyTreatmentForm());
   const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(null);
+  const [treatmentSubmitError, setTreatmentSubmitError] = useState<unknown>(null);
 
   useEffect(() => {
     adminCatalogApi
@@ -95,18 +97,21 @@ export function TreatmentsPage() {
     setEditingCategory(c);
     setCategoryName(c.name);
     setError(null);
+    setCategorySubmitError(null);
   }
 
   function handleCancelCategoryEdit() {
     setEditingCategory(null);
     setCategoryName('');
     setError(null);
+    setCategorySubmitError(null);
   }
 
   async function handleSubmitCategory(e: FormEvent) {
     e.preventDefault();
     if (locationId === null) return;
     setError(null);
+    setCategorySubmitError(null);
     setSavingCategory(true);
     try {
       if (editingCategory) {
@@ -121,6 +126,7 @@ export function TreatmentsPage() {
       setCategoryName('');
       await loadLocationData(locationId);
     } catch (err) {
+      setCategorySubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingCategory ? 'update' : 'create'} category`);
     } finally {
       setSavingCategory(false);
@@ -146,18 +152,21 @@ export function TreatmentsPage() {
       durationSlots: String(t.durationSlots),
     });
     setError(null);
+    setTreatmentSubmitError(null);
   }
 
   function handleCancelTreatmentEdit() {
     setEditingTreatment(null);
     setTreatmentForm(emptyTreatmentForm());
     setError(null);
+    setTreatmentSubmitError(null);
   }
 
   async function handleSubmitTreatment(e: FormEvent) {
     e.preventDefault();
     if (locationId === null || !treatmentForm.categoryId) return;
     setError(null);
+    setTreatmentSubmitError(null);
     setSavingTreatment(true);
     try {
       if (editingTreatment) {
@@ -181,6 +190,7 @@ export function TreatmentsPage() {
       setTreatmentForm(emptyTreatmentForm());
       await loadLocationData(locationId);
     } catch (err) {
+      setTreatmentSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingTreatment ? 'update' : 'create'} treatment`);
     } finally {
       setSavingTreatment(false);
@@ -266,6 +276,7 @@ export function TreatmentsPage() {
                 placeholder="Category Name"
                 value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
+                error={getFieldError(categorySubmitError, 'name')}
               />
               <Button type="submit" disabled={savingCategory} size="md" className="shrink-0">
                 {savingCategory ? 'Saving...' : editingCategory ? 'Update' : 'Add Category'}
@@ -327,6 +338,7 @@ export function TreatmentsPage() {
                 placeholder="Haircut & Styling"
                 value={treatmentForm.name}
                 onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+                error={getFieldError(treatmentSubmitError, 'name')}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Input
@@ -337,6 +349,7 @@ export function TreatmentsPage() {
                   placeholder="45.00"
                   value={treatmentForm.price}
                   onChange={(e) => setTreatmentForm({ ...treatmentForm, price: e.target.value })}
+                  error={getFieldError(treatmentSubmitError, 'price')}
                 />
                 <Input
                   required
@@ -345,6 +358,7 @@ export function TreatmentsPage() {
                   placeholder="6 (30 mins)"
                   value={treatmentForm.durationSlots}
                   onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
+                  error={getFieldError(treatmentSubmitError, 'durationSlots')}
                 />
               </div>
               <div className="flex items-center gap-3 pt-2">

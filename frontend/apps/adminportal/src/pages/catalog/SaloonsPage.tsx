@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Building2, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
-import { adminCatalogApi, ApiError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 
@@ -21,6 +21,7 @@ export function SaloonsPage() {
   const [name, setName] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Locations modal state for selected chain
@@ -51,6 +52,7 @@ export function SaloonsPage() {
     setIsActive(true);
     setShowForm(true);
     setError(null);
+    setSubmitError(null);
   }
 
   function handleOpenEdit(c: Chain) {
@@ -59,6 +61,7 @@ export function SaloonsPage() {
     setIsActive(c.isActive ?? true);
     setShowForm(true);
     setError(null);
+    setSubmitError(null);
   }
 
   function handleCancelForm() {
@@ -71,6 +74,7 @@ export function SaloonsPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSubmitError(null);
     setSubmitting(true);
     try {
       if (editingChain) {
@@ -81,6 +85,7 @@ export function SaloonsPage() {
       handleCancelForm();
       await loadChains();
     } catch (err) {
+      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Failed to save saloon chain');
     } finally {
       setSubmitting(false);
@@ -195,6 +200,7 @@ export function SaloonsPage() {
                 placeholder="e.g. Elegance Saloons or Urban Glow Chain"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                error={getFieldError(submitError, 'name')}
               />
 
               {editingChain && (

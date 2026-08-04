@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Location, Room, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
@@ -41,6 +41,7 @@ export function SchedulingPage() {
   const [roomId, setRoomId] = useState('');
   const [treatmentCategoryId, setTreatmentCategoryId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [shiftSubmitError, setShiftSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [submittingShift, setSubmittingShift] = useState(false);
   const [submittingRoom, setSubmittingRoom] = useState(false);
@@ -130,6 +131,7 @@ export function SchedulingPage() {
     e.preventDefault();
     if (locationId === null || !therapistId) return;
     setError(null);
+    setShiftSubmitError(null);
     setSubmittingShift(true);
     try {
       await schedulingApi.apiAdminSchedulingTherapistShiftsPost({
@@ -143,6 +145,7 @@ export function SchedulingPage() {
       setTherapistId('');
       await loadRoster();
     } catch (err) {
+      setShiftSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Failed to assign shift');
     } finally {
       setSubmittingShift(false);
@@ -267,6 +270,7 @@ export function SchedulingPage() {
               label="End Time"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
+              error={getFieldError(shiftSubmitError, 'endTime')}
               className="h-8 text-xs"
             />
           </div>

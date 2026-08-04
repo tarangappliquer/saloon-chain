@@ -28,8 +28,15 @@ internal static class AdminBookingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's bookings for a given date.");
 
-        group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, IAvailabilityCache cache, SseBroadcaster sse) =>
+        // Manager scoping has to be checked before cancelling, not after -- sp_Booking_CancelAsAdmin
+        // itself has no caller-scoping (it's the "override" proc precisely because it skips the
+        // owns-this-booking check sp_Booking_Cancel does for a customer), so without this a Manager
+        // could cancel any booking anywhere in the system just by guessing/incrementing the id.
+        group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, ICurrentUser currentUser, IAvailabilityCache cache, SseBroadcaster sse) =>
         {
+            if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
             var affected = await repo.CancelAsAdminAsync(id);
             foreach (var slot in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
             {

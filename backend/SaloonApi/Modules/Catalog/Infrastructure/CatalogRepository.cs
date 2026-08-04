@@ -18,7 +18,7 @@ internal sealed record LocationHolidayRow(DateTime HolidayDate, string? Reason);
 
 internal sealed record TreatmentCategoryDto(int Id, int LocationId, string Name, bool IsActive);
 
-internal sealed record TherapistDto(int Id, string Name, bool IsActive);
+internal sealed record TherapistDto(int Id, string Name, bool IsActive, int? ChainId, int? LocationId);
 
 internal sealed record RoomDto(int Id, int LocationId, string Name, bool IsActive);
 
@@ -212,10 +212,11 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         });
     }
 
-    public async Task<IEnumerable<TherapistDto>> GetTherapistsAsync()
+    public async Task<IEnumerable<TherapistDto>> GetTherapistsAsync(int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<TherapistDto>("dbo.sp_Catalog_GetTherapists");
+        return await db.QuerySpAsync<TherapistDto>(
+            "dbo.sp_Catalog_GetTherapists", new { ChainId = chainId, LocationId = locationId });
     }
 
     public async Task<int> CreateTherapistAsync(string name)
