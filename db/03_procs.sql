@@ -483,6 +483,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
     @ChainId       INT = NULL,
     @LocationId    INT = NULL,
     @TherapistId   INT = NULL,
+    @IsEmulator    BIT = 0,
     @CreatedBy     INT = NULL, -- NULL for self-registration (no logged-in user yet)
     @UserId        INT OUTPUT
 AS
@@ -491,8 +492,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @Email AND IsDelete = 0)
         THROW 50010, 'Email already registered.', 1;
 
-    INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, CreatedBy)
-    VALUES (@Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @CreatedBy);
+    INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy)
+    VALUES (@Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @IsEmulator, @CreatedBy);
 
     SET @UserId = SCOPE_IDENTITY();
 END

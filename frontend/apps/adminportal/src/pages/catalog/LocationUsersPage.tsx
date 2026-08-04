@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, axiosInstance, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
@@ -22,8 +22,10 @@ function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: U
 }
 
 function emptyForm(defaultRole: UserRole = 'Manager') {
-  return { name: '', email: '', password: '', phone: '', role: defaultRole };
+  return { name: '', email: '', password: '', phone: '', role: defaultRole, isEmulator: false };
 }
+
+const CAN_SET_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
 export function LocationUsersPage() {
   const navigate = useNavigate();
@@ -95,6 +97,7 @@ export function LocationUsersPage() {
       password: '',
       phone: u.phone ?? '',
       role: u.role,
+      isEmulator: u.isEmulator,
     });
     setError(null);
   }
@@ -120,11 +123,13 @@ export function LocationUsersPage() {
           chainId: editingUser.chainId,
           locationId: editingUser.locationId,
           therapistId: editingUser.therapistId,
-          isEmulator: editingUser.isEmulator,
+          isEmulator: form.isEmulator,
           isActive: editingUser.isActive,
         });
       } else {
-        await adminStaffApi.apiAdminStaffPost({
+        // isEmulator isn't in the generated SDK's CreateStaffRequest yet -- called directly off the
+        // shared axios instance instead, same as GET /locations/mine elsewhere in this app.
+        await axiosInstance.post('/api/admin/staff', {
           name: form.name,
           email: form.email,
           password: form.password,
@@ -132,6 +137,7 @@ export function LocationUsersPage() {
           chainId,
           locationId,
           therapistId: null,
+          isEmulator: form.isEmulator,
         });
       }
       handleCancelEdit();
@@ -275,6 +281,21 @@ export function LocationUsersPage() {
                 />
               </div>
             </div>
+
+            {Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) && (
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  id="isEmulator"
+                  checked={form.isEmulator}
+                  onChange={(e) => setForm({ ...form, isEmulator: e.target.checked })}
+                  className="h-4 w-4 rounded-sm border-input text-primary focus:ring-primary"
+                />
+                <label htmlFor="isEmulator" className="text-xs font-semibold text-foreground cursor-pointer">
+                  Can Emulate (act as a customer on behalf of)
+                </label>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <Button type="submit" disabled={submitting} className="font-semibold">

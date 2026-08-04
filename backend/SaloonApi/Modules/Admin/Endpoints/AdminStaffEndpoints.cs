@@ -91,7 +91,7 @@ internal static class AdminStaffEndpoints
             {
                 if (role is not (UserRole.Receptionist or UserRole.Therapist or UserRole.Other))
                     return Results.Problem("Not authorized to create this staff member.", statusCode: StatusCodes.Status403Forbidden);
-                req = req with { LocationId = currentUser.LocationId };
+                req = req with { LocationId = currentUser.LocationId, IsEmulator = false };
             }
             else
             {
@@ -107,7 +107,7 @@ internal static class AdminStaffEndpoints
             if (role == UserRole.Therapist && therapistId is null)
                 therapistId = await catalogRepo.CreateTherapistAsync(req.Name);
 
-            var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, therapistId);
+            var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, therapistId, req.IsEmulator);
 
             if (role == UserRole.Therapist && therapistId is not null)
                 await catalogRepo.LinkTherapistScopeAsync(therapistId.Value, req.ChainId, req.LocationId, id);
@@ -118,18 +118,18 @@ internal static class AdminStaffEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Create a new staff login, restricted to roles the caller is allowed to create.");
 
-        // "Can mark admin as Emulator" is RootSuperAdmin/SuperAdmin's alone -- compare against the
+        // "Can mark staff as Emulator" is RootSuperAdmin/SuperAdmin/Admin's -- compare against the
         // stored value (not a blanket reject on isEmulator:true) because the adminportal always
-        // round-trips the current value on every save (see this session's stale-closure fix), so an
-        // Admin/Manager/Receptionist saving an unrelated field like phone on an emulator-enabled
-        // Admin must still go through.
+        // round-trips the current value on every save (see this session's stale-closure fix), so a
+        // Manager saving an unrelated field like phone on an emulator-enabled Admin must still go
+        // through.
         group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, ICurrentUser currentUser, UserRepository repo, CatalogRepository catalogRepo) =>
         {
             var existing = await repo.GetByIdAsync(id);
             if (existing is null) return Results.NotFound();
 
-            if (req.IsEmulator != existing.IsEmulator && !currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin))
-                return Results.Problem("Only Super Admin can change emulator status.", statusCode: StatusCodes.Status403Forbidden);
+            if (req.IsEmulator != existing.IsEmulator && !currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin))
+                return Results.Problem("Only Super Admin or Admin can change emulator status.", statusCode: StatusCodes.Status403Forbidden);
 
             // Who may edit whom mirrors POST's creation matrix above (RootSuperAdmin edits anyone,
             // SuperAdmin edits Admin/Manager/Receptionist/Therapist/Other/Customer in their own chain,
@@ -201,8 +201,12 @@ internal static class AdminStaffEndpoints
     }
 }
 
+// IsEmulator: RootSuperAdmin/SuperAdmin/Admin may set this true at creation time (Manager is
+// clamped to false regardless of what's sent, see MapPost's Manager branch) -- same three roles
+// allowed to flip it on an existing staff member via PUT below.
 internal sealed record CreateStaffRequest(
-    string Name, string Email, string Password, string Role, int? ChainId, int? LocationId, int? TherapistId);
+    string Name, string Email, string Password, string Role, int? ChainId, int? LocationId, int? TherapistId,
+    bool IsEmulator = false);
 
 // IsEmulator applies to any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/
 // Therapist/Other) -- "all staff can act as a customer" is a deliberate product decision (see

@@ -76,6 +76,7 @@ export function LoginPage() {
             type="password"
             label="Password"
             placeholder="••••••••"
+            showPasswordIcon={true}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             error={getFieldError(submitError, 'password')}

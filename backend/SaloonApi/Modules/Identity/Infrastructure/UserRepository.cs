@@ -21,7 +21,8 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
 {
     public async Task<int> CreateAsync(
         string name, string email, byte[] hash, byte[] salt, string? phone,
-        UserRole role = UserRole.Customer, int? chainId = null, int? locationId = null, int? therapistId = null)
+        UserRole role = UserRole.Customer, int? chainId = null, int? locationId = null, int? therapistId = null,
+        bool isEmulator = false)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
@@ -34,6 +35,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         p.Add("@ChainId", chainId);
         p.Add("@LocationId", locationId);
         p.Add("@TherapistId", therapistId);
+        p.Add("@IsEmulator", isEmulator);
         // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
         p.Add("@CreatedBy", currentUser.UserId);
         p.Add("@UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);

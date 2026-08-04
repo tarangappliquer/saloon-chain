@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, axiosInstance, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { SearchableSelect } from '../../components/SearchableSelect';
 
 const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
+const CAN_SET_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
 function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
   if (callerRole === 'RootSuperAdmin') return ['SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
@@ -18,7 +19,17 @@ function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
 }
 
 function emptyForm(defaultRole: UserRole) {
-  return { name: '', email: '', password: '', phone: '', role: defaultRole, chainId: '', locationId: '', therapistId: '' };
+  return {
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    role: defaultRole,
+    chainId: '',
+    locationId: '',
+    therapistId: '',
+    isEmulator: false,
+  };
 }
 
 export function StaffPage() {
@@ -115,6 +126,7 @@ export function StaffPage() {
       chainId: u.chainId ? String(u.chainId) : '',
       locationId: u.locationId ? String(u.locationId) : '',
       therapistId: u.therapistId ? String(u.therapistId) : '',
+      isEmulator: u.isEmulator,
     });
     setError(null);
   }
@@ -139,13 +151,15 @@ export function StaffPage() {
           chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
           locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
           therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
-          isEmulator: editingUser.isEmulator,
+          isEmulator: form.isEmulator,
           isActive: editingUser.isActive,
         });
       } else {
         const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
         const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
-        await adminStaffApi.apiAdminStaffPost({
+        // isEmulator isn't in the generated SDK's CreateStaffRequest yet -- called directly off the
+        // shared axios instance instead, same as GET /locations/mine elsewhere in this app.
+        await axiosInstance.post('/api/admin/staff', {
           name: form.name,
           email: form.email,
           password: form.password,
@@ -153,6 +167,7 @@ export function StaffPage() {
           chainId: cId,
           locationId: lId,
           therapistId: form.therapistId ? Number(form.therapistId) : null,
+          isEmulator: form.isEmulator,
         });
       }
       handleCancelEdit();
@@ -369,6 +384,21 @@ export function StaffPage() {
                 </div>
               )}
 
+              {Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) && EMULATOR_ELIGIBLE_ROLES.includes(form.role) && (
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="isEmulator"
+                    checked={form.isEmulator}
+                    onChange={(e) => setForm({ ...form, isEmulator: e.target.checked })}
+                    className="h-4 w-4 rounded-sm border-input text-primary focus:ring-primary"
+                  />
+                  <label htmlFor="isEmulator" className="text-xs font-semibold text-foreground cursor-pointer">
+                    Can Emulate (act as a customer on behalf of)
+                  </label>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 pt-2">
                 <Button type="submit" disabled={submitting} className="font-semibold">
                   {submitting ? 'Saving...' : editingUser ? 'Update User' : `Create ${form.role} User`}
@@ -434,7 +464,7 @@ export function StaffPage() {
                     <td className="px-6 py-4">
                       {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
                         <span className="text-muted-foreground">n/a</span>
-                      ) : currentUser?.role === 'RootSuperAdmin' || currentUser?.role === 'SuperAdmin' ? (
+                      ) : Boolean(currentUser && CAN_SET_EMULATOR_ROLES.includes(currentUser.role)) ? (
                         <Button
                           variant="outline"
                           size="sm"

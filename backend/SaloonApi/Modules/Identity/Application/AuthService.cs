@@ -66,10 +66,11 @@ internal sealed class AuthService(UserRepository repo, RefreshTokenRepository re
     // created on someone's behalf, e.g. a walk-in with no account), separately from CreateCustomerAsync
     // below which backs the dedicated Customers management page.
     public async Task<int> CreateStaffAsync(
-        string name, string email, string password, UserRole role, int? chainId, int? locationId, int? therapistId)
+        string name, string email, string password, UserRole role, int? chainId, int? locationId, int? therapistId,
+        bool isEmulator = false)
     {
         var (hash, salt) = PasswordHasher.Hash(password);
-        return await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId);
+        return await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId, isEmulator);
     }
 
     // Customers management page's "Add Customer" -- unlike RegisterAsync (self-service, issues a
