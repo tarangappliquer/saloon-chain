@@ -1,4 +1,6 @@
 using SaloonApi.Modules.Catalog.Infrastructure;
+using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Shared.Auth;
 
 namespace SaloonApi.Modules.Catalog.Endpoints;
 
@@ -8,15 +10,38 @@ internal static class CatalogEndpoints
     {
         var group = app.MapGroup("/api/catalog").WithTags("Catalog");
 
-        group.MapGet("/chains", async (CatalogRepository repo) =>
-            Results.Ok(await repo.GetChainsAsync()))
-            .Produces<IEnumerable<ChainDto>>()
-            .WithDescription("List every active saloon chain.");
+        group.MapGet("/chains", async (ICurrentUser currentUser, UserRepository userRepo, CatalogRepository repo) =>
+        {
+            var chains = await repo.GetChainsAsync();
+            if (currentUser.EmulatedByUserId is { } emulatorId)
+            {
+                var emulator = await userRepo.GetByIdAsync(emulatorId);
+                if (emulator is not null && (emulator.Role == UserRole.SuperAdmin || emulator.Role == UserRole.Admin) && emulator.ChainId is not null)
+                {
+                    chains = chains.Where(c => c.Id == emulator.ChainId.Value).ToList();
+                }
+            }
+            return Results.Ok(chains);
+        }).Produces<IEnumerable<ChainDto>>()
+          .WithDescription("List active saloon chains (filtered to the staff member's chain during emulation).");
 
-        group.MapGet("/locations", async (int chainId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetLocationsAsync(chainId)))
-            .Produces<IEnumerable<LocationDto>>()
-            .WithDescription("List the active locations belonging to a chain.");
+        group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, UserRepository userRepo, CatalogRepository repo) =>
+        {
+            var locations = await repo.GetLocationsAsync(chainId);
+            if (currentUser.EmulatedByUserId is { } emulatorId)
+            {
+                var emulator = await userRepo.GetByIdAsync(emulatorId);
+                if (emulator is not null && (emulator.Role == UserRole.SuperAdmin || emulator.Role == UserRole.Admin))
+                {
+                    if (emulator.ChainId is not null)
+                        locations = locations.Where(l => l.ChainId == emulator.ChainId.Value).ToList();
+                    if (emulator.LocationId is not null)
+                        locations = locations.Where(l => l.Id == emulator.LocationId.Value).ToList();
+                }
+            }
+            return Results.Ok(locations);
+        }).Produces<IEnumerable<LocationDto>>()
+          .WithDescription("List active locations for a chain (filtered during emulation).");
 
         group.MapGet("/treatments", async (int locationId, int? categoryId, CatalogRepository repo) =>
             Results.Ok(await repo.GetTreatmentsAsync(locationId, categoryId)))

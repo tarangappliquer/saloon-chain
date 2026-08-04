@@ -77,17 +77,55 @@ BEGIN
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
 
     -- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
-    SELECT DISTINCT rca.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
-    FROM dbo.RoomCategoryAssignments rca
-        JOIN dbo.Rooms r ON r.Id = rca.RoomId AND r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
-        JOIN dbo.ShiftAssignments sa ON sa.LocationId = @LocationId
-            AND sa.WorkDate = rca.WorkDate AND sa.ShiftType = rca.ShiftType
-            AND sa.IsDelete = 0 AND sa.IsActive = 1
-    WHERE rca.WorkDate = @WorkDate AND rca.IsDelete = 0 AND rca.IsActive = 1
-        AND rca.TreatmentCategoryId IN (
-          SELECT DISTINCT t.CategoryId
-        FROM dbo.Treatments t JOIN @TreatmentIds ti ON ti.Id = t.Id
-      );
+    WITH Loc AS (
+        SELECT OpenTime, CloseTime FROM dbo.Locations WHERE Id = @LocationId AND IsDelete = 0 AND IsActive = 1
+    ),
+    TargetCategories AS (
+        SELECT DISTINCT t.CategoryId
+        FROM dbo.Treatments t
+        JOIN @TreatmentIds ti ON ti.Id = t.Id
+        WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+    ),
+    ActiveRooms AS (
+        SELECT r.Id AS RoomId
+        FROM dbo.Rooms r
+        WHERE r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
+    ),
+    EligibleRooms AS (
+        SELECT r.RoomId, rca.ShiftType
+        FROM ActiveRooms r
+        JOIN dbo.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0 AND rca.IsActive = 1
+        WHERE rca.TreatmentCategoryId IN (SELECT CategoryId FROM TargetCategories)
+
+        UNION ALL
+
+        SELECT r.RoomId, 'FullDay' AS ShiftType
+        FROM ActiveRooms r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM dbo.RoomCategoryAssignments rca2
+            WHERE rca2.RoomId = r.RoomId AND rca2.WorkDate = @WorkDate AND rca2.IsDelete = 0 AND rca2.IsActive = 1
+        )
+    ),
+    EligibleShifts AS (
+        SELECT sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+        FROM dbo.ShiftAssignments sa
+        WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0 AND sa.IsActive = 1
+
+        UNION ALL
+
+        SELECT tp.Id AS TherapistId, 'FullDay' AS ShiftType, l.OpenTime AS ShiftStart, l.CloseTime AS ShiftEnd
+        FROM dbo.TherapistProfile tp
+        CROSS JOIN Loc l
+        WHERE tp.IsDelete = 0 AND tp.IsActive = 1
+          AND (tp.LocationId = @LocationId OR tp.LocationId IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM dbo.ShiftAssignments sa2
+              WHERE sa2.LocationId = @LocationId AND sa2.WorkDate = @WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
+          )
+    )
+    SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
+    FROM EligibleRooms er
+    JOIN EligibleShifts es ON es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay';
 
     -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. Therapists
     -- are a global entity (dbo.TherapistProfile has no LocationId; a therapist's location comes from
@@ -469,7 +507,8 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetMine
-    @CustomerId INT
+    @CustomerId INT,
+    @ChainId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -478,6 +517,7 @@ BEGIN
     FROM dbo.Bookings b
         JOIN dbo.Locations l ON l.Id = b.LocationId
     WHERE b.CustomerId = @CustomerId
+        AND (@ChainId IS NULL OR l.ChainId = @ChainId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
         AND b.IsDelete = 0
     ORDER BY b.Id DESC;
@@ -487,8 +527,10 @@ BEGIN
     FROM dbo.BookingTreatments bt
         JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
         JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
         LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
+        AND (@ChainId IS NULL OR l.ChainId = @ChainId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
         AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
@@ -1187,32 +1229,49 @@ GO
 -- only, top 20, always requires @Search. Kept separate from sp_Admin_GetCustomers below (the full
 -- management listing, inactive included, no row cap) so the picker stays fast and narrow.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_SearchCustomers
-    @Search NVARCHAR(200)
+    @Search NVARCHAR(200),
+    @ChainId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     SELECT TOP (20)
-        Id, Name, Email, Phone
-    FROM dbo.Users
-    WHERE Role = 'Customer' AND IsDelete = 0 AND IsActive = 1
-        AND (Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
-    ORDER BY Name;
+        u.Id, u.Name, u.Email, u.Phone,
+        CASE
+            WHEN @ChainId IS NULL THEN CAST(1 AS BIT)
+            WHEN EXISTS (
+                SELECT 1 FROM dbo.Bookings b
+                JOIN dbo.Locations l ON l.Id = b.LocationId
+                WHERE b.CustomerId = u.Id AND l.ChainId = @ChainId AND b.IsDelete = 0
+            ) THEN CAST(1 AS BIT)
+            ELSE CAST(0 AS BIT)
+        END AS CanEmulate
+    FROM dbo.Users u
+    WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
+        AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+    ORDER BY u.Name;
 END
 GO
 
--- Full customer roster for the Customers management page (add/edit/delete/view) -- unlike
--- sp_Admin_SearchCustomers, includes inactive rows and has no row cap; @Search is optional (NULL
--- lists everyone).
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCustomers
-    @Search NVARCHAR(200) = NULL
+    @Search NVARCHAR(200) = NULL,
+    @ChainId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, Email, Phone, IsActive, CreatedDate
-    FROM dbo.Users
-    WHERE Role = 'Customer' AND IsDelete = 0
-        AND (@Search IS NULL OR Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
-    ORDER BY Name;
+    SELECT u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
+        CASE
+            WHEN @ChainId IS NULL THEN CAST(1 AS BIT)
+            WHEN EXISTS (
+                SELECT 1 FROM dbo.Bookings b
+                JOIN dbo.Locations l ON l.Id = b.LocationId
+                WHERE b.CustomerId = u.Id AND l.ChainId = @ChainId AND b.IsDelete = 0
+            ) THEN CAST(1 AS BIT)
+            ELSE CAST(0 AS BIT)
+        END AS CanEmulate
+    FROM dbo.Users u
+    WHERE u.Role = 'Customer' AND u.IsDelete = 0
+        AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+    ORDER BY u.Name;
 END
 GO
 

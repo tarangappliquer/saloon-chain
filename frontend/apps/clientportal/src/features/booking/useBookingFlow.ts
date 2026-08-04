@@ -121,8 +121,10 @@ export function useBookingFlow(bookingId: number) {
   const loadDates = useCallback(async (locationId: number) => {
     dispatch({ type: 'LOADING' });
     try {
-      const from = new Date().toISOString().slice(0, 10);
-      const to = new Date(Date.now() + 13 * 86_400_000).toISOString().slice(0, 10);
+      const now = new Date();
+      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 13);
+      const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
       const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to);
       dispatch({ type: 'DATES_LOADED', dates: data });
     } catch (err) {

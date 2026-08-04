@@ -126,12 +126,20 @@ export function CustomersPage() {
   async function emulate(c: AdminCustomer) {
     setError(null);
     setEmulatingId(c.id);
+    const win = window.open('about:blank', '_blank');
     try {
       const { data } = await authApi.apiAuthEmulateCustomerIdPost(c.id);
       const res = data as unknown as AuthResponse;
-      window.location.href = `${CLIENT_PORTAL_URL}/emulate?token=${encodeURIComponent(res.token)}`;
+      const targetUrl = `${CLIENT_PORTAL_URL}/emulate?token=${encodeURIComponent(res.token)}`;
+      if (win) {
+        win.location.href = targetUrl;
+      } else {
+        window.location.href = targetUrl;
+      }
     } catch (err) {
+      if (win) win.close();
       setError(err instanceof ApiError ? err.message : 'Failed to start emulation session');
+    } finally {
       setEmulatingId(null);
     }
   }
@@ -250,14 +258,15 @@ export function CustomersPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {currentUser?.canEmulate && (
+                        {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={emulatingId === c.id}
+                            disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
                             onClick={() => emulate(c)}
+                            title={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : undefined}
                           >
-                            {emulatingId === c.id ? 'Opening...' : 'Log in as Customer'}
+                            {emulatingId === c.id ? 'Opening...' : 'Emulate'}
                           </Button>
                         )}
                         <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>

@@ -34,7 +34,8 @@ internal sealed class AuthService(
 
         var (accessToken, refreshToken) = await IssueTokensAsync(
             user.Id, user.Email, user.Role, user.ChainId, user.LocationId, user.TherapistId);
-        return (user.Id, user.Name, user.Role, user.IsEmulator, accessToken, refreshToken);
+        bool canEmulate = user.Role == UserRole.RootSuperAdmin || user.IsEmulator;
+        return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken);
     }
 
     // Exchanges a still-valid, unrevoked refresh token for a new access/refresh pair, revoking the
@@ -50,7 +51,8 @@ internal sealed class AuthService(
         await refreshTokens.RevokeAsync(stored.Id);
         var (accessToken, newRefreshToken) = await IssueTokensAsync(
             stored.UserId, stored.Email, stored.Role, stored.ChainId, stored.LocationId, stored.TherapistId);
-        return (stored.UserId, stored.Name, stored.Email, stored.Role, stored.IsEmulator, accessToken, newRefreshToken);
+        bool canEmulate = stored.Role == UserRole.RootSuperAdmin || stored.IsEmulator;
+        return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken);
     }
 
     // Best-effort: an already-expired or unknown token has nothing to revoke, so this is silently a
@@ -186,12 +188,22 @@ internal sealed class AuthService(
     public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int emulatorUserId, int customerUserId)
     {
         var emulator = await repo.GetByIdAsync(emulatorUserId);
-        if (emulator is null || !emulator.IsEmulator || !EmulatorEligibleRoles.Contains(emulator.Role))
+        if (emulator is null || (!emulator.IsEmulator && emulator.Role != UserRole.RootSuperAdmin) || !EmulatorEligibleRoles.Contains(emulator.Role))
             return null;
 
         var customer = await repo.GetByIdAsync(customerUserId);
         if (customer is null || customer.Role != UserRole.Customer)
             return null;
+
+        if (emulator.Role is UserRole.SuperAdmin or UserRole.Admin)
+        {
+            if (emulator.ChainId is null)
+                return null;
+
+            var hasBookingInChain = await repo.HasCustomerBookingInChainAsync(customerUserId, emulator.ChainId.Value);
+            if (!hasBookingInChain)
+                return null;
+        }
 
         var token = tokens.CreateToken(customer.Id, customer.Email, UserRole.Customer, emulatedByUserId: emulator.Id);
         return (customer.Id, customer.Name, customer.Email, token);

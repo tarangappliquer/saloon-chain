@@ -1,6 +1,7 @@
 using FluentValidation;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.Infrastructure;
+using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Realtime;
 using SaloonApi.Shared.Validation;
@@ -35,12 +36,32 @@ internal static class BookingEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("List open time slots for a treatment combo at a location/date.");
 
-        group.MapPost("/draft", async (DraftRequest req, ICurrentUser currentUser, BookingService svc) =>
+        group.MapPost("/draft", async (DraftRequest req, ICurrentUser currentUser, UserRepository userRepo, BookingService svc) =>
         {
+            if (currentUser.EmulatedByUserId is { } emulatorId)
+            {
+                var emulator = await userRepo.GetByIdAsync(emulatorId);
+                if (emulator is not null && (emulator.Role == UserRole.SuperAdmin || emulator.Role == UserRole.Admin))
+                {
+                    if (emulator.LocationId is not null && req.LocationId != emulator.LocationId.Value)
+                    {
+                        return Results.Problem("During emulation, you can only book treatments in your own location.", statusCode: StatusCodes.Status403Forbidden);
+                    }
+                    if (emulator.ChainId is not null)
+                    {
+                        var isLocationInChain = await userRepo.IsLocationInChainAsync(req.LocationId, emulator.ChainId.Value);
+                        if (!isLocationInChain)
+                        {
+                            return Results.Problem("During emulation, you can only book treatments in your own saloon.", statusCode: StatusCodes.Status403Forbidden);
+                        }
+                    }
+                }
+            }
             var bookingId = await svc.CreateDraftAsync(req.LocationId, currentUser.RequireUserId(), req.TreatmentIds);
             return Results.Ok(new DraftResponse(bookingId));
         }).WithValidation<DraftRequest>()
           .Produces<DraftResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Start a draft booking for one or more treatments, before any time is picked.");
 
         group.MapGet("/{id:int}", async (int id, ICurrentUser currentUser, BookingService svc) =>
@@ -90,10 +111,21 @@ internal static class BookingEndpoints
         }).Produces(StatusCodes.Status204NoContent)
           .WithDescription("Cancel the caller's own booking.");
 
-        group.MapGet("/mine", async (ICurrentUser currentUser, BookingService svc) =>
-            Results.Ok(await svc.GetMineAsync(currentUser.RequireUserId())))
-            .Produces<IReadOnlyList<MyBookingDto>>()
-            .WithDescription("List the caller's own bookings.");
+        group.MapGet("/mine", async (ICurrentUser currentUser, UserRepository userRepo, BookingService svc) =>
+        {
+            int? filterChainId = null;
+            if (currentUser.EmulatedByUserId is { } emulatorId)
+            {
+                var emulator = await userRepo.GetByIdAsync(emulatorId);
+                if (emulator is not null && (emulator.Role == UserRole.SuperAdmin || emulator.Role == UserRole.Admin))
+                {
+                    filterChainId = emulator.ChainId;
+                }
+            }
+            return Results.Ok(await svc.GetMineAsync(currentUser.RequireUserId(), filterChainId));
+        })
+        .Produces<IReadOnlyList<MyBookingDto>>()
+        .WithDescription("List the caller's own bookings.");
 
         // Anonymous: the event carries no customer data, just "something changed for this
         // location+date, refetch" -- and EventSource can't send an Authorization header anyway.

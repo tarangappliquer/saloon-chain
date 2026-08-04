@@ -19,11 +19,13 @@ internal static class SlotCalculator
         IReadOnlyList<ExistingBooking> existingBookings,
         int slotMinutes = 5)
     {
-        if (totalDurationSlots <= 0) return [];
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (date < today || totalDurationSlots <= 0) return [];
 
         var duration = TimeSpan.FromMinutes(totalDurationSlots * slotMinutes);
         var results = new List<AvailableSlot>();
         var seenStartTimes = new HashSet<DateTime>();
+        var now = DateTime.Now;
 
         foreach (var pair in eligiblePairs)
         {
@@ -36,6 +38,12 @@ internal static class SlotCalculator
 
             while (cursor <= latestStart)
             {
+                if (cursor <= now)
+                {
+                    cursor = cursor.AddMinutes(slotMinutes);
+                    continue;
+                }
+
                 var slotEnd = cursor + duration;
 
                 // A confirmed booking is a hard conflict and drops the slot entirely. A held (but

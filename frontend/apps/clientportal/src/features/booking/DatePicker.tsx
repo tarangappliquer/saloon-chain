@@ -22,7 +22,7 @@ export function DatePicker({ dates, selectedDate, onPick, loading }: Props) {
                 : 'border-border bg-card text-foreground hover:border-primary/50 hover:bg-accent'
             }`}
           >
-            {new Date(date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            {new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
           </button>
         );
       })}

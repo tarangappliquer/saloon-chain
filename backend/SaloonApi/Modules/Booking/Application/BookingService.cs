@@ -14,10 +14,12 @@ internal sealed class BookingService(
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
-        // ponytail: reuses sp_Booking_GetAvailabilityData with an empty treatment list just to
-        // read location hours/working-days mask, rather than adding a proc for one field.
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (from < today) from = today;
+        if (to < from) return [];
+
         var data = await repo.GetAvailabilityDataAsync(locationId, [], from);
-        var mask = data.Location?.WorkingDaysMask ?? 0;
+        var mask = (data.Location?.WorkingDaysMask ?? 0) == 0 ? 127 : data.Location!.WorkingDaysMask;
         var holidays = (await catalog.GetHolidayDatesAsync(locationId, from, to)).ToHashSet();
 
         var dates = new List<DateOnly>();
@@ -132,7 +134,7 @@ internal sealed class BookingService(
             await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
     }
 
-    public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId) => repo.GetMineAsync(customerId);
+    public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null) => repo.GetMineAsync(customerId, chainId);
 
     public async Task SweepExpiredHoldsAsync()
     {

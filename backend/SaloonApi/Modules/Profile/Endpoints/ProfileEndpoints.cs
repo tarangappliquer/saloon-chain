@@ -35,16 +35,23 @@ internal static class ProfileEndpoints
 
         group.MapPut("", async (UpdateProfileRequest req, ICurrentUser currentUser, ProfileRepository repo) =>
         {
+            if (currentUser.EmulatedByUserId is not null)
+                return Results.Problem("Profile updates are not allowed during an emulation session.", statusCode: StatusCodes.Status403Forbidden);
+
             var userId = currentUser.RequireUserId();
             await repo.UpdateSelfAsync(userId, req.Name, req.Phone);
             var profile = await repo.GetMyProfileAsync(userId, currentUser.Role!.Value);
             return Results.Ok(ToResponse(profile!));
         }).WithValidation<UpdateProfileRequest>()
           .Produces<ProfileResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update the caller's own name/phone.");
 
         group.MapPost("/photo", async (IFormFile file, ICurrentUser currentUser, ProfileRepository repo, IWebHostEnvironment env) =>
         {
+            if (currentUser.EmulatedByUserId is not null)
+                return Results.Problem("Profile photo updates are not allowed during an emulation session.", statusCode: StatusCodes.Status403Forbidden);
+
             if (file.Length == 0)
                 return Results.Problem("File is empty.", statusCode: StatusCodes.Status400BadRequest);
             if (file.Length > MaxPhotoBytes)
@@ -73,6 +80,7 @@ internal static class ProfileEndpoints
             return Results.Ok(new PhotoResponse(photoPath));
         }).Produces<PhotoResponse>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Upload/replace the caller's own profile photo (JPG/PNG/WEBP, max 5 MB).");
     }
 

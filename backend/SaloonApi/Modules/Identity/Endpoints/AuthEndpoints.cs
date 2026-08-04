@@ -134,9 +134,10 @@ internal static class AuthEndpoints
             if (currentUser.EmulatedByUserId is { } emulatorId)
                 emulatedByName = (await repo.GetByIdAsync(emulatorId))?.Name;
 
+            bool canEmulate = me.Role == UserRole.RootSuperAdmin || me.IsEmulator;
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
-                CanEmulate: me.IsEmulator, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName));
+                CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName));
         }).RequireAuthorization()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)

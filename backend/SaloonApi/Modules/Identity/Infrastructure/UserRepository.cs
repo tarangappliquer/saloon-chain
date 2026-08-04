@@ -13,9 +13,9 @@ internal sealed record StaffUserDto(
     int Id, string Name, string Email, string? Phone, UserRole Role,
     int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateTime CreatedDate);
 
-internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone);
+internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone, bool CanEmulate = true);
 
-internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate);
+internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool CanEmulate = true);
 
 internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
@@ -61,18 +61,38 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         return row is null ? null : ToRecord(row);
     }
 
-    public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search)
+    public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search });
+        var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId });
         return rows.ToList();
     }
 
-    public async Task<IReadOnlyList<AdminCustomerDto>> GetCustomersForAdminAsync(string? search)
+    public async Task<IReadOnlyList<AdminCustomerDto>> GetCustomersForAdminAsync(string? search, int? chainId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new { Search = search });
+        var rows = await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new { Search = search, ChainId = chainId });
         return rows.ToList();
+    }
+
+    public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)
+    {
+        using var db = factory.Create();
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM dbo.Bookings b
+                JOIN dbo.Locations l ON l.Id = b.LocationId
+                WHERE b.CustomerId = @CustomerId AND l.ChainId = @ChainId AND b.IsDelete = 0
+            ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END
+            """;
+        return await db.ExecuteScalarAsync<bool>(sql, new { CustomerId = customerId, ChainId = chainId });
+    }
+
+    public async Task<bool> IsLocationInChainAsync(int locationId, int chainId)
+    {
+        using var db = factory.Create();
+        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Locations WHERE Id = @LocationId AND ChainId = @ChainId AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
+        return await db.ExecuteScalarAsync<bool>(sql, new { LocationId = locationId, ChainId = chainId });
     }
 
     public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)

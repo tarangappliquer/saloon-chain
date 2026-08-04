@@ -5,7 +5,8 @@ import { useAuth } from '../features/auth/AuthContext';
 import type { Profile } from '../api/types';
 
 export function ProfilePage() {
-  const { updateName } = useAuth();
+  const { user, updateName } = useAuth();
+  const isEmulated = Boolean(user?.isEmulated);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -39,6 +40,7 @@ export function ProfilePage() {
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
+    if (isEmulated) return;
     setError(null);
     setSubmitError(null);
     setSuccess(null);
@@ -58,6 +60,7 @@ export function ProfilePage() {
   }
 
   async function handlePhotoSelected() {
+    if (isEmulated) return;
     const file = fileInputRef.current?.files?.[0];
     if (!file) return;
     setError(null);
@@ -82,6 +85,12 @@ export function ProfilePage() {
     <div className="mx-auto max-w-xl px-4 py-8 space-y-6">
       <PageHeader title="My Profile" subtitle="Manage your account profile and contact info." />
 
+      {isEmulated && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-medium text-amber-700 dark:text-amber-400">
+          Viewing as an emulated session. Profile changes and password resets are disabled.
+        </div>
+      )}
+
       <Card className="p-6">
         <div className="mb-6 flex items-center gap-6">
           <div className="h-20 w-20 overflow-hidden rounded-2xl border border-border bg-muted shadow-2xs">
@@ -99,17 +108,18 @@ export function ProfilePage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               onChange={handlePhotoSelected}
-              disabled={uploading}
-              className="text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
+              disabled={uploading || isEmulated}
+              className="text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground">JPG, PNG, or WEBP (Max 5 MB)</p>
           </div>
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
-          <Input required label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
+          <Input required disabled={isEmulated} label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
           <Input disabled label="Email Address" value={profile.email} helperText="Email cannot be changed." />
           <Input
+            disabled={isEmulated}
             label="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -129,7 +139,7 @@ export function ProfilePage() {
           )}
 
           <div className="pt-2">
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || isEmulated}>
               {saving ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>

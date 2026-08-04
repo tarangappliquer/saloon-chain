@@ -104,6 +104,7 @@ export interface CustomerSummary {
   name: string;
   email: string;
   phone: string | null;
+  canEmulate?: boolean;
 }
 
 export interface AdminCustomer {
@@ -113,6 +114,7 @@ export interface AdminCustomer {
   phone: string | null;
   isActive: boolean;
   createdDate: string;
+  canEmulate?: boolean;
 }
 
 export interface AdminBookingTreatment {

@@ -26,7 +26,12 @@ function EmulationBanner() {
 
   function exit() {
     logout();
-    window.location.href = ADMIN_PORTAL_URL;
+    window.close();
+    setTimeout(() => {
+      if (!window.closed) {
+        window.location.href = ADMIN_PORTAL_URL;
+      }
+    }, 100);
   }
 
   return (
