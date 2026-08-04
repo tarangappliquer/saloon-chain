@@ -39,6 +39,14 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
         await db.ExecuteSpAsync("dbo.sp_Auth_RevokeRefreshToken", new { Id = id });
     }
 
+    // Called after a successful password reset -- a stolen/stale session shouldn't survive the
+    // owner taking their account back.
+    public async Task RevokeAllForUserAsync(int userId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Auth_RevokeAllRefreshTokens", new { UserId = userId });
+    }
+
     // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- RefreshTokenRecord
     // exposes it as the enum, converted just above (same pattern as UserRepository.UserRow).
     private sealed record RefreshTokenRow(

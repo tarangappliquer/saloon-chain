@@ -77,6 +77,30 @@ internal static class AuthEndpoints
         }).WithValidation<RefreshRequest>()
           .WithDescription("Revoke a refresh token on sign-out.");
 
+        // Always 200, whether or not the email is registered -- a differing response would let a
+        // caller enumerate which emails have accounts (AuthService.RequestPasswordResetAsync is
+        // itself a silent no-op when the email isn't found, same shape as LogoutAsync above).
+        group.MapPost("/forgot-password", async (ForgotPasswordRequest req, AuthService auth) =>
+        {
+            await auth.RequestPasswordResetAsync(req.Email);
+            return Results.Ok();
+        }).WithValidation<ForgotPasswordRequest>()
+          .WithDescription("Request a password-reset email. Always succeeds, whether or not the email is registered.");
+
+        // No [Authorize]: same trust model as /refresh -- the reset token itself (unguessable,
+        // hashed-at-rest, single-use) is the credential, not a bearer session (the caller doesn't
+        // have one yet, that's the whole point of forgot-password).
+        group.MapPost("/reset-password", async (ResetPasswordRequest req, AuthService auth) =>
+        {
+            var ok = await auth.ResetPasswordAsync(req.Token, req.NewPassword);
+            return ok
+                ? Results.Ok()
+                : Results.Problem("This reset link is invalid or has expired.", statusCode: StatusCodes.Status400BadRequest);
+        }).WithValidation<ResetPasswordRequest>()
+          .Produces(StatusCodes.Status200OK)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("Redeem a password-reset token to set a new password.");
+
         // Staff-as-customer emulation. Reachable by any staff role (StaffAccess policy, now including
         // Manager) -- "all staff can be a customer" is a deliberate product decision -- but
         // AuthService.EmulateCustomerAsync
@@ -123,6 +147,8 @@ internal static class AuthEndpoints
 internal sealed record RegisterRequest(string Name, string Email, string Password, string? Phone);
 internal sealed record LoginRequest(string Email, string Password, string? Portal = null);
 internal sealed record RefreshRequest(string RefreshToken);
+internal sealed record ForgotPasswordRequest(string Email);
+internal sealed record ResetPasswordRequest(string Token, string NewPassword);
 
 internal sealed record AuthResponse(
     int UserId, string Name, string Email, string Role, string Token,
@@ -153,5 +179,22 @@ internal sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest
     public RefreshRequestValidator()
     {
         RuleFor(x => x.RefreshToken).NotEmpty();
+    }
+}
+
+internal sealed class ForgotPasswordRequestValidator : AbstractValidator<ForgotPasswordRequest>
+{
+    public ForgotPasswordRequestValidator()
+    {
+        RuleFor(x => x.Email).NotEmpty().EmailAddress();
+    }
+}
+
+internal sealed class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequest>
+{
+    public ResetPasswordRequestValidator()
+    {
+        RuleFor(x => x.Token).NotEmpty();
+        RuleFor(x => x.NewPassword).NotEmpty().MinimumLength(8);
     }
 }

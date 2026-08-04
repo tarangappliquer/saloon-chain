@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ApiError, getFieldError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
@@ -93,7 +93,7 @@ export function LoginPage() {
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-6 flex flex-col items-center gap-2 text-center">
           <button
             type="button"
             onClick={() => {
@@ -105,6 +105,11 @@ export function LoginPage() {
           >
             {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
           </button>
+          {mode === 'login' && (
+            <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
+              Forgot password?
+            </Link>
+          )}
         </div>
       </Card>
     </main>

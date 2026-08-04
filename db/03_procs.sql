@@ -565,6 +565,74 @@ BEGIN
 END
 GO
 
+-- Called after a successful password reset -- a stolen/stale session shouldn't survive the owner
+-- taking their account back. Same idempotent "only touch still-live rows" shape as the single-token
+-- revoke above.
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_RevokeAllRefreshTokens
+    @UserId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.RefreshTokens SET RevokedDate = SYSUTCDATETIME()
+    WHERE UserId = @UserId AND RevokedDate IS NULL;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreatePasswordResetToken
+    @UserId    INT,
+    @TokenHash VARBINARY(32),
+    @ExpiresAt DATETIME2,
+    @Id        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.PasswordResetTokens (UserId, TokenHash, ExpiresAt)
+    VALUES (@UserId, @TokenHash, @ExpiresAt);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetPasswordResetToken
+    @TokenHash VARBINARY(32)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT prt.Id, prt.UserId, prt.ExpiresAt, prt.ResetDate, u.Name, u.Email
+    FROM dbo.PasswordResetTokens prt
+    JOIN dbo.Users u ON u.Id = prt.UserId
+    WHERE prt.TokenHash = @TokenHash AND u.IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_ConsumePasswordResetToken
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.PasswordResetTokens SET ResetDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND ResetDate IS NULL;
+END
+GO
+
+-- Self-service and admin-triggered password changes both land here -- deliberately narrow (just the
+-- hash/salt), same "never touch Role/scope/IsActive from this path" discipline as sp_Profile_UpdateSelf.
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_UpdatePassword
+    @UserId       INT,
+    @PasswordHash VARBINARY(256),
+    @PasswordSalt VARBINARY(128)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Users
+    SET PasswordHash = @PasswordHash, PasswordSalt = @PasswordSalt, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @UserId AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50044, 'User not found.', 1;
+END
+GO
+
 -- Admin-portal CRUD + oversight procs. Run after 01-06. All writes take @CreatedBy/@UpdatedBy from
 -- the calling admin's ICurrentUser -- never NULL here (unlike self-registration/system jobs),
 -- because every admin action is behind [Authorize].

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
-import { adminCatalogApi, axiosInstance, ApiError, getFieldError } from '../../api/client';
+import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Location } from '../../api/types';
 
 const DAY_BITS: { bit: number; label: string }[] = [
@@ -14,13 +14,6 @@ const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 32, label: 'Sat' },
   { bit: 64, label: 'Sun' },
 ];
-
-// GET /locations/mine has no generated SDK method yet (adminportal is regenerated from the running
-// backend's OpenAPI doc via `npm run api`) -- called directly off the shared axios instance instead.
-async function fetchMyLocation(): Promise<Location> {
-  const { data } = await axiosInstance.get<Location>('/api/admin/catalog/locations/mine');
-  return data;
-}
 
 export function MyLocationPage() {
   const navigate = useNavigate();
@@ -42,7 +35,8 @@ export function MyLocationPage() {
     setLoading(true);
     setError(null);
     try {
-      const loc = await fetchMyLocation();
+      const { data } = await adminCatalogApi.apiAdminCatalogLocationsMineGet();
+      const loc = data as unknown as Location;
       setLocation(loc);
       const days = new Set<number>();
       DAY_BITS.forEach((d) => {

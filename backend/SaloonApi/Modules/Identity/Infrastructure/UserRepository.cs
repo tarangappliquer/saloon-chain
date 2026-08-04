@@ -94,6 +94,15 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         await db.ExecuteSpAsync("dbo.sp_Admin_DeleteCustomer", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
+    // Self-service (own password) and reset-password (via a redeemed token, no logged-in caller)
+    // both land here -- deliberately narrow, mirrors sp_Profile_UpdateSelf's "never touch Role/scope"
+    // discipline.
+    public async Task UpdatePasswordAsync(int userId, byte[] hash, byte[] salt)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Auth_UpdatePassword", new { UserId = userId, PasswordHash = hash, PasswordSalt = salt });
+    }
+
     public async Task<IReadOnlyList<StaffUserDto>> GetStaffAsync(UserRole? role, int? chainId, int? locationId)
     {
         using var db = factory.Create();

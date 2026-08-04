@@ -1,19 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { authApi, axiosInstance, ApiError, CLIENT_PORTAL_URL, getFieldError } from '../../api/client';
+import { adminCustomersApi, authApi, ApiError, CLIENT_PORTAL_URL, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminCustomer, AuthResponse } from '../../api/types';
 
-// GET/POST/PUT/DELETE /api/admin/customers (beyond the generated SDK's search-only method) have no
-// generated SDK method yet -- called directly off the shared axios instance instead, same as
-// GET /locations/mine elsewhere in this app.
-async function fetchCustomers(search: string): Promise<AdminCustomer[]> {
-  const { data } = await axiosInstance.get<AdminCustomer[]>('/api/admin/customers', { params: { search: search || undefined } });
-  return data;
-}
-
 function emptyForm() {
-  return { name: '', email: '', password: '', phone: '' };
+  return { name: '', email: '', phone: '' };
 }
 
 export function CustomersPage() {
@@ -37,7 +29,8 @@ export function CustomersPage() {
     setLoading(true);
     setError(null);
     try {
-      setCustomers(await fetchCustomers(search));
+      const { data } = await adminCustomersApi.apiAdminCustomersGet(search || undefined);
+      setCustomers(data as unknown as AdminCustomer[]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load customers');
     } finally {
@@ -64,7 +57,7 @@ export function CustomersPage() {
 
   function handleOpenEdit(c: AdminCustomer) {
     setEditingCustomer(c);
-    setForm({ name: c.name, email: c.email, password: '', phone: c.phone ?? '' });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '' });
     setShowForm(true);
     setSubmitError(null);
   }
@@ -82,16 +75,15 @@ export function CustomersPage() {
     setSubmitting(true);
     try {
       if (editingCustomer) {
-        await axiosInstance.put(`/api/admin/customers/${editingCustomer.id}`, {
+        await adminCustomersApi.apiAdminCustomersIdPut(editingCustomer.id, {
           name: form.name,
           phone: form.phone || null,
           isActive: editingCustomer.isActive,
         });
       } else {
-        await axiosInstance.post('/api/admin/customers', {
+        await adminCustomersApi.apiAdminCustomersPost({
           name: form.name,
           email: form.email,
-          password: form.password,
           phone: form.phone || null,
         });
       }
@@ -109,7 +101,7 @@ export function CustomersPage() {
     setError(null);
     setSavingId(c.id);
     try {
-      await axiosInstance.put(`/api/admin/customers/${c.id}`, { name: c.name, phone: c.phone, isActive: !c.isActive });
+      await adminCustomersApi.apiAdminCustomersIdPut(c.id, { name: c.name, phone: c.phone, isActive: !c.isActive });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update customer');
@@ -123,7 +115,7 @@ export function CustomersPage() {
     setError(null);
     setSavingId(c.id);
     try {
-      await axiosInstance.delete(`/api/admin/customers/${c.id}`);
+      await adminCustomersApi.apiAdminCustomersIdDelete(c.id);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete customer');
@@ -190,23 +182,13 @@ export function CustomersPage() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 error={getFieldError(submitError, 'email')}
               />
-              {!editingCustomer && (
-                <Input
-                  required
-                  type="password"
-                  label="Password"
-                  placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  error={getFieldError(submitError, 'password')}
-                />
-              )}
               <Input
                 label="Phone"
                 placeholder="+1 555-0199"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 error={getFieldError(submitError, 'phone')}
+                helperText={!editingCustomer ? "They'll receive an email to set their own password." : undefined}
               />
               <div className="flex items-center gap-3 pt-2">
                 <Button type="submit" disabled={submitting} className="font-semibold">

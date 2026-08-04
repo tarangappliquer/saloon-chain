@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, axiosInstance, ApiError, getFieldError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
@@ -22,7 +22,7 @@ function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: U
 }
 
 function emptyForm(defaultRole: UserRole = 'Manager') {
-  return { name: '', email: '', password: '', phone: '', role: defaultRole, isEmulator: false };
+  return { name: '', email: '', phone: '', role: defaultRole, isEmulator: false };
 }
 
 const CAN_SET_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
@@ -94,7 +94,6 @@ export function LocationUsersPage() {
     setForm({
       name: u.name,
       email: u.email,
-      password: '',
       phone: u.phone ?? '',
       role: u.role,
       isEmulator: u.isEmulator,
@@ -127,12 +126,9 @@ export function LocationUsersPage() {
           isActive: editingUser.isActive,
         });
       } else {
-        // isEmulator isn't in the generated SDK's CreateStaffRequest yet -- called directly off the
-        // shared axios instance instead, same as GET /locations/mine elsewhere in this app.
-        await axiosInstance.post('/api/admin/staff', {
+        await adminStaffApi.apiAdminStaffPost({
           name: form.name,
           email: form.email,
-          password: form.password,
           role: form.role,
           chainId,
           locationId,
@@ -250,24 +246,13 @@ export function LocationUsersPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {!editingUser ? (
-                <Input
-                  required
-                  type="password"
-                  label="Password"
-                  placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  error={getFieldError(submitError, 'password')}
-                />
-              ) : (
-                <Input
-                  label="Phone"
-                  placeholder="+1 555-0199"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                />
-              )}
+              <Input
+                label="Phone"
+                placeholder="+1 555-0199"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                helperText={!editingUser ? "They'll receive an email to set their own password." : undefined}
+              />
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">

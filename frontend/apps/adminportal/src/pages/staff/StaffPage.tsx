@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCatalogApi, adminStaffApi, axiosInstance, ApiError, getFieldError } from '../../api/client';
+import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
@@ -22,7 +22,6 @@ function emptyForm(defaultRole: UserRole) {
   return {
     name: '',
     email: '',
-    password: '',
     phone: '',
     role: defaultRole,
     chainId: '',
@@ -120,7 +119,6 @@ export function StaffPage() {
     setForm({
       name: u.name,
       email: u.email,
-      password: '',
       phone: u.phone ?? '',
       role: u.role,
       chainId: u.chainId ? String(u.chainId) : '',
@@ -157,12 +155,9 @@ export function StaffPage() {
       } else {
         const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
         const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
-        // isEmulator isn't in the generated SDK's CreateStaffRequest yet -- called directly off the
-        // shared axios instance instead, same as GET /locations/mine elsewhere in this app.
-        await axiosInstance.post('/api/admin/staff', {
+        await adminStaffApi.apiAdminStaffPost({
           name: form.name,
           email: form.email,
-          password: form.password,
           role: form.role,
           chainId: cId,
           locationId: lId,
@@ -316,24 +311,13 @@ export function StaffPage() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   error={getFieldError(submitError, 'email')}
                 />
-                {!editingUser ? (
-                  <Input
-                    required
-                    type="password"
-                    label="Password"
-                    placeholder="••••••••"
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    error={getFieldError(submitError, 'password')}
-                  />
-                ) : (
-                  <Input
-                    label="Phone"
-                    placeholder="+1 555-0199"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  />
-                )}
+                <Input
+                  label="Phone"
+                  placeholder="+1 555-0199"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  helperText={!editingUser ? "They'll receive an email to set their own password." : undefined}
+                />
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                     Role

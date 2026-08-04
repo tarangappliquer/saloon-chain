@@ -181,6 +181,20 @@ CREATE TABLE dbo.RefreshTokens (
 );
 CREATE INDEX IX_RefreshTokens_UserId ON dbo.RefreshTokens(UserId);
 
+-- Same opaque/hashed/single-use shape as dbo.RefreshTokens above, for /api/auth/forgot-password +
+-- /reset-password and for the "set your password" link sent when an admin creates a staff/customer
+-- account with no admin-chosen password (see AuthService.CreateStaffAsync/CreateCustomerAsync).
+-- ResetDate NULL = still redeemable, non-null = already used.
+CREATE TABLE dbo.PasswordResetTokens (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    UserId       INT NOT NULL REFERENCES dbo.Users(Id),
+    TokenHash    VARBINARY(32) NOT NULL UNIQUE,
+    ExpiresAt    DATETIME2 NOT NULL,
+    ResetDate    DATETIME2 NULL,
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX IX_PasswordResetTokens_UserId ON dbo.PasswordResetTokens(UserId);
+
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.Locations ADD CONSTRAINT FK_Locations_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);

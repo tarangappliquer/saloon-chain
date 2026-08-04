@@ -10,6 +10,8 @@ import { TreatmentsStep } from './features/booking/TreatmentsStep';
 import { BookPage } from './pages/BookPage';
 import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { MyBookingsPage } from './pages/MyBookingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 
@@ -120,6 +122,8 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/my-bookings" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/emulate" element={<EmulatePage />} />
         <Route
           path="/book"

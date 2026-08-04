@@ -107,7 +107,7 @@ internal static class AdminStaffEndpoints
             if (role == UserRole.Therapist && therapistId is null)
                 therapistId = await catalogRepo.CreateTherapistAsync(req.Name);
 
-            var id = await auth.CreateStaffAsync(req.Name, req.Email, req.Password, role, req.ChainId, req.LocationId, therapistId, req.IsEmulator);
+            var id = await auth.CreateStaffAsync(req.Name, req.Email, role, req.ChainId, req.LocationId, therapistId, req.IsEmulator);
 
             if (role == UserRole.Therapist && therapistId is not null)
                 await catalogRepo.LinkTherapistScopeAsync(therapistId.Value, req.ChainId, req.LocationId, id);
@@ -201,11 +201,13 @@ internal static class AdminStaffEndpoints
     }
 }
 
+// No Password field -- an admin creating a staff login never chooses/sees a password (see
+// AuthService.CreateStaffAsync); the new user gets a "set your password" email instead.
 // IsEmulator: RootSuperAdmin/SuperAdmin/Admin may set this true at creation time (Manager is
 // clamped to false regardless of what's sent, see MapPost's Manager branch) -- same three roles
 // allowed to flip it on an existing staff member via PUT below.
 internal sealed record CreateStaffRequest(
-    string Name, string Email, string Password, string Role, int? ChainId, int? LocationId, int? TherapistId,
+    string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId,
     bool IsEmulator = false);
 
 // IsEmulator applies to any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/
@@ -220,7 +222,6 @@ internal sealed class CreateStaffRequestValidator : AbstractValidator<CreateStaf
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.Password).NotEmpty().MinimumLength(8);
         // RootSuperAdmin is excluded -- there's no "assign RootSuperAdmin" workflow (bootstrapped
         // only via AdminSeeder); AdminStaffEndpoints.MapPost further restricts who may create which
         // of the remaining roles (SuperAdmin/Admin/Manager/Receptionist/Therapist/Other/Customer)

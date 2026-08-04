@@ -73,6 +73,7 @@ builder.Services.AddExceptionHandler<AppExceptionHandler>();
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+builder.Services.Configure<PortalUrlOptions>(builder.Configuration.GetSection("Portals"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
     ?? throw new InvalidOperationException("Missing Jwt configuration");
 
@@ -157,6 +158,7 @@ builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
 
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<RefreshTokenRepository>();
+builder.Services.AddScoped<PasswordResetTokenRepository>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<BookingRepository>();

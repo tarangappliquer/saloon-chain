@@ -12,7 +12,7 @@ const SALOON_USER_ROLES: { value: UserRole; label: string; desc: string }[] = [
 ];
 
 function emptyForm() {
-  return { name: '', email: '', password: '', phone: '', role: 'SuperAdmin' as UserRole };
+  return { name: '', email: '', phone: '', role: 'SuperAdmin' as UserRole };
 }
 
 export function SaloonUsersPage() {
@@ -65,7 +65,6 @@ export function SaloonUsersPage() {
     setForm({
       name: u.name,
       email: u.email,
-      password: '',
       phone: u.phone ?? '',
       role: u.role,
     });
@@ -100,7 +99,6 @@ export function SaloonUsersPage() {
         await adminStaffApi.apiAdminStaffPost({
           name: form.name,
           email: form.email,
-          password: form.password,
           role: form.role,
           chainId,
           locationId: null,
@@ -197,24 +195,13 @@ export function SaloonUsersPage() {
                 error={getFieldError(submitError, 'email')}
               />
 
-              {!editingUser ? (
-                <Input
-                  required
-                  type="password"
-                  label="Password"
-                  placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  error={getFieldError(submitError, 'password')}
-                />
-              ) : (
-                <Input
-                  label="Phone"
-                  placeholder="+1 555-0199"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                />
-              )}
+              <Input
+                label="Phone"
+                placeholder="+1 555-0199"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                helperText={!editingUser ? "They'll receive an email to set their own password." : undefined}
+              />
             </div>
 
             <div>
