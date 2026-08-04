@@ -138,8 +138,9 @@ CREATE TABLE dbo.TherapistProfile (
 --   Other:        LocationId set (optional) -- catch-all for staff that don't fit the above (e.g.
 --                 cleaner, cashier); no admin-portal management capability beyond StaffAccess.
 --   Customer:     no scope columns set -- self-registered, or created by RootSuperAdmin/SuperAdmin/
---                 Admin/Manager on a customer's behalf. Any staff role can also be marked
---                 IsEmulator to act as a customer (see below).
+--                 Admin on a customer's behalf (Manager cannot create a customer, see
+--                 AdminCustomersEndpoints' CustomerManagement policy). Any staff role can also be
+--                 marked IsEmulator to act as a customer (see below).
 CREATE TABLE dbo.Users (
     Id            INT IDENTITY(1,1) PRIMARY KEY,
     Name          NVARCHAR(200)   NOT NULL,
@@ -147,6 +148,10 @@ CREATE TABLE dbo.Users (
     PasswordHash  VARBINARY(256)  NOT NULL,
     PasswordSalt  VARBINARY(128)  NOT NULL,
     Phone         NVARCHAR(30)    NULL,
+    -- Web-relative path under /uploads/profile-photos, not a filesystem path. Lives directly on Users
+    -- for a Customer (see sp_Profile_*Customer*) -- dbo.StaffProfiles.PhotoPath is still the source
+    -- for staff roles, unchanged.
+    ProfilePhoto  NVARCHAR(500)   NULL,
     Role          VARCHAR(20)     NOT NULL DEFAULT 'Customer'
                   CHECK (Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer')),
     ChainId       INT NULL REFERENCES dbo.SaloonChains(Id),
@@ -293,9 +298,10 @@ CREATE TABLE dbo.StaffProfiles (
     UpdatedDate  DATETIME2 NULL
 );
 
+-- PhotoPath moved to dbo.Users.ProfilePhoto -- a customer's photo is looked up directly off their
+-- Users row now (see sp_Profile_GetCustomer/sp_Profile_SetCustomerPhoto), not through this table.
 CREATE TABLE dbo.CustomerProfiles (
     UserId       INT PRIMARY KEY REFERENCES dbo.Users(Id),
-    PhotoPath    NVARCHAR(500) NULL,
     CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedDate  DATETIME2 NULL
 );

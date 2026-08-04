@@ -106,6 +106,15 @@ export interface CustomerSummary {
   phone: string | null;
 }
 
+export interface AdminCustomer {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  isActive: boolean;
+  createdDate: string;
+}
+
 export interface AdminBookingTreatment {
   treatmentName: string;
   roomName: string | null;

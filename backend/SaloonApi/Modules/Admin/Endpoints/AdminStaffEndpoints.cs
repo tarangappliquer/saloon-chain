@@ -57,10 +57,12 @@ internal static class AdminStaffEndpoints
         // SuperAdmin/Admin (ChainId comes straight from the request body since Root has none of its
         // own to clamp to); SuperAdmin -> Admin/Manager/Receptionist/Therapist/Other/Customer (own
         // chain); Admin -> Manager/Receptionist/Therapist/Other/Customer (own chain); Manager ->
-        // Receptionist/Therapist/Other/Customer (own location); Receptionist has no staff-creation
-        // rights of its own (falls through to the explicit reject below). Nothing enforced this
-        // before RBAC landed -- any AdminAccess caller (including a plain Receptionist) could create
-        // a brand-new SuperAdmin via this endpoint.
+        // Receptionist/Therapist/Other (own location) -- Customer is deliberately absent from
+        // Manager's set here (RootSuperAdmin/SuperAdmin/Admin only, see AdminCustomersEndpoints'
+        // CustomerManagement policy); Receptionist has no staff-creation rights of its own (falls
+        // through to the explicit reject below). Nothing enforced this before RBAC landed -- any
+        // AdminAccess caller (including a plain Receptionist) could create a brand-new SuperAdmin via
+        // this endpoint.
         // SuperAdmin/Admin/Manager's own scope is clamped server-side rather than checked-and-rejected,
         // so the adminportal form never needs to know (or guess) the caller's own chain/location id --
         // it just omits those fields for non-RootSuperAdmin creators and the server fills them in.
@@ -87,7 +89,7 @@ internal static class AdminStaffEndpoints
             }
             else if (currentUser.IsInRole(UserRole.Manager))
             {
-                if (role is not (UserRole.Receptionist or UserRole.Therapist or UserRole.Other or UserRole.Customer))
+                if (role is not (UserRole.Receptionist or UserRole.Therapist or UserRole.Other))
                     return Results.Problem("Not authorized to create this staff member.", statusCode: StatusCodes.Status403Forbidden);
                 req = req with { LocationId = currentUser.LocationId };
             }

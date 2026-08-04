@@ -15,6 +15,8 @@ internal sealed record StaffUserDto(
 
 internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone);
 
+internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate);
+
 internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
     public async Task<int> CreateAsync(
@@ -62,6 +64,32 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search });
         return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<AdminCustomerDto>> GetCustomersForAdminAsync(string? search)
+    {
+        using var db = factory.Create();
+        var rows = await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new { Search = search });
+        return rows.ToList();
+    }
+
+    public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Admin_UpdateCustomer", new
+        {
+            Id = id,
+            Name = name,
+            Phone = phone,
+            IsActive = isActive,
+            UpdatedBy = currentUser.RequireUserId()
+        });
+    }
+
+    public async Task DeleteCustomerAsync(int id)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Admin_DeleteCustomer", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IReadOnlyList<StaffUserDto>> GetStaffAsync(UserRole? role, int? chainId, int? locationId)

@@ -37,12 +37,6 @@ function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNo
   return roles.includes(user.role) ? <>{children}</> : <Navigate to="/" replace />;
 }
 
-function RequireEmulator({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return user.canEmulate ? <>{children}</> : <Navigate to="/" replace />;
-}
-
 function NavLink({ to, children }: { to: string; children: ReactNode }) {
   const location = useLocation();
   const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
@@ -78,7 +72,7 @@ function Nav() {
             {user.role === 'Manager' && <NavLink to="/my-location">My Location</NavLink>}
             {/* {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>} */}
             <NavLink to="/bookings">Bookings</NavLink>
-            {user.canEmulate && <NavLink to="/customers">Customers</NavLink>}
+            {ADMIN_ACCESS.includes(user.role) && <NavLink to="/customers">Customers</NavLink>}
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -209,9 +203,9 @@ function AppRoutes() {
           <Route
             path="/customers"
             element={
-              <RequireEmulator>
+              <RequireRole roles={ADMIN_ACCESS}>
                 <CustomersPage />
-              </RequireEmulator>
+              </RequireRole>
             }
           />
           <Route

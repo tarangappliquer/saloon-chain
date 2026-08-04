@@ -61,14 +61,24 @@ internal sealed class AuthService(UserRepository repo, RefreshTokenRepository re
     }
 
     // Staff accounts (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other) are
-    // provisioned here, as is a Customer created on someone's behalf by RootSuperAdmin/SuperAdmin/
-    // Admin/Manager -- never self-service, callers must already be behind an admin-only
-    // authorization policy.
+    // provisioned here -- never self-service, callers must already be behind an admin-only
+    // authorization policy. AdminStaffEndpoints also lets this create a Customer role (a customer
+    // created on someone's behalf, e.g. a walk-in with no account), separately from CreateCustomerAsync
+    // below which backs the dedicated Customers management page.
     public async Task<int> CreateStaffAsync(
         string name, string email, string password, UserRole role, int? chainId, int? locationId, int? therapistId)
     {
         var (hash, salt) = PasswordHasher.Hash(password);
         return await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId);
+    }
+
+    // Customers management page's "Add Customer" -- unlike RegisterAsync (self-service, issues a
+    // session), this is an admin creating an account on someone's behalf and returns just the new
+    // id, no token: the admin stays logged in as themselves, not as the customer they just created.
+    public async Task<int> CreateCustomerAsync(string name, string email, string password, string? phone)
+    {
+        var (hash, salt) = PasswordHasher.Hash(password);
+        return await repo.CreateAsync(name, email, hash, salt, phone, UserRole.Customer);
     }
 
     // Any staff role with IsEmulator=1 may open a customer session on that customer's behalf --

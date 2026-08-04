@@ -1056,8 +1056,9 @@ GO
 -- Manager/Receptionist/Therapist/Other) so any staff member can be marked as emulator and access
 -- the customer portal on a customer's behalf.
 
--- Powers the admin-portal "Customers" picker used to start an emulation session -- search only,
--- no admin listing-all-customers use case exists yet so this always requires @Search.
+-- Powers the admin-portal "Customers" picker used to start an emulation session -- active customers
+-- only, top 20, always requires @Search. Kept separate from sp_Admin_GetCustomers below (the full
+-- management listing, inactive included, no row cap) so the picker stays fast and narrow.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_SearchCustomers
     @Search NVARCHAR(200)
 AS
@@ -1068,6 +1069,60 @@ BEGIN
     WHERE Role = 'Customer' AND IsDelete = 0 AND IsActive = 1
       AND (Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
     ORDER BY Name;
+END
+GO
+
+-- Full customer roster for the Customers management page (add/edit/delete/view) -- unlike
+-- sp_Admin_SearchCustomers, includes inactive rows and has no row cap; @Search is optional (NULL
+-- lists everyone).
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCustomers
+    @Search NVARCHAR(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, Name, Email, Phone, IsActive, CreatedDate
+    FROM dbo.Users
+    WHERE Role = 'Customer' AND IsDelete = 0
+      AND (@Search IS NULL OR Name LIKE '%' + @Search + '%' OR Email LIKE '%' + @Search + '%')
+    ORDER BY Name;
+END
+GO
+
+-- Customer counterpart to sp_Admin_UpdateUser -- deliberately narrow (Name/Phone/IsActive only, no
+-- Role/ChainId/LocationId/TherapistId/IsEmulator, none of which apply to a customer) and restricted
+-- to Role = 'Customer' so this can never be pointed at a staff row by id.
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateCustomer
+    @Id        INT,
+    @Name      NVARCHAR(200),
+    @Phone     NVARCHAR(30) = NULL,
+    @IsActive  BIT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Users
+    SET Name = @Name, Phone = @Phone, IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0 AND Role = 'Customer';
+
+    IF @@ROWCOUNT = 0
+        THROW 50042, 'Customer not found.', 1;
+END
+GO
+
+-- Soft-delete, same convention as chains/locations (IsDelete, not a hard DELETE). Restricted to
+-- Role = 'Customer' for the same reason as sp_Admin_UpdateCustomer above.
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_DeleteCustomer
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Users
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0 AND Role = 'Customer';
+
+    IF @@ROWCOUNT = 0
+        THROW 50043, 'Customer not found.', 1;
 END
 GO
 
@@ -1232,10 +1287,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Profile_GetCustomer
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT u.Id, u.Name, u.Email, u.Phone, u.Role, cp.PhotoPath
-    FROM dbo.Users u
-    LEFT JOIN dbo.CustomerProfiles cp ON cp.UserId = u.Id
-    WHERE u.Id = @UserId AND u.IsDelete = 0;
+    SELECT Id, Name, Email, Phone, Role, ProfilePhoto AS PhotoPath
+    FROM dbo.Users
+    WHERE Id = @UserId AND IsDelete = 0;
 END
 GO
 
@@ -1278,11 +1332,11 @@ CREATE OR ALTER PROCEDURE dbo.sp_Profile_SetCustomerPhoto
 AS
 BEGIN
     SET NOCOUNT ON;
-    MERGE dbo.CustomerProfiles AS target
-    USING (SELECT @UserId AS UserId) AS src ON target.UserId = src.UserId
-    WHEN MATCHED THEN
-        UPDATE SET PhotoPath = @PhotoPath, UpdatedDate = SYSUTCDATETIME()
-    WHEN NOT MATCHED THEN
-        INSERT (UserId, PhotoPath, UpdatedDate) VALUES (@UserId, @PhotoPath, SYSUTCDATETIME());
+    UPDATE dbo.Users
+    SET ProfilePhoto = @PhotoPath, UpdatedBy = @UserId, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @UserId AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50041, 'Customer not found.', 1;
 END
 GO

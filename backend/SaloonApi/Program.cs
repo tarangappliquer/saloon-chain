@@ -127,6 +127,11 @@ builder.Services.AddAuthorization(options =>
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
+    // Creating a customer account is RootSuperAdmin/SuperAdmin/Admin's remit, not Manager's -- edit/
+    // delete/view stay under the Admin Customers group's own AdminAccess (Manager included there).
+    // Layered on top of that group requirement, same trick as ChainManagement/LocationManagement above.
+    options.AddPolicy("CustomerManagement", p => p.RequireRole(
+        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
 });
 
 builder.Services.AddCors(options =>
