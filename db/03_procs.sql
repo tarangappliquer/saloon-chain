@@ -365,16 +365,27 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Confirm
     @BookingId  INT,
-    @CustomerId INT,
+    @CustomerId INT = NULL,
     @UpdatedBy  INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
+    IF EXISTS (
+        SELECT 1 FROM dbo.Bookings WHERE Id = @BookingId AND Status = 'Confirmed' AND IsDelete = 0
+    )
+    BEGIN
+        SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0;
+        RETURN;
+    END
+
     IF NOT EXISTS (
         SELECT 1
-    FROM dbo.Bookings
-    WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft'
+        FROM dbo.Bookings
+        WHERE Id = @BookingId AND (@CustomerId IS NULL OR @CustomerId = 0 OR CustomerId = @CustomerId) AND IsDelete = 0 AND Status = 'Draft'
     )
         THROW 50003, 'Booking not found or already finalized.', 1;
 
@@ -385,18 +396,18 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-    FROM dbo.BookingTreatments
-    WHERE BookingId = @BookingId AND IsDelete = 0
-        AND (StartTime IS NULL OR ExpiresAt IS NULL OR ExpiresAt <= SYSUTCDATETIME())
+        FROM dbo.BookingTreatments
+        WHERE BookingId = @BookingId AND IsDelete = 0
+            AND StartTime IS NULL
     )
-        THROW 50003, 'Every treatment needs a time before confirming (a hold may have expired).', 1;
+        THROW 50003, 'Every treatment needs a time before confirming.', 1;
 
     UPDATE dbo.Bookings
-    SET Status = 'Confirmed', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    SET Status = 'Confirmed', UpdatedBy = COALESCE(@UpdatedBy, @CustomerId), UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId;
 
     UPDATE dbo.BookingTreatments
-    SET ExpiresAt = NULL, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    SET ExpiresAt = NULL, UpdatedBy = COALESCE(@UpdatedBy, @CustomerId), UpdatedDate = SYSUTCDATETIME()
     WHERE BookingId = @BookingId AND IsDelete = 0;
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate

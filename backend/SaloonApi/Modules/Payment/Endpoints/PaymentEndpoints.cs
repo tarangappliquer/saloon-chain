@@ -53,6 +53,15 @@ internal static class PaymentEndpoints
           .Produces<PaymentResultDto>()
           .WithDescription("Confirm or record a manual/offline payment (Cash or POS Terminal).");
 
+        group.MapPost("/verify-checkout-session", async (VerifyCheckoutSessionEndpointRequest req, PaymentService svc, CancellationToken ct) =>
+        {
+            var result = await svc.VerifyCheckoutSessionAsync(req.SessionId, req.BookingId, ct);
+            return Results.Ok(result);
+        }).AllowAnonymous()
+          .WithValidation<VerifyCheckoutSessionEndpointRequest>()
+          .Produces<PaymentResultDto>()
+          .WithDescription("Verify Stripe Checkout Session status and confirm booking if paid.");
+
         group.MapGet("/booking/{bookingId:int}", async (int bookingId, PaymentService svc) =>
         {
             var payments = await svc.GetByBookingIdAsync(bookingId);
@@ -89,6 +98,11 @@ internal sealed record ConfirmManualEndpointRequest(
     string? FailureReason = null
 );
 
+internal sealed record VerifyCheckoutSessionEndpointRequest(
+    string SessionId,
+    int BookingId
+);
+
 internal sealed class CreateIntentEndpointRequestValidator : AbstractValidator<CreateIntentEndpointRequest>
 {
     public CreateIntentEndpointRequestValidator()
@@ -103,5 +117,14 @@ internal sealed class ConfirmManualEndpointRequestValidator : AbstractValidator<
     public ConfirmManualEndpointRequestValidator()
     {
         RuleFor(x => x.PaymentId).GreaterThan(0);
+    }
+}
+
+internal sealed class VerifyCheckoutSessionEndpointRequestValidator : AbstractValidator<VerifyCheckoutSessionEndpointRequest>
+{
+    public VerifyCheckoutSessionEndpointRequestValidator()
+    {
+        RuleFor(x => x.SessionId).NotEmpty();
+        RuleFor(x => x.BookingId).GreaterThan(0);
     }
 }

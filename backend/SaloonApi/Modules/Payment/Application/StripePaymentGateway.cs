@@ -62,7 +62,7 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
                 }
             ],
             Mode = "payment",
-            SuccessUrl = $"{baseUrl}/book/confirmed?bookingId={bookingId}",
+            SuccessUrl = $"{baseUrl}/book/confirmed?bookingId={bookingId}&session_id={{CHECKOUT_SESSION_ID}}",
             CancelUrl = $"{baseUrl}/book/{bookingId}/payment",
             Customer = stripeCustomerId,
             Metadata = new Dictionary<string, string>
@@ -128,7 +128,15 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
             string? transactionId = null;
             PaymentStatus? newStatus = null;
 
-            if (stripeEvent.Data?.Object is PaymentIntent paymentIntent)
+            if (stripeEvent.Data?.Object is Stripe.Checkout.Session session)
+            {
+                transactionId = session.PaymentIntentId ?? session.Id;
+                if (session.Metadata != null && session.Metadata.TryGetValue("bookingId", out var bIdStr) && int.TryParse(bIdStr, CultureInfo.InvariantCulture, out var bId))
+                {
+                    bookingId = bId;
+                }
+            }
+            else if (stripeEvent.Data?.Object is PaymentIntent paymentIntent)
             {
                 transactionId = paymentIntent.Id;
                 if (paymentIntent.Metadata != null && paymentIntent.Metadata.TryGetValue("bookingId", out var bIdStr) && int.TryParse(bIdStr, CultureInfo.InvariantCulture, out var bId))
@@ -150,7 +158,7 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
                 var dataObj = json["data"]?["object"] as JObject;
                 if (dataObj != null)
                 {
-                    transactionId = dataObj["id"]?.ToString();
+                    transactionId = dataObj["payment_intent"]?.ToString() ?? dataObj["id"]?.ToString();
                     var bIdStr = dataObj["metadata"]?["bookingId"]?.ToString();
                     if (!string.IsNullOrEmpty(bIdStr) && int.TryParse(bIdStr, CultureInfo.InvariantCulture, out var bId))
                     {
@@ -161,7 +169,7 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
 
             newStatus = stripeEvent.Type switch
             {
-                EventTypes.PaymentIntentSucceeded or EventTypes.ChargeSucceeded => PaymentStatus.Succeeded,
+                EventTypes.CheckoutSessionCompleted or EventTypes.PaymentIntentSucceeded or EventTypes.ChargeSucceeded => PaymentStatus.Succeeded,
                 EventTypes.PaymentIntentPaymentFailed or EventTypes.ChargeFailed => PaymentStatus.Failed,
                 EventTypes.PaymentIntentCanceled => PaymentStatus.Cancelled,
                 EventTypes.ChargeRefunded => PaymentStatus.Refunded,

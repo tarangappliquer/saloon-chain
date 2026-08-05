@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Modules.Payment.Infrastructure;
+using Stripe;
 
 namespace SaloonApi.Modules.Payment.Application;
 
@@ -97,15 +98,77 @@ internal sealed class PaymentService(
             if (latest != null)
             {
                 await repo.UpdateStatusAsync(latest.Id, result.NewStatus.Value.ToString(), result.TransactionId);
-                if (result.NewStatus == PaymentStatus.Succeeded)
-                {
-                    var customerId = latest.CreatedBy ?? 0;
-                    await bookingService.ConfirmAsync(result.PaymentId.Value, customerId);
-                }
+            }
+            else
+            {
+                await repo.CreateAsync(
+                    bookingId: result.PaymentId.Value,
+                    amount: 0,
+                    currency: "USD",
+                    provider: provider.ToString(),
+                    paymentMethod: "card",
+                    status: result.NewStatus.Value.ToString(),
+                    transactionId: result.TransactionId,
+                    clientSecret: null,
+                    createdBy: null
+                );
+            }
+
+            if (result.NewStatus == PaymentStatus.Succeeded)
+            {
+                await bookingService.ConfirmAsync(result.PaymentId.Value, latest?.CreatedBy ?? 0);
             }
         }
 
         return result;
+    }
+
+    public async Task<PaymentResultDto> VerifyCheckoutSessionAsync(string sessionId, int bookingId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("Session ID is required", nameof(sessionId));
+        }
+
+        StripeConfiguration.ApiKey = stripeOptions.Value.SecretKey;
+        if (string.IsNullOrEmpty(stripeOptions.Value.SecretKey))
+        {
+            // Dev mock fallback
+            await bookingService.ConfirmAsync(bookingId, 0);
+            return new PaymentResultDto(true, 0, PaymentStatus.Succeeded, sessionId, null);
+        }
+
+        var sessionService = new Stripe.Checkout.SessionService();
+        var session = await sessionService.GetAsync(sessionId, cancellationToken: ct);
+
+        if (session != null && string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+        {
+            var payments = await repo.GetByBookingIdAsync(bookingId);
+            var latest = payments.Count > 0 ? payments[0] : null;
+            if (latest != null)
+            {
+                await repo.UpdateStatusAsync(latest.Id, PaymentStatus.Succeeded.ToString(), session.PaymentIntentId ?? session.Id);
+            }
+            else
+            {
+                await repo.CreateAsync(
+                    bookingId: bookingId,
+                    amount: (session.AmountTotal ?? 0) / 100m,
+                    currency: session.Currency?.ToUpperInvariant() ?? "USD",
+                    provider: PaymentProvider.Stripe.ToString(),
+                    paymentMethod: "card",
+                    status: PaymentStatus.Succeeded.ToString(),
+                    transactionId: session.PaymentIntentId ?? session.Id,
+                    clientSecret: null,
+                    createdBy: null
+                );
+            }
+
+            await bookingService.ConfirmAsync(bookingId, latest?.CreatedBy ?? 0);
+            return new PaymentResultDto(true, latest?.Id ?? 0, PaymentStatus.Succeeded, session.PaymentIntentId ?? session.Id, null);
+        }
+
+        return new PaymentResultDto(false, 0, PaymentStatus.Failed, session?.Id, "Payment not completed.");
     }
 
     public Task<IReadOnlyList<PaymentDto>> GetByBookingIdAsync(int bookingId) => repo.GetByBookingIdAsync(bookingId);
