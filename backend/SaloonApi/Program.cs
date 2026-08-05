@@ -14,6 +14,9 @@ using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Modules.Payment.Application;
+using SaloonApi.Modules.Payment.Endpoints;
+using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Modules.Profile.Endpoints;
 using SaloonApi.Modules.Profile.Infrastructure;
 using SaloonApi.Modules.Scheduling.Endpoints;
@@ -165,6 +168,15 @@ builder.Services.AddScoped<BookingRepository>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<SchedulingRepository>();
 builder.Services.AddScoped<ProfileRepository>();
+builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
+builder.Services.AddScoped<IPaymentGateway, CashPaymentGateway>();
+builder.Services.AddScoped<IPaymentGateway, InHousePaymentGateway>();
+builder.Services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
+builder.Services.AddScoped<PaymentRepository>();
+builder.Services.AddScoped<StripeCustomerService>();
+builder.Services.AddScoped<PaymentService>();
+
+builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
 
 builder.Services.AddHostedService<HoldExpirySweepService>();
 builder.Services.AddHostedService<EmailQueueBackgroundService>();
@@ -177,19 +189,10 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
-// Cleared: ASP.NET Core only trusts forwarded headers from a loopback proxy by default. In a
-// typical container/cloud deployment the reverse proxy (ingress, sidecar, load balancer) isn't
-// loopback and its IP isn't fixed, so the default allowlist would silently ignore it. This trusts
-// forwarded headers from *any* immediate caller -- only appropriate because the proxy in front is
-// the sole entry point (the app itself is never directly internet-reachable).
 forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 
-// Served publicly (no auth) -- profile photos are referenced directly from <img> tags in both
-// frontends, which can't attach an Authorization header. Not under wwwroot: this is an API project
-// with no other static content, so a dedicated physical provider keeps the upload directory
-// separate from (and not implying) a general-purpose static-site root.
 var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
 Directory.CreateDirectory(uploadsPath);
 app.UseStaticFiles(new StaticFileOptions
@@ -217,6 +220,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapBookingEndpoints();
+app.MapPaymentEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapAdminStaffEndpoints();
 app.MapAdminBookingEndpoints();

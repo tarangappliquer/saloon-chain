@@ -33,13 +33,17 @@ internal static class ProfileEndpoints
           .Produces(StatusCodes.Status404NotFound)
           .WithDescription("Get the caller's own profile.");
 
-        group.MapPut("", async (UpdateProfileRequest req, ICurrentUser currentUser, ProfileRepository repo) =>
+        group.MapPut("", async (UpdateProfileRequest req, ICurrentUser currentUser, ProfileRepository repo, SaloonApi.Modules.Payment.Application.StripeCustomerService stripeCustomerService) =>
         {
             if (currentUser.EmulatedByUserId is not null)
                 return Results.Problem("Profile updates are not allowed during an emulation session.", statusCode: StatusCodes.Status403Forbidden);
 
             var userId = currentUser.RequireUserId();
             await repo.UpdateSelfAsync(userId, req.Name, req.Phone);
+            if (currentUser.Email is not null)
+            {
+                await stripeCustomerService.SyncCustomerAsync(userId, req.Name, currentUser.Email, req.Phone);
+            }
             var profile = await repo.GetMyProfileAsync(userId, currentUser.Role!.Value);
             return Results.Ok(ToResponse(profile!));
         }).WithValidation<UpdateProfileRequest>()

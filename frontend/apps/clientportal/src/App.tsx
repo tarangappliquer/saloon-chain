@@ -4,6 +4,7 @@ import { BrandMark, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle }
 import { ADMIN_PORTAL_URL } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
+import { PaymentStep } from './features/booking/PaymentStep';
 import { ScheduleStep } from './features/booking/ScheduleStep';
 import { SummaryStep } from './features/booking/SummaryStep';
 import { TreatmentsStep } from './features/booking/TreatmentsStep';
@@ -143,6 +144,7 @@ function AppRoutes() {
             <Route path="confirmed" element={<ConfirmedStep />} />
             <Route path=":bookingId/schedule" element={<ScheduleStep />} />
             <Route path=":bookingId/summary" element={<SummaryStep />} />
+            <Route path=":bookingId/payment" element={<PaymentStep />} />
           </Route>
           <Route
             path="/my-bookings"

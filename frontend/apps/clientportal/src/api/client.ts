@@ -93,7 +93,7 @@ async function tryRefresh(): Promise<boolean> {
 // Not exported -- every request must go through the generated api-client classes below (authApi,
 // bookingApi, etc), never a raw axiosInstance call from page code. Exists only to wire the shared
 // auth/refresh-token interceptors into those classes' constructors.
-const axiosInstance = axios.create({ baseURL: API_BASE });
+export const axiosInstance = axios.create({ baseURL: API_BASE });
 
 axiosInstance.interceptors.request.use((config) => {
   if (authToken) config.headers.set('Authorization', `Bearer ${authToken}`);

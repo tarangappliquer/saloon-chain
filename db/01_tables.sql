@@ -159,6 +159,7 @@ CREATE TABLE dbo.Users (
     TherapistId   INT NULL REFERENCES dbo.TherapistProfile(Id),
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
+    StripeCustomerId NVARCHAR(200) NULL,
     IsDelete      BIT NOT NULL DEFAULT 0,
     IsActive      BIT NOT NULL DEFAULT 1,
     CreatedBy     INT NULL REFERENCES dbo.Users(Id),
@@ -319,3 +320,24 @@ CREATE TABLE dbo.CustomerProfiles (
     CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedDate  DATETIME2 NULL
 );
+
+CREATE TABLE dbo.Payments (
+    Id             INT IDENTITY(1,1) PRIMARY KEY,
+    BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id),
+    Amount         DECIMAL(10,2) NOT NULL,
+    Currency       VARCHAR(10) NOT NULL DEFAULT 'USD',
+    Provider       VARCHAR(30) NOT NULL CHECK (Provider IN ('Stripe', 'Cash', 'InHouse')),
+    PaymentMethod  VARCHAR(30) NOT NULL DEFAULT 'card',
+    Status         VARCHAR(20) NOT NULL DEFAULT 'Pending' CHECK (Status IN ('Pending', 'RequiresAction', 'Succeeded', 'Failed', 'Cancelled', 'Refunded')),
+    TransactionId  NVARCHAR(200) NULL,
+    ClientSecret   NVARCHAR(500) NULL,
+    FailureReason  NVARCHAR(500) NULL,
+    IsDelete       BIT NOT NULL DEFAULT 0,
+    IsActive       BIT NOT NULL DEFAULT 1,
+    CreatedBy      INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy      INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate    DATETIME2 NULL
+);
+CREATE INDEX IX_Payments_BookingId ON dbo.Payments(BookingId);
+

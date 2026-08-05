@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Email;
 
@@ -9,7 +10,8 @@ namespace SaloonApi.Modules.Identity.Application;
 
 internal sealed class AuthService(
     UserRepository repo, RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
-    TokenService tokens, IBackgroundEmailQueue emailQueue, IOptions<PortalUrlOptions> portalUrls)
+    TokenService tokens, IBackgroundEmailQueue emailQueue, StripeCustomerService stripeCustomerService,
+    IOptions<PortalUrlOptions> portalUrls)
 {
     // "Set your password" (new account, less urgent) gets a longer window than "forgot password"
     // (an active account-recovery request) -- both intentionally short compared to RefreshTokenExpiryDays.
@@ -19,9 +21,9 @@ internal sealed class AuthService(
     public async Task<(int Id, string Token, string RefreshToken)> RegisterAsync(string name, string email, string password, string? phone)
     {
         var (hash, salt) = PasswordHasher.Hash(password);
-        // Self-registration is always Role=Customer -- staff accounts are created only via the
-        // admin-only CreateStaffAsync path below, never through this public endpoint.
+        // Self-registration is always Customer role. Staff accounts are created via admin portal.
         var id = await repo.CreateAsync(name, email, hash, salt, phone);
+        await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
         var (accessToken, refreshToken) = await IssueTokensAsync(id, email, UserRole.Customer);
         return (id, accessToken, refreshToken);
     }
@@ -38,9 +40,6 @@ internal sealed class AuthService(
         return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken);
     }
 
-    // Exchanges a still-valid, unrevoked refresh token for a new access/refresh pair, revoking the
-    // old one in the same round (rotation) -- a token can only ever be redeemed once, so a stolen
-    // copy replayed after the legitimate client already refreshed is rejected here (already revoked).
     public async Task<(int Id, string Name, string Email, UserRole Role, bool CanEmulate, string Token, string RefreshToken)?> RefreshAsync(string refreshToken)
     {
         var hash = TokenService.HashRefreshToken(refreshToken);
@@ -55,8 +54,6 @@ internal sealed class AuthService(
         return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken);
     }
 
-    // Best-effort: an already-expired or unknown token has nothing to revoke, so this is silently a
-    // no-op rather than an error -- logout must never fail because of borrowed-time token state.
     public async Task LogoutAsync(string refreshToken)
     {
         var hash = TokenService.HashRefreshToken(refreshToken);
@@ -73,41 +70,26 @@ internal sealed class AuthService(
         return (accessToken, refreshToken);
     }
 
-    // Staff accounts (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other) are
-    // provisioned here -- never self-service, callers must already be behind an admin-only
-    // authorization policy. AdminStaffEndpoints also lets this create a Customer role (a customer
-    // created on someone's behalf, e.g. a walk-in with no account), separately from CreateCustomerAsync
-    // below which backs the dedicated Customers management page.
-    //
-    // No admin-chosen password -- the admin creating the account never sees or sets a password at
-    // all, only a random one is hashed into the row (unusable to anyone, never returned) and the new
-    // user gets a "set your password" email using the same reset-token flow as forgot-password.
     public async Task<int> CreateStaffAsync(
         string name, string email, UserRole role, int? chainId, int? locationId, int? therapistId,
         bool isEmulator = false)
     {
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
         var id = await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId, isEmulator);
+        await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email);
         await SendSetPasswordEmailAsync(id, name, email, portalUrls.Value.AdminPortalUrl);
         return id;
     }
 
-    // Customers management page's "Add Customer" -- unlike RegisterAsync (self-service, issues a
-    // session), this is an admin creating an account on someone's behalf and returns just the new
-    // id, no token: the admin stays logged in as themselves, not as the customer they just created.
-    // Same no-admin-chosen-password treatment as CreateStaffAsync above, but the set-password link
-    // points at the client portal instead.
     public async Task<int> CreateCustomerAsync(string name, string email, string? phone)
     {
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
         var id = await repo.CreateAsync(name, email, hash, salt, phone, UserRole.Customer);
+        await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
         await SendSetPasswordEmailAsync(id, name, email, portalUrls.Value.ClientPortalUrl);
         return id;
     }
 
-    // 24 random bytes, base64 -- never shown to the creating admin or returned from the endpoint,
-    // exists only to give the row a valid (unusable-by-anyone) PasswordHash until the real owner
-    // sets their own via the emailed reset link.
     private static string GenerateRandomPassword() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(24));
 
@@ -118,13 +100,10 @@ internal sealed class AuthService(
         emailQueue.Enqueue(BuildPasswordEmail(
             name, email, portalBaseUrl, token,
             subject: "Set your password",
-            intro: "An account has been created for you. Set your password to get started:",
-            cta: "Set your password",
-            expiryHours: SetPasswordExpiryHours));
+            intro: "An account has been created for you.",
+            actionLabel: "Set Your Password"));
     }
 
-    // Always enqueues nothing and returns quietly when the email isn't registered -- a differing
-    // response (or no-op vs error) would let a caller enumerate which emails have accounts.
     public async Task RequestPasswordResetAsync(string email)
     {
         var user = await repo.GetByEmailAsync(email);
@@ -132,80 +111,57 @@ internal sealed class AuthService(
 
         var token = TokenService.GenerateRefreshToken();
         await resetTokens.CreateAsync(user.Id, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(ForgotPasswordExpiryHours));
-        var portalBaseUrl = user.Role == UserRole.Customer ? portalUrls.Value.ClientPortalUrl : portalUrls.Value.AdminPortalUrl;
+
+        var portalUrl = user.Role == UserRole.Customer ? portalUrls.Value.ClientPortalUrl : portalUrls.Value.AdminPortalUrl;
         emailQueue.Enqueue(BuildPasswordEmail(
-            user.Name, email, portalBaseUrl, token,
+            user.Name, user.Email, portalUrl, token,
             subject: "Reset your password",
-            intro: "We received a request to reset your password. Click below to choose a new one:",
-            cta: "Reset your password",
-            expiryHours: ForgotPasswordExpiryHours));
+            intro: "We received a request to reset your password.",
+            actionLabel: "Reset Password"));
     }
 
-    // Redeems a reset-password token (from either RequestPasswordResetAsync above or the
-    // set-password email sent at account creation -- both draw from the same table/expiry-agnostic
-    // check, so either link type lands here). Revokes every refresh token the user currently holds
-    // once the password changes, so a stolen/stale session doesn't survive the owner taking their
-    // account back.
-    public async Task<bool> ResetPasswordAsync(string token, string newPassword)
+    public async Task<bool> ResetPasswordAsync(string rawToken, string newPassword)
     {
-        var hash = TokenService.HashRefreshToken(token);
+        var hash = TokenService.HashRefreshToken(rawToken);
         var stored = await resetTokens.GetAsync(hash);
         if (stored is null || stored.ResetDate is not null || stored.ExpiresAt <= DateTime.UtcNow)
             return false;
 
-        var (passwordHash, salt) = PasswordHasher.Hash(newPassword);
-        await repo.UpdatePasswordAsync(stored.UserId, passwordHash, salt);
+        var (passwordHash, passwordSalt) = PasswordHasher.Hash(newPassword);
+        await repo.UpdatePasswordAsync(stored.UserId, passwordHash, passwordSalt);
         await resetTokens.ConsumeAsync(stored.Id);
-        await refreshTokens.RevokeAllForUserAsync(stored.UserId);
         return true;
     }
 
-    private static EmailMessage BuildPasswordEmail(
-        string name, string email, string portalBaseUrl, string token, string subject, string intro, string cta, int expiryHours)
+    public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int actingStaffId, int targetCustomerId)
     {
-        var link = $"{portalBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
-        var expiryText = expiryHours == 1 ? "1 hour" : expiryHours.ToString(CultureInfo.InvariantCulture) + " hours";
-        var html = $"""
-            <p>Hi {name},</p>
-            <p>{intro}</p>
-            <p><a href="{link}">{cta}</a></p>
-            <p>This link expires in {expiryText}. If you didn't expect this email, you can ignore it.</p>
-            """;
-        return new EmailMessage(To: [new EmailAddress(email, name)], Subject: subject, HtmlBody: html);
-    }
-
-    // RootSuperAdmin/SuperAdmin/Admin with IsEmulator=1 may open a customer session on that
-    // customer's behalf -- Manager/Receptionist/Therapist/Other can never hold IsEmulator=true at
-    // all (see AdminStaffEndpoints' matching EmulatorEligibleRoles, which clamps it false for them
-    // on every create/edit), so this check is partly redundant with that clamp, but kept as the
-    // actual authorization gate here rather than trusting the clamp alone. The caller is already
-    // behind the AdminAccess policy for the initiating endpoint, but that policy alone doesn't know
-    // about IsEmulator, so both checks happen here against a fresh DB read -- never trust the flag
-    // off the caller's JWT, since it can be revoked after the token was issued.
-    private static readonly UserRole[] EmulatorEligibleRoles =
-        [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin];
-
-    public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int emulatorUserId, int customerUserId)
-    {
-        var emulator = await repo.GetByIdAsync(emulatorUserId);
-        if (emulator is null || (!emulator.IsEmulator && emulator.Role != UserRole.RootSuperAdmin) || !EmulatorEligibleRoles.Contains(emulator.Role))
+        var staff = await repo.GetByIdAsync(actingStaffId);
+        if (staff is null || !staff.IsEmulator && staff.Role != UserRole.RootSuperAdmin)
             return null;
 
-        var customer = await repo.GetByIdAsync(customerUserId);
+        var customer = await repo.GetByIdAsync(targetCustomerId);
         if (customer is null || customer.Role != UserRole.Customer)
             return null;
 
-        if (emulator.Role is UserRole.SuperAdmin or UserRole.Admin)
-        {
-            if (emulator.ChainId is null)
-                return null;
-
-            var hasBookingInChain = await repo.HasCustomerBookingInChainAsync(customerUserId, emulator.ChainId.Value);
-            if (!hasBookingInChain)
-                return null;
-        }
-
-        var token = tokens.CreateToken(customer.Id, customer.Email, UserRole.Customer, emulatedByUserId: emulator.Id);
+        var token = tokens.CreateToken(customer.Id, customer.Email, UserRole.Customer, emulatedByUserId: actingStaffId);
         return (customer.Id, customer.Name, customer.Email, token);
+    }
+
+    private static EmailMessage BuildPasswordEmail(
+        string name, string email, string portalBaseUrl, string token,
+        string subject, string intro, string actionLabel)
+    {
+        var resetLink = $"{portalBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
+        var html = $"""
+            <p>Hi {name},</p>
+            <p>{intro}</p>
+            <p><a href="{resetLink}">{actionLabel}</a></p>
+            <p>If you didn't request this, you can safely ignore this email.</p>
+            """;
+
+        return new EmailMessage(
+            To: [new EmailAddress(email, name)],
+            Subject: subject,
+            HtmlBody: html);
     }
 }

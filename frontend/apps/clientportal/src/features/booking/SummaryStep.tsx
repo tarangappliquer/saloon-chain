@@ -27,8 +27,8 @@ export function SummaryStep() {
     if (!allCovered) navigate(`/book/${bookingId}/schedule`, { replace: true });
   }, [state.restoring, allCovered, navigate, bookingId]);
 
-  async function handleConfirm() {
-    if (await flow.confirmAll()) navigate('/book/confirmed');
+  function handleProceedToPayment() {
+    navigate(`/book/${bookingId}/payment`);
   }
 
   if (!booking || !allCovered) return null;
@@ -47,7 +47,7 @@ export function SummaryStep() {
 
       <BookingSummary
         lines={booking.treatments}
-        onConfirm={handleConfirm}
+        onConfirm={handleProceedToPayment}
         onEdit={() => navigate(`/book/${bookingId}/schedule`)}
         loading={state.loading}
       />

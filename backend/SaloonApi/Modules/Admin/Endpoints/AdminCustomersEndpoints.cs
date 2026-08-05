@@ -47,22 +47,27 @@ internal static class AdminCustomersEndpoints
             .Produces<IdResponse>()
             .WithDescription("Create a new customer account (RootSuperAdmin/SuperAdmin/Admin only).");
 
-        group.MapPut("/{id:int}", async (int id, UpdateCustomerRequest req, UserRepository repo) =>
+        group.MapPut("/{id:int}", async (int id, UpdateCustomerRequest req, UserRepository repo, SaloonApi.Modules.Payment.Application.StripeCustomerService stripeCustomerService) =>
         {
             await repo.UpdateCustomerAsync(id, req.Name, req.Phone, req.IsActive);
+            var user = await repo.GetByIdAsync(id);
+            if (user is not null)
+            {
+                await stripeCustomerService.SyncCustomerAsync(id, req.Name, user.Email, req.Phone);
+            }
             return Results.NoContent();
         }).WithValidation<UpdateCustomerRequest>()
-          .RequireAuthorization("AdminAccess")
-          .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Update a customer's name/phone/active state.");
+        .RequireAuthorization("AdminAccess")
+        .Produces(StatusCodes.Status204NoContent)
+        .WithDescription("Update a customer's name/phone/active state.");
 
         group.MapDelete("/{id:int}", async (int id, UserRepository repo) =>
         {
             await repo.DeleteCustomerAsync(id);
             return Results.NoContent();
         }).RequireAuthorization("AdminAccess")
-          .Produces(StatusCodes.Status204NoContent)
-          .WithDescription("Soft-delete a customer account.");
+        .Produces(StatusCodes.Status204NoContent)
+        .WithDescription("Soft-delete a customer account.");
     }
 }
 

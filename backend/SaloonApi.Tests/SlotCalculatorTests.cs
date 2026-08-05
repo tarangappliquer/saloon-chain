@@ -5,7 +5,7 @@ namespace SaloonApi.Tests;
 
 public class SlotCalculatorTests
 {
-    private static readonly DateOnly Date = new(2026, 8, 3); // a Monday
+    private static readonly DateOnly Date = DateOnly.FromDateTime(DateTime.Now).AddDays(7);
 
     [Fact]
     public void LastSlotThatExactlyFitsBeforeClosingIsIncluded()
