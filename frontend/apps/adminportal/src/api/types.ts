@@ -143,6 +143,7 @@ export interface TherapistShift {
   id: number;
   therapistId: number;
   therapistName: string;
+  roomId: number | null;
   shiftType: ShiftType;
   startTime: string;
   endTime: string;

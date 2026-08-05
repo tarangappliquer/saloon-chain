@@ -216,6 +216,9 @@ CREATE TABLE dbo.ShiftAssignments (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
     TherapistId  INT NOT NULL REFERENCES dbo.TherapistProfile(Id),
+    -- NULL = legacy/any-room assignment (pre-per-room-assignment rows); every new assignment made
+    -- through the admin Scheduling grid always sets this, since staff are now assigned per room.
+    RoomId       INT NULL REFERENCES dbo.Rooms(Id),
     ShiftType    VARCHAR(10) NOT NULL CHECK (ShiftType IN ('Morning','Evening')),
     WorkDate     DATE NOT NULL,
     StartTime    TIME NOT NULL,
@@ -229,9 +232,16 @@ CREATE TABLE dbo.ShiftAssignments (
 );
 CREATE INDEX IX_ShiftAssignments_Location_Date ON dbo.ShiftAssignments(LocationId, WorkDate);
 -- Backs sp_Scheduling_AssignTherapistShift's MERGE upsert -- filtered so a soft-deleted (removed)
--- assignment doesn't block re-assigning the same therapist to the same shift/date later.
+-- assignment doesn't block re-assigning the same therapist to the same shift/date later. RoomId is
+-- NOT part of the key: a therapist works one room per shift, so re-assigning them to a different
+-- room moves the existing row (updates RoomId) instead of creating a second, overlapping one.
 CREATE UNIQUE INDEX UQ_ShiftAssignments_Location_Therapist_Shift_Date
     ON dbo.ShiftAssignments(LocationId, TherapistId, ShiftType, WorkDate) WHERE IsDelete = 0;
+-- A room holds one therapist per shift -- sp_Scheduling_AssignTherapistShift bumps (soft-deletes)
+-- whoever else is in the room before assigning the new therapist, so this is a backstop against a
+-- concurrent double-assign, not the primary enforcement. RoomId IS NOT NULL excludes legacy rows.
+CREATE UNIQUE INDEX UQ_ShiftAssignments_Location_Room_Shift_Date
+    ON dbo.ShiftAssignments(LocationId, RoomId, ShiftType, WorkDate) WHERE IsDelete = 0 AND RoomId IS NOT NULL;
 
 CREATE TABLE dbo.RoomCategoryAssignments (
     Id                   INT IDENTITY(1,1) PRIMARY KEY,

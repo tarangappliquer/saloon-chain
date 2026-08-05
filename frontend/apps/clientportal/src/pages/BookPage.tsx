@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useOutletContext, useParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { PageHeader } from '@saloon/ui';
 import { bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
-import { SearchableSelect } from '../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 
 export interface BookingContext {
   treatments: Treatment[];
@@ -84,21 +85,25 @@ export function BookPage() {
           (chains.length > 1 || locations.length > 1) ? (
             <div className="flex flex-wrap items-center gap-2">
               {chains.length > 1 && (
-                <SearchableSelect
-                  disabled={isEditingBooking}
-                  value={String(chainId ?? '')}
-                  onChange={(v) => setChainId(Number(v))}
+                <Select
+                  isClearable
+                  isDisabled={isEditingBooking}
+                  value={chains.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(chainId ?? '')) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setChainId(Number(picked?.value ?? ''))}
                   options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground')}
                 />
               )}
               {locations.length > 1 && (
-                <SearchableSelect
-                  disabled={isEditingBooking}
-                  value={String(locationId ?? '')}
-                  onChange={(v) => setLocationId(Number(v))}
+                <Select
+                  isClearable
+                  isDisabled={isEditingBooking}
+                  value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setLocationId(Number(picked?.value ?? ''))}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground')}
                 />
               )}
             </div>

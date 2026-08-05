@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, ApiError, paymentApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, PaymentRecord } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -308,22 +309,26 @@ export function BookingsPage() {
             {isRootSuperAdmin && chains.length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase text-muted-foreground">Saloon:</span>
-                <SearchableSelect
-                  value={String(chainId ?? '')}
-                  onChange={(v) => setChainId(Number(v))}
+                <Select
+                  isClearable
+                  value={chains.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(chainId ?? '')) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setChainId(Number(picked?.value ?? ''))}
                   options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
                 />
               </div>
             )}
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
-              <SearchableSelect
-                value={String(locationId ?? '')}
-                onChange={(v) => setLocationId(Number(v))}
+              <Select
+                isClearable
+                isDisabled={user?.role === 'Manager'}
+                value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => setLocationId(Number(picked?.value ?? ''))}
                 options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                disabled={user?.role === 'Manager'}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
               />
             </div>
             <div className="flex items-center gap-2">

@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import type { UpdateStaffRequest } from '@saloon/api-client';
 
 function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: UserRole; label: string; desc: string }[] {
@@ -255,11 +256,12 @@ export function LocationUsersPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Location Role
                 </label>
-                <SearchableSelect
-                  value={form.role}
-                  onChange={(v) => setForm({ ...form, role: v as UserRole })}
+                <Select
+                  value={availableRoles.map((r) => ({ value: r.value, label: `${r.label} — ${r.desc}` })).find((o) => o.value === form.role) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, role: (picked?.value ?? form.role) as UserRole })}
                   options={availableRoles.map((r) => ({ value: r.value, label: `${r.label} — ${r.desc}` }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground')}
                 />
               </div>
             </div>

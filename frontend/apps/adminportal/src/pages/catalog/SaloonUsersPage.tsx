@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import type { Chain, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 const SALOON_USER_ROLES: { value: UserRole; label: string; desc: string }[] = [
   { value: 'SuperAdmin', label: 'SuperAdmin', desc: 'Full saloon chain management & configuration' },
@@ -208,11 +209,12 @@ export function SaloonUsersPage() {
               <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                 Role
               </label>
-              <SearchableSelect
-                value={form.role}
-                onChange={(v) => setForm({ ...form, role: v as UserRole })}
+              <Select
+                value={SALOON_USER_ROLES.map((r) => ({ value: r.value, label: `${r.label} — ${r.desc}` })).find((o) => o.value === form.role) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, role: (picked?.value ?? form.role) as UserRole })}
                 options={SALOON_USER_ROLES.map((r) => ({ value: r.value, label: `${r.label} — ${r.desc}` }))}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground max-w-md"
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground max-w-md')}
               />
             </div>
 

@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 // IsEmulator only ever applies to RootSuperAdmin/SuperAdmin/Admin -- Manager/Receptionist/Therapist/
 // Other/Customer are always false (see AdminStaffEndpoints' matching clamp), so the checkbox/toggle
@@ -327,14 +328,15 @@ export function StaffPage() {
                   <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                     Role
                   </label>
-                  <SearchableSelect
-                    value={form.role}
-                    onChange={(v) => {
-                      const role = v as UserRole;
+                  <Select
+                    value={effectiveRoleOptions.map((r) => ({ value: r, label: r })).find((o) => o.value === form.role) ?? null}
+                    onChange={(picked: SingleValue<SelectOption>) => {
+                      const role = (picked?.value ?? form.role) as UserRole;
                       setForm({ ...form, role, isEmulator: form.isEmulator && EMULATOR_ELIGIBLE_ROLES.includes(role) });
                     }}
                     options={effectiveRoleOptions.map((r) => ({ value: r, label: r }))}
-                    className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
+                    unstyled
+                    classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
                   />
                 </div>
               </div>
@@ -348,12 +350,14 @@ export function StaffPage() {
                       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                         Location Scope
                       </label>
-                      <SearchableSelect
-                        value={form.locationId}
-                        onChange={(v) => setForm({ ...form, locationId: v })}
+                      <Select
+                        isClearable
+                        value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === form.locationId) ?? null}
+                        onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, locationId: picked?.value ?? '' })}
                         placeholder="Select location..."
                         options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                        className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
+                        unstyled
+                        classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
                       />
                     </div>
                   </div>
@@ -365,12 +369,14 @@ export function StaffPage() {
                     <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                       Linked Therapist Record
                     </label>
-                    <SearchableSelect
-                      value={form.therapistId}
-                      onChange={(v) => setForm({ ...form, therapistId: v })}
+                    <Select
+                      isClearable
+                      value={therapists.map((t) => ({ value: String(t.id), label: t.name })).find((o) => o.value === form.therapistId) ?? null}
+                      onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, therapistId: picked?.value ?? '' })}
                       placeholder="Select therapist..."
                       options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
-                      className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
+                      unstyled
+                      classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
                     />
                   </div>
                 </div>

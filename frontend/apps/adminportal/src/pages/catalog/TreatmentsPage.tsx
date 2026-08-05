@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 function emptyTreatmentForm() {
   return { categoryId: '', name: '', price: '', durationSlots: '' };
@@ -246,12 +247,14 @@ export function TreatmentsPage() {
             )}
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase text-muted-foreground">Location:</span>
-              <SearchableSelect
-                value={String(locationId ?? '')}
-                onChange={handleLocationChange}
+              <Select
+                isClearable
+                isDisabled={currentUser?.role === 'Manager'}
+                value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => handleLocationChange(picked?.value ?? '')}
                 options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                disabled={currentUser?.role === 'Manager'}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
               />
             </div>
           </div>
@@ -324,12 +327,14 @@ export function TreatmentsPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Category
                 </label>
-                <SearchableSelect
-                  value={treatmentForm.categoryId}
-                  onChange={(v) => setTreatmentForm({ ...treatmentForm, categoryId: v })}
+                <Select
+                  isClearable
+                  value={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === treatmentForm.categoryId) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setTreatmentForm({ ...treatmentForm, categoryId: picked?.value ?? '' })}
                   placeholder="Select Category..."
                   options={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
                 />
               </div>
               <Input

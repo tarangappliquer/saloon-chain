@@ -28,13 +28,17 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Get a location's therapist shifts and room openings for a date.");
 
-        group.MapPost("/therapist-shifts", async (AssignTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse) =>
+        group.MapPost("/therapist-shifts", async (AssignTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, SaloonApi.Shared.Realtime.SseBroadcaster sse) =>
         {
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != req.LocationId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
+            var rooms = await catalogRepo.GetRoomsAsync(req.LocationId);
+            if (!rooms.Any(r => r.Id == req.RoomId))
+                return Results.Problem("Room does not belong to this location.", statusCode: StatusCodes.Status400BadRequest);
+
             var id = await repo.AssignTherapistShiftAsync(
-                req.LocationId, req.TherapistId, req.ShiftType, req.WorkDate, req.StartTime, req.EndTime);
+                req.LocationId, req.TherapistId, req.RoomId, req.ShiftType, req.WorkDate, req.StartTime, req.EndTime);
             sse.Publish(SaloonApi.Shared.Realtime.SseBroadcaster.Group(req.LocationId, req.WorkDate), "slot-changed");
             return Results.Ok(new IdResponse(id));
         }).WithValidation<AssignTherapistShiftRequest>()
@@ -94,7 +98,7 @@ internal static class SchedulingEndpoints
 internal sealed record IdResponse(int Id);
 
 internal sealed record AssignTherapistShiftRequest(
-    int LocationId, int TherapistId, string ShiftType, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime);
+    int LocationId, int TherapistId, int RoomId, string ShiftType, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime);
 
 internal sealed record OpenRoomRequest(int RoomId, int TreatmentCategoryId, string ShiftType, DateOnly WorkDate);
 
@@ -104,6 +108,7 @@ internal sealed class AssignTherapistShiftRequestValidator : AbstractValidator<A
     {
         RuleFor(x => x.LocationId).GreaterThan(0);
         RuleFor(x => x.TherapistId).GreaterThan(0);
+        RuleFor(x => x.RoomId).GreaterThan(0);
         RuleFor(x => x.ShiftType).Must(s => s is "Morning" or "Evening").WithMessage("ShiftType must be Morning or Evening.");
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
     }

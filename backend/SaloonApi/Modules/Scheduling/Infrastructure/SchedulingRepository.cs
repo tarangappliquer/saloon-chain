@@ -6,7 +6,7 @@ using SaloonApi.Shared.Data;
 namespace SaloonApi.Modules.Scheduling.Infrastructure;
 
 internal sealed record TherapistShiftDto(
-    int Id, int TherapistId, string TherapistName, string ShiftType, TimeSpan StartTime, TimeSpan EndTime);
+    int Id, int TherapistId, string TherapistName, int? RoomId, string ShiftType, TimeSpan StartTime, TimeSpan EndTime);
 
 internal sealed record RoomOpeningDto(
     int Id, int RoomId, string RoomName, int TreatmentCategoryId, string CategoryName, string ShiftType);
@@ -30,12 +30,13 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     }
 
     public async Task<int> AssignTherapistShiftAsync(
-        int locationId, int therapistId, string shiftType, DateOnly date, TimeSpan startTime, TimeSpan endTime)
+        int locationId, int therapistId, int roomId, string shiftType, DateOnly date, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
         p.Add("@LocationId", locationId);
         p.Add("@TherapistId", therapistId);
+        p.Add("@RoomId", roomId);
         p.Add("@ShiftType", shiftType);
         p.Add("@WorkDate", date.ToDateTime(TimeOnly.MinValue));
         p.Add("@StartTime", startTime);

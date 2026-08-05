@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { API_BASE, adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
-import type { AdminBooking, Location, Room, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import type { AdminBooking, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
 
@@ -50,6 +51,7 @@ interface FlatTreatmentSlot {
 function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
   const flat: FlatTreatmentSlot[] = [];
   for (const b of bookings) {
+    if (b.status === 'Cancelled') continue;
     for (const t of b.treatments) {
       if (t.startTime && t.endTime) {
         const start = new Date(t.startTime);
@@ -80,9 +82,7 @@ export function SchedulingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const paramChainId = searchParams.get('chainId');
   const paramLocationId = searchParams.get('locationId');
-  const paramView = searchParams.get('view') || 'roster';
 
-  const [view, setView] = useState<'grid' | 'roster'>(paramView === 'grid' ? 'grid' : 'roster');
   const [chainId, setChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
@@ -97,14 +97,10 @@ export function SchedulingPage() {
   const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [] });
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
 
-  const [therapistId, setTherapistId] = useState('');
-  const [roomId, setRoomId] = useState('');
-  const [treatmentCategoryId, setTreatmentCategoryId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [shiftSubmitError, setShiftSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [submittingShift, setSubmittingShift] = useState(false);
-  const [submittingRoom, setSubmittingRoom] = useState(false);
 
   function handleShiftTypeChange(v: string) {
     const type = v as ShiftType;
@@ -211,22 +207,21 @@ export function SchedulingPage() {
     };
   }, [locationId, date, loadRosterAndBookings]);
 
-  async function handleAssignShift(e: FormEvent) {
-    e.preventDefault();
-    if (locationId === null || !therapistId) return;
+  async function handleAssignShift(therapistIdValue: string, roomId: number) {
+    if (locationId === null || !therapistIdValue) return;
     setError(null);
     setShiftSubmitError(null);
     setSubmittingShift(true);
     try {
       await schedulingApi.apiAdminSchedulingTherapistShiftsPost({
         locationId,
-        therapistId: Number(therapistId),
+        therapistId: Number(therapistIdValue),
+        roomId,
         shiftType,
         workDate: date,
         startTime,
         endTime,
       });
-      setTherapistId('');
       await loadRosterAndBookings(true);
     } catch (err) {
       setShiftSubmitError(err);
@@ -246,35 +241,23 @@ export function SchedulingPage() {
     }
   }
 
-  async function handleOpenRoom(e: FormEvent) {
-    e.preventDefault();
-    if (!roomId || !treatmentCategoryId) return;
-    setError(null);
-    setSubmittingRoom(true);
-    try {
-      await schedulingApi.apiAdminSchedulingRoomOpeningsPost({
-        roomId: Number(roomId),
-        treatmentCategoryId: Number(treatmentCategoryId),
-        shiftType,
-        workDate: date,
-      });
-      setRoomId('');
-      setTreatmentCategoryId('');
-      await loadRosterAndBookings(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to open room');
-    } finally {
-      setSubmittingRoom(false);
-    }
-  }
-
-  async function handleCloseRoom(id: number) {
+  async function changeRoomStatus(room: Room, opening: RoomOpening | undefined, categoryValue: string) {
     setError(null);
     try {
-      await schedulingApi.apiAdminSchedulingRoomOpeningsIdDelete(id);
+      if (opening) {
+        await schedulingApi.apiAdminSchedulingRoomOpeningsIdDelete(opening.id);
+      }
+      if (categoryValue) {
+        await schedulingApi.apiAdminSchedulingRoomOpeningsPost({
+          roomId: room.id,
+          treatmentCategoryId: Number(categoryValue),
+          shiftType,
+          workDate: date,
+        });
+      }
       await loadRosterAndBookings(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to close room');
+      setError(err instanceof ApiError ? err.message : 'Failed to update room status');
     }
   }
 
@@ -284,15 +267,6 @@ export function SchedulingPage() {
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
       p.set('locationId', locId.toString());
-      return p;
-    });
-  }
-
-  function switchView(newView: 'grid' | 'roster') {
-    setView(newView);
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.set('view', newView);
       return p;
     });
   }
@@ -328,19 +302,20 @@ export function SchedulingPage() {
         </div>
       )}
 
-      {/* Control bar: Location, Date, Shift Type, Time Window & View Switcher */}
+      {/* Control bar: Location, Date, Shift Type & Time Window */}
       <Card>
         <CardContent className="py-4">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-wrap items-end gap-4">
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</span>
-                <SearchableSelect
-                  value={String(locationId ?? '')}
-                  onChange={changeLocation}
+                <Select
+                  isClearable
+                  isDisabled={currentUser?.role === 'Manager'}
+                  value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => changeLocation(picked?.value ?? '')}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                  disabled={currentUser?.role === 'Manager'}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
                 />
               </div>
               <Input
@@ -352,11 +327,12 @@ export function SchedulingPage() {
               />
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift Type</span>
-                <SearchableSelect
-                  value={shiftType}
-                  onChange={handleShiftTypeChange}
+                <Select
+                  value={SHIFT_TYPES.map((s) => ({ value: s, label: s })).find((o) => o.value === shiftType) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => handleShiftTypeChange(picked?.value ?? shiftType)}
                   options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[130px]"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[130px]')}
                 />
               </div>
               <Input
@@ -376,63 +352,26 @@ export function SchedulingPage() {
                 error={getFieldError(shiftSubmitError, 'endTime')}
                 className="h-8 text-xs w-[110px]"
               />
-            </div>
-
-            {/* View Switcher Tabs */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-accent/30 p-1">
-              <button
-                type="button"
-                onClick={() => switchView('roster')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${view === 'roster'
-                  ? 'bg-card text-foreground shadow-2xs'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }`}
-              >
-                Roster & Setup
-              </button>
-              <button
-                type="button"
-                onClick={() => switchView('grid')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${view === 'grid'
-                  ? 'bg-card text-foreground shadow-2xs'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }`}
-              >
-                Schedule Grid View
-              </button>
-            </div>
           </div>
         </CardContent>
       </Card>
 
       {loading ? (
         <LoadingFallback />
-      ) : view === 'grid' ? (
+      ) : (
         <ScheduleGridView
           rooms={rooms}
           roster={roster}
           date={date}
+          shiftType={shiftType}
           timeSlots={timeSlots}
           flatTreatments={flatTreatments}
-        />
-      ) : (
-        <RosterSetupView
-          roster={roster}
-          therapists={therapists}
-          rooms={rooms}
           categories={categories}
-          therapistId={therapistId}
-          setTherapistId={setTherapistId}
-          roomId={roomId}
-          setRoomId={setRoomId}
-          treatmentCategoryId={treatmentCategoryId}
-          setTreatmentCategoryId={setTreatmentCategoryId}
+          therapists={therapists}
           submittingShift={submittingShift}
-          submittingRoom={submittingRoom}
           handleAssignShift={handleAssignShift}
           handleRemoveShift={handleRemoveShift}
-          handleOpenRoom={handleOpenRoom}
-          handleCloseRoom={handleCloseRoom}
+          changeRoomStatus={changeRoomStatus}
         />
       )}
     </div>
@@ -443,11 +382,31 @@ interface ScheduleGridViewProps {
   rooms: Room[];
   roster: Roster;
   date: string;
+  shiftType: ShiftType;
   timeSlots: string[];
   flatTreatments: FlatTreatmentSlot[];
+  categories: TreatmentCategory[];
+  therapists: { id: number; name: string }[];
+  submittingShift: boolean;
+  handleAssignShift: (therapistId: string, roomId: number) => void;
+  handleRemoveShift: (id: number) => void;
+  changeRoomStatus: (room: Room, opening: RoomOpening | undefined, categoryValue: string) => void;
 }
 
-function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: ScheduleGridViewProps) {
+function ScheduleGridView({
+  rooms,
+  roster,
+  date,
+  shiftType,
+  timeSlots,
+  flatTreatments,
+  categories,
+  therapists,
+  submittingShift,
+  handleAssignShift,
+  handleRemoveShift,
+  changeRoomStatus,
+}: ScheduleGridViewProps) {
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b border-border/50 pb-4">
@@ -492,27 +451,62 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
                     Time Slot
                   </th>
                   {rooms.map((room) => {
-                    const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id);
-                    const hasExplicitRestriction = roster.roomOpenings.some((ro) => ro.roomId === room.id);
-                    const isOpen = opening ? true : (room.isActive !== false && !hasExplicitRestriction);
-                    const statusLabel = opening
-                      ? `Open: ${opening.categoryName}`
-                      : isOpen
-                        ? 'Open (All)'
-                        : 'Closed';
+                    const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
+                    const assignedShift = roster.therapistShifts.find((s) => s.roomId === room.id);
+
+                    const isOpen = !!opening;
+                    const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
 
                     return (
-                      <th key={room.id} className="min-w-[220px] border-r border-border/60 p-3 font-semibold">
-                        <div className="flex items-center justify-between">
-                          <span className="text-foreground text-sm font-bold">{room.name}</span>
-                          {isOpen ? (
-                            <Badge status="Confirmed" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]">
-                              {statusLabel}
-                            </Badge>
-                          ) : (
-                            <span className="rounded-sm bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              Closed
-                            </span>
+                      <th key={room.id} className="min-w-[220px] border-r border-border/60 p-3 font-semibold align-top">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={isOpen}
+                              aria-label={`${room.name} open`}
+                              disabled={categories.length === 0}
+                              onClick={() => changeRoomStatus(room, opening, opening ? '' : String(categories[0]?.id ?? ''))}
+                              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-emerald-500 bg-emerald-500' : 'border-border-strong bg-muted'}`}
+                            >
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            </button>
+                            <span className="text-foreground text-sm font-bold">{room.name}</span>
+                          </div>
+                          {isOpen && (
+                            <Select
+                              isClearable
+                              isDisabled={hasBooking}
+                              value={categories.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(opening?.treatmentCategoryId ?? '')) ?? null}
+                              onChange={(picked: SingleValue<SelectOption>) => changeRoomStatus(room, opening, picked?.value ?? '')}
+                              placeholder="Category..."
+                              options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                              unstyled
+                              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
+                            />
+                          )}
+                          {isOpen && hasBooking && (
+                            <p className="text-[10px] italic text-muted-foreground">Category locked (room has a booking today)</p>
+                          )}
+                          {isOpen && (
+                            <Select
+                              isClearable
+                              isDisabled={submittingShift}
+                              value={therapists.map((t) => ({ value: String(t.id), label: t.name })).find((o) => o.value === String(assignedShift?.therapistId ?? '')) ?? null}
+                              onChange={(picked: SingleValue<SelectOption>) => {
+                                const v = picked?.value ?? '';
+                                if (v) {
+                                  handleAssignShift(v, room.id);
+                                } else if (assignedShift) {
+                                  handleRemoveShift(assignedShift.id);
+                                }
+                              }}
+                              placeholder="Select..."
+                              options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
+                              unstyled
+                              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
+                            />
                           )}
                         </div>
                       </th>
@@ -530,9 +524,8 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
 
                     {/* Room Columns */}
                     {rooms.map((room) => {
-                      const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id);
-                      const hasExplicitRestriction = roster.roomOpenings.some((ro) => ro.roomId === room.id);
-                      const isOpen = opening ? true : (room.isActive !== false && !hasExplicitRestriction);
+                      const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
+                      const isOpen = !!opening;
 
                       // Find any treatment booking that covers this room and time slot
                       const matchedTreatment = flatTreatments.find((t) => {
@@ -541,6 +534,14 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
                       });
 
                       const isTempBooked = matchedTreatment?.status === 'Draft';
+
+                      const activeTherapists = (roster.therapistShifts || []).filter((s) => {
+                        if (s.roomId !== room.id) return false;
+                        const startStr = s.startTime.slice(0, 5);
+                        const endStr = s.endTime.slice(0, 5);
+                        return slot >= startStr && slot < endStr;
+                      });
+                      const isStaffed = isOpen && activeTherapists.length > 0;
 
                       return (
                         <td key={room.id} className="border-r border-border/40 p-2 vertical-align-top">
@@ -576,42 +577,28 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
                                 )}
                               </div>
                             </div>
-                          ) : isOpen ? (
+                          ) : isStaffed ? (
                             /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
-                            (() => {
-                              const categoryLabel = opening ? opening.categoryName : 'All Categories';
-                              const activeTherapists = (roster.therapistShifts || []).filter((s) => {
-                                const startStr = s.startTime.slice(0, 5);
-                                const endStr = s.endTime.slice(0, 5);
-                                return slot >= startStr && slot < endStr;
-                              });
-                              const therapistLabel = activeTherapists.length > 0
-                                ? activeTherapists.map((t) => t.therapistName).join(', ')
-                                : 'No Therapist Assigned';
-
-                              return (
-                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                                      Available
-                                    </span>
-                                    <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-[110px]" title={categoryLabel}>
-                                      {categoryLabel}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] font-medium text-foreground/90 flex items-center gap-1 pt-0.5">
-                                    <span className="text-muted-foreground text-[10px] uppercase font-bold">Staff:</span>
-                                    <span className={activeTherapists.length > 0 ? "font-semibold text-emerald-700 dark:text-emerald-300 truncate" : "text-muted-foreground italic text-[10px]"}>
-                                      {therapistLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })()
+                            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                  Available
+                                </span>
+                                <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-[110px]" title={opening?.categoryName}>
+                                  {opening?.categoryName}
+                                </span>
+                              </div>
+                              <div className="text-[11px] font-medium text-foreground/90 flex items-center gap-1 pt-0.5">
+                                <span className="text-muted-foreground text-[10px] uppercase font-bold">Staff:</span>
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-300 truncate">
+                                  {activeTherapists.map((t) => t.therapistName).join(', ')}
+                                </span>
+                              </div>
+                            </div>
                           ) : (
-                            /* CLOSED ROOM SLOT */
+                            /* CLOSED OR UNSTAFFED ROOM SLOT */
                             <div className="rounded-md bg-muted/15 p-2 text-center text-[10px] text-muted-foreground/40 italic">
-                              Closed
+                              {isOpen ? 'No Staff Assigned' : 'Closed'}
                             </div>
                           )}
                         </td>
@@ -625,159 +612,5 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
         )}
       </CardContent>
     </Card>
-  );
-}
-
-interface RosterSetupViewProps {
-  roster: Roster;
-  therapists: { id: number; name: string }[];
-  rooms: Room[];
-  categories: TreatmentCategory[];
-  therapistId: string;
-  setTherapistId: (v: string) => void;
-  roomId: string;
-  setRoomId: (v: string) => void;
-  treatmentCategoryId: string;
-  setTreatmentCategoryId: (v: string) => void;
-  submittingShift: boolean;
-  submittingRoom: boolean;
-  handleAssignShift: (e: FormEvent) => void;
-  handleRemoveShift: (id: number) => void;
-  handleOpenRoom: (e: FormEvent) => void;
-  handleCloseRoom: (id: number) => void;
-}
-
-function RosterSetupView({
-  roster,
-  therapists,
-  rooms,
-  categories,
-  therapistId,
-  setTherapistId,
-  roomId,
-  setRoomId,
-  treatmentCategoryId,
-  setTreatmentCategoryId,
-  submittingShift,
-  submittingRoom,
-  handleAssignShift,
-  handleRemoveShift,
-  handleOpenRoom,
-  handleCloseRoom,
-}: RosterSetupViewProps) {
-  return (
-    <div className="grid gap-6 md:grid-cols-2">
-      {/* Therapist Shifts Card */}
-      <Card>
-        <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Therapist Shifts</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6 space-y-4">
-          <form onSubmit={handleAssignShift} className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                Therapist
-              </label>
-              <SearchableSelect
-                value={therapistId}
-                onChange={setTherapistId}
-                placeholder="Select..."
-                options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
-                className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
-              />
-            </div>
-            <Button type="submit" disabled={submittingShift} className="w-full">
-              {submittingShift ? 'Assigning...' : 'Assign Therapist Shift'}
-            </Button>
-          </form>
-
-          <div className="pt-2 border-t border-border/50">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-3">Scheduled Shifts ({roster.therapistShifts.length})</h4>
-            {roster.therapistShifts.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">No therapists scheduled for this date.</p>
-            ) : (
-              <ul className="divide-y divide-border/50 text-xs">
-                {roster.therapistShifts.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between py-3">
-                    <div className="space-y-0.5">
-                      <span className="font-semibold text-foreground">{s.therapistName}</span>
-                      <p className="text-muted-foreground font-mono text-xs">
-                        {s.shiftType} ({s.startTime} - {s.endTime})
-                      </p>
-                    </div>
-                    <Button variant="danger" size="sm" onClick={() => handleRemoveShift(s.id)}>
-                      Remove
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Room Openings Card */}
-      <Card>
-        <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Room Openings</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6 space-y-4">
-          <form onSubmit={handleOpenRoom} className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                  Room
-                </label>
-                <SearchableSelect
-                  value={roomId}
-                  onChange={setRoomId}
-                  placeholder="Select..."
-                  options={rooms.map((r) => ({ value: String(r.id), label: r.name }))}
-                  className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                  Treatment Category
-                </label>
-                <SearchableSelect
-                  value={treatmentCategoryId}
-                  onChange={setTreatmentCategoryId}
-                  placeholder="Select category..."
-                  options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-                  className="rounded-lg border border-input bg-card px-2.5 py-1 text-xs text-foreground"
-                />
-              </div>
-            </div>
-            <Button type="submit" disabled={submittingRoom} className="w-full">
-              {submittingRoom ? 'Opening...' : 'Open Room'}
-            </Button>
-          </form>
-
-          <div className="pt-2 border-t border-border/50">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-3">Open Rooms ({roster.roomOpenings.length})</h4>
-            {roster.roomOpenings.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">No rooms opened for this date.</p>
-            ) : (
-              <ul className="divide-y divide-border/50 text-xs">
-                {roster.roomOpenings.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between py-3">
-                    <div className="space-y-0.5">
-                      <span className="font-semibold text-foreground">{r.roomName}</span>
-                      <p className="text-muted-foreground text-xs">
-                        {r.categoryName} <Badge variant="secondary" showDot={false} className="ml-1 text-[10px]">{r.shiftType}</Badge>
-                      </p>
-                    </div>
-                    <Button variant="danger" size="sm" onClick={() => handleCloseRoom(r.id)}>
-                      Close
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
   );
 }

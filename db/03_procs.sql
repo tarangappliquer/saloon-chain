@@ -123,13 +123,13 @@ BEGIN
         EligibleShifts
         AS
         (
-                            SELECT sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+                            SELECT sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
                 FROM dbo.ShiftAssignments sa
                 WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0 AND sa.IsActive = 1
 
             UNION ALL
 
-                SELECT tp.Id AS TherapistId, 'FullDay' AS ShiftType, l.OpenTime AS ShiftStart, l.CloseTime AS ShiftEnd
+                SELECT CAST(NULL AS INT) AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, l.OpenTime AS ShiftStart, l.CloseTime AS ShiftEnd
                 FROM dbo.TherapistProfile tp
         CROSS JOIN Loc l
                 WHERE tp.IsDelete = 0 AND tp.IsActive = 1
@@ -140,9 +140,13 @@ BEGIN
                     WHERE sa2.LocationId = @LocationId AND sa2.WorkDate = @WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
           )
         )
+    -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift explicitly
+    -- assigned to a room (the normal case now) only pairs with that same room.
     SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
     FROM EligibleRooms er
-        JOIN EligibleShifts es ON es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay';
+        JOIN EligibleShifts es
+            ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+            AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
 
     -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location.
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
@@ -1347,7 +1351,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.ShiftType, sa.StartTime, sa.EndTime
+    SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.RoomId, sa.ShiftType, sa.StartTime, sa.EndTime
     FROM dbo.ShiftAssignments sa
         JOIN dbo.TherapistProfile th ON th.Id = sa.TherapistId
     WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0
@@ -1362,11 +1366,15 @@ BEGIN
 END
 GO
 
--- Upsert keyed on UQ_ShiftAssignments_Location_Therapist_Shift_Date: re-assigning the same
--- therapist to the same location/shift/date just updates the times and revives a removed row.
+-- Upsert keyed on UQ_ShiftAssignments_Location_Therapist_Shift_Date (RoomId is NOT part of the key):
+-- a therapist works one room per shift, so re-assigning them to a different room moves the existing
+-- row (updates RoomId + times) instead of creating a second, overlapping assignment. Symmetrically,
+-- a room holds one therapist per shift, so whoever else is already in @RoomId for this shift/date
+-- gets bumped (soft-deleted) first -- see UQ_ShiftAssignments_Location_Room_Shift_Date.
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_AssignTherapistShift
     @LocationId  INT,
     @TherapistId INT,
+    @RoomId      INT,
     @ShiftType   VARCHAR(10),
     @WorkDate    DATE,
     @StartTime   TIME,
@@ -1376,16 +1384,22 @@ CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_AssignTherapistShift
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    UPDATE dbo.ShiftAssignments
+    SET IsDelete = 1, UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE LocationId = @LocationId AND RoomId = @RoomId AND ShiftType = @ShiftType AND WorkDate = @WorkDate
+        AND TherapistId <> @TherapistId AND IsDelete = 0;
+
     MERGE dbo.ShiftAssignments AS target
     USING (SELECT @LocationId AS LocationId, @TherapistId AS TherapistId, @ShiftType AS ShiftType, @WorkDate AS WorkDate) AS src
         ON target.LocationId = src.LocationId AND target.TherapistId = src.TherapistId
         AND target.ShiftType = src.ShiftType AND target.WorkDate = src.WorkDate
     WHEN MATCHED THEN
-        UPDATE SET StartTime = @StartTime, EndTime = @EndTime, IsActive = 1, IsDelete = 0,
+        UPDATE SET RoomId = @RoomId, StartTime = @StartTime, EndTime = @EndTime, IsActive = 1, IsDelete = 0,
                    UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
     WHEN NOT MATCHED THEN
-        INSERT (LocationId, TherapistId, ShiftType, WorkDate, StartTime, EndTime, CreatedBy)
-        VALUES (@LocationId, @TherapistId, @ShiftType, @WorkDate, @StartTime, @EndTime, @CreatedBy);
+        INSERT (LocationId, TherapistId, RoomId, ShiftType, WorkDate, StartTime, EndTime, CreatedBy)
+        VALUES (@LocationId, @TherapistId, @RoomId, @ShiftType, @WorkDate, @StartTime, @EndTime, @CreatedBy);
 
     SELECT @Id = Id
     FROM dbo.ShiftAssignments

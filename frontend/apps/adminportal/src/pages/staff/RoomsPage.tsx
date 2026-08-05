@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Room } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 export function RoomsPage() {
   const navigate = useNavigate();
@@ -206,12 +207,14 @@ export function RoomsPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Select Location
                 </label>
-                <SearchableSelect
-                  value={String(locationId ?? '')}
-                  onChange={(v) => handleLocationChange(Number(v))}
+                <Select
+                  isClearable
+                  isDisabled={currentUser?.role === 'Manager'}
+                  value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => handleLocationChange(Number(picked?.value ?? ''))}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                  disabled={currentUser?.role === 'Manager'}
-                  className="rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
                 />
               </div>
 

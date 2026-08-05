@@ -1,5 +1,6 @@
+import Select, { type SingleValue } from 'react-select';
 import type { BookingTreatmentLine, Treatment } from '../../api/types';
-import { SearchableSelect } from '../../components/SearchableSelect';
+import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 
 interface Props {
   treatments: Treatment[]; // full catalog, for the "add" dropdown
@@ -41,15 +42,16 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
       ))}
 
       {addable.length > 0 && (
-        <SearchableSelect
-          value=""
-          disabled={loading}
-          onChange={(v) => {
-            if (v) onAdd(Number(v));
+        <Select
+          value={null}
+          isDisabled={loading}
+          onChange={(picked: SingleValue<SelectOption>) => {
+            if (picked?.value) onAdd(Number(picked.value));
           }}
           placeholder="+ Add treatment"
           options={addable.map((t) => ({ value: String(t.id), label: t.name }))}
-          className="rounded-full border border-dashed border-gray-300 bg-transparent px-3 py-1 text-sm text-gray-500 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400"
+          unstyled
+          classNames={selectClassNames('rounded-full border border-dashed border-gray-300 bg-transparent px-3 py-1 text-sm text-gray-500 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400')}
         />
       )}
     </div>
