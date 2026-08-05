@@ -2,13 +2,15 @@ using System.Globalization;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using SaloonApi.Modules.Payment.Infrastructure;
+using SaloonApi.Shared.Auth;
 using Stripe;
 
 namespace SaloonApi.Modules.Payment.Application;
 
-internal sealed class StripePaymentGateway(IOptions<StripeOptions> options) : IPaymentGateway
+internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOptions<PortalUrlOptions> portalOptions) : IPaymentGateway
 {
     private readonly StripeOptions _options = options.Value;
+    private readonly PortalUrlOptions _portalOptions = portalOptions.Value;
 
     public PaymentProvider Provider => PaymentProvider.Stripe;
 
@@ -17,28 +19,51 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options) : IP
     {
         ArgumentNullException.ThrowIfNull(currency);
 
+        var amountInCents = (long)Math.Round(amount * 100);
+
         if (string.IsNullOrEmpty(_options.SecretKey))
         {
-            var mockId = $"pi_mock_{Guid.NewGuid():N}";
+            var mockId = $"cs_test_{Guid.NewGuid():N}";
             return new PaymentResultDto(
                 Success: true,
                 PaymentId: 0,
                 Status: PaymentStatus.RequiresAction,
                 TransactionId: mockId,
-                ErrorMessage: null
+                ErrorMessage: null,
+                CheckoutUrl: $"https://checkout.stripe.com/pay/{mockId}"
             );
         }
 
         StripeConfiguration.ApiKey = _options.SecretKey;
-        var service = new PaymentIntentService();
+        var sessionService = new Stripe.Checkout.SessionService();
 
-        var amountInCents = (long)Math.Round(amount * 100);
+#pragma warning disable S1075 // Fallback URL for local dev
+        var baseUrl = (string.IsNullOrEmpty(_portalOptions.ClientPortalUrl) ? "http://localhost:58569" : _portalOptions.ClientPortalUrl).TrimEnd('/');
+#pragma warning restore S1075
+
 #pragma warning disable CA1308 // Stripe API requires lowercase currency codes
-        var intentCreateOptions = new PaymentIntentCreateOptions
+        var sessionOptions = new Stripe.Checkout.SessionCreateOptions
         {
-            Amount = amountInCents,
-            Currency = currency.ToLowerInvariant(),
             PaymentMethodTypes = ["card"],
+            LineItems = [
+                new Stripe.Checkout.SessionLineItemOptions
+                {
+                    PriceData = new Stripe.Checkout.SessionLineItemPriceDataOptions
+                    {
+                        UnitAmount = amountInCents,
+                        Currency = currency.ToLowerInvariant(),
+                        ProductData = new Stripe.Checkout.SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name = $"Saloon Appointment #{bookingId}",
+                            Description = "SaloonChains appointment booking checkout"
+                        }
+                    },
+                    Quantity = 1
+                }
+            ],
+            Mode = "payment",
+            SuccessUrl = $"{baseUrl}/book/confirmed?bookingId={bookingId}",
+            CancelUrl = $"{baseUrl}/book/{bookingId}/payment",
             Customer = stripeCustomerId,
             Metadata = new Dictionary<string, string>
             {
@@ -49,13 +74,14 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options) : IP
 
         try
         {
-            var intent = await service.CreateAsync(intentCreateOptions, cancellationToken: ct);
+            var session = await sessionService.CreateAsync(sessionOptions, cancellationToken: ct);
             return new PaymentResultDto(
                 Success: true,
                 PaymentId: 0,
                 Status: PaymentStatus.RequiresAction,
-                TransactionId: intent.Id,
-                ErrorMessage: null
+                TransactionId: session.Id,
+                ErrorMessage: null,
+                CheckoutUrl: session.Url
             );
         }
         catch (StripeException ex)

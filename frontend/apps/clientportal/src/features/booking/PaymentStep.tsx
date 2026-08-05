@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
+import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { paymentApi } from '../../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { BookingSummary } from './BookingSummary';
 import { useBookingFlow } from './useBookingFlow';
 
 export type PaymentProviderType = 'Stripe' | 'Cash' | 'InHouse';
 
 export function PaymentStep() {
+  const { user } = useAuth();
+  const isEmulated = Boolean(user?.isEmulated);
+
   const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const flow = useBookingFlow(Number(bookingId));
@@ -20,6 +24,13 @@ export function PaymentStep() {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [stripePublishableKey, setStripePublishableKey] = useState<string | null>(null);
+  const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEmulated && selectedProvider !== 'Stripe') {
+      setSelectedProvider('Stripe');
+    }
+  }, [isEmulated, selectedProvider]);
 
   useEffect(() => {
     if (state.restoring) return;
@@ -38,6 +49,8 @@ export function PaymentStep() {
         .then((res) => {
           setStripeClientSecret(res.data.clientSecret ?? null);
           setStripePublishableKey(res.data.publishableKey ?? null);
+          const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
+          if (checkoutUrl) setStripeCheckoutUrl(checkoutUrl);
         })
         .catch((err: AxiosError<{ title?: string }>) => {
           setPaymentError(err.response?.data?.title ?? err.message ?? 'Failed to initialize payment.');
@@ -50,49 +63,25 @@ export function PaymentStep() {
     setIsProcessing(true);
     setPaymentError(null);
     try {
-      if (selectedProvider === 'Stripe') {
-        const res = await paymentApi.apiPaymentsCreateIntentPost({
-          bookingId: Number(bookingId),
-          provider: 'Stripe',
-        });
+      const res = await paymentApi.apiPaymentsCreateIntentPost({
+        bookingId: Number(bookingId),
+        provider: selectedProvider,
+      });
 
-        await paymentApi.apiPaymentsConfirmManualPost({
-          paymentId: res.data.paymentId,
-          success: true,
-          transactionId: res.data.transactionId ?? `stripe_tx_${Date.now()}`,
-        });
+      const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
 
-        const confirmed = await flow.confirmAll();
-        if (confirmed) navigate('/book/confirmed');
-      } else if (selectedProvider === 'Cash') {
-        const res = await paymentApi.apiPaymentsCreateIntentPost({
-          bookingId: Number(bookingId),
-          provider: 'Cash',
-        });
+      await paymentApi.apiPaymentsConfirmManualPost({
+        paymentId: res.data.paymentId,
+        success: true,
+        transactionId: res.data.transactionId ?? (selectedProvider === 'Stripe' ? `stripe_checkout_${Date.now()}` : undefined),
+      });
 
-        await paymentApi.apiPaymentsConfirmManualPost({
-          paymentId: res.data.paymentId,
-          success: true,
-          transactionId: res.data.transactionId ?? undefined,
-        });
-
-        const confirmed = await flow.confirmAll();
-        if (confirmed) navigate('/book/confirmed');
-      } else if (selectedProvider === 'InHouse') {
-        const res = await paymentApi.apiPaymentsCreateIntentPost({
-          bookingId: Number(bookingId),
-          provider: 'InHouse',
-        });
-
-        await paymentApi.apiPaymentsConfirmManualPost({
-          paymentId: res.data.paymentId,
-          success: true,
-          transactionId: res.data.transactionId ?? undefined,
-        });
-
-        const confirmed = await flow.confirmAll();
-        if (confirmed) navigate('/book/confirmed');
+      if (selectedProvider === 'Stripe' && checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
       }
+
+      navigate('/book/confirmed');
     } catch (err: unknown) {
       const error = err as AxiosError<{ title?: string }>;
       setPaymentError(error.response?.data?.title ?? error.message ?? 'Payment failed. Please try again.');
@@ -120,16 +109,15 @@ export function PaymentStep() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className={`grid grid-cols-1 ${isEmulated ? 'md:grid-cols-3' : 'max-w-md mx-auto'} gap-4 mb-8`}>
           {/* Stripe Option */}
           <button
             type="button"
             onClick={() => setSelectedProvider('Stripe')}
-            className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${
-              selectedProvider === 'Stripe'
-                ? 'bg-indigo-600/15 border-indigo-500 ring-2 ring-indigo-500/30 text-white'
-                : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
-            }`}
+            className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${selectedProvider === 'Stripe'
+              ? 'bg-indigo-600/15 border-indigo-500 ring-2 ring-indigo-500/30 text-white'
+              : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
+              }`}
           >
             <div className="flex items-center justify-between w-full mb-3">
               <div className="p-2.5 rounded-lg bg-indigo-500/20 text-indigo-400">
@@ -138,10 +126,10 @@ export function PaymentStep() {
               {selectedProvider === 'Stripe' && <CheckCircle2 className="w-5 h-5 text-indigo-400" />}
             </div>
             <span className="font-semibold text-lg text-white">Stripe Pay</span>
-            <span className="text-xs text-slate-400 mt-1">Credit / Debit Card online processing</span>
+            <span className="text-xs text-slate-400 mt-1">Credit / Debit Card online checkout link</span>
             <div className="flex items-center gap-2 mt-3">
               <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-indigo-500/20 text-indigo-300 rounded">
-                Instant Online
+                Stripe Checkout Link
               </span>
               {stripePublishableKey && (
                 <span className="text-[10px] text-slate-400 font-mono" title={stripePublishableKey}>
@@ -151,51 +139,54 @@ export function PaymentStep() {
             </div>
           </button>
 
-          {/* Cash Option */}
-          <button
-            type="button"
-            onClick={() => setSelectedProvider('Cash')}
-            className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${
-              selectedProvider === 'Cash'
-                ? 'bg-emerald-600/15 border-emerald-500 ring-2 ring-emerald-500/30 text-white'
-                : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full mb-3">
-              <div className="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <Banknote className="w-6 h-6" />
-              </div>
-              {selectedProvider === 'Cash' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            </div>
-            <span className="font-semibold text-lg text-white">Cash on Arrival</span>
-            <span className="text-xs text-slate-400 mt-1">Pay with cash at the saloon front desk</span>
-            <span className="mt-3 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded">
-              Pay at Salon
-            </span>
-          </button>
+          {/* Cash & InHouse Options (Only available when emulated by staff) */}
+          {isEmulated && (
+            <>
+              {/* Cash Option */}
+              <button
+                type="button"
+                onClick={() => setSelectedProvider('Cash')}
+                className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${selectedProvider === 'Cash'
+                  ? 'bg-emerald-600/15 border-emerald-500 ring-2 ring-emerald-500/30 text-white'
+                  : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
+                  }`}
+              >
+                <div className="flex items-center justify-between w-full mb-3">
+                  <div className="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                    <Banknote className="w-6 h-6" />
+                  </div>
+                  {selectedProvider === 'Cash' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+                </div>
+                <span className="font-semibold text-lg text-white">Cash on Arrival</span>
+                <span className="text-xs text-slate-400 mt-1">Pay with cash at the saloon front desk</span>
+                <span className="mt-3 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded">
+                  Pay at Salon
+                </span>
+              </button>
 
-          {/* InHouse Terminal Option */}
-          <button
-            type="button"
-            onClick={() => setSelectedProvider('InHouse')}
-            className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${
-              selectedProvider === 'InHouse'
-                ? 'bg-amber-600/15 border-amber-500 ring-2 ring-amber-500/30 text-white'
-                : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full mb-3">
-              <div className="p-2.5 rounded-lg bg-amber-500/20 text-amber-400">
-                <Terminal className="w-6 h-6" />
-              </div>
-              {selectedProvider === 'InHouse' && <CheckCircle2 className="w-5 h-5 text-amber-400" />}
-            </div>
-            <span className="font-semibold text-lg text-white">InHouse Terminal</span>
-            <span className="text-xs text-slate-400 mt-1">Card swipe/tap on counter POS terminal</span>
-            <span className="mt-3 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded">
-              POS Terminal
-            </span>
-          </button>
+              {/* InHouse Terminal Option */}
+              <button
+                type="button"
+                onClick={() => setSelectedProvider('InHouse')}
+                className={`flex flex-col items-start p-5 rounded-xl border text-left transition-all duration-200 ${selectedProvider === 'InHouse'
+                  ? 'bg-amber-600/15 border-amber-500 ring-2 ring-amber-500/30 text-white'
+                  : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600'
+                  }`}
+              >
+                <div className="flex items-center justify-between w-full mb-3">
+                  <div className="p-2.5 rounded-lg bg-amber-500/20 text-amber-400">
+                    <Terminal className="w-6 h-6" />
+                  </div>
+                  {selectedProvider === 'InHouse' && <CheckCircle2 className="w-5 h-5 text-amber-400" />}
+                </div>
+                <span className="font-semibold text-lg text-white">InHouse Terminal</span>
+                <span className="text-xs text-slate-400 mt-1">Card swipe/tap on counter POS terminal</span>
+                <span className="mt-3 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded">
+                  POS Terminal
+                </span>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Selected Provider Detail */}
@@ -203,21 +194,26 @@ export function PaymentStep() {
           {selectedProvider === 'Stripe' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium text-slate-200">Stripe Card Checkout</h4>
+                <h4 className="text-sm font-medium text-slate-200">Stripe Hosted Checkout Link</h4>
                 <div className="flex items-center gap-1.5 text-xs text-slate-400">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" /> 256-bit Encrypted
                 </div>
               </div>
-              <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-3">
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Card Details</label>
-                    <div className="p-3 rounded-md bg-slate-950 border border-slate-700 text-sm text-slate-200 flex items-center justify-between">
-                      <span className="font-mono text-slate-300">•••• •••• •••• 4242</span>
-                      <span className="text-xs text-slate-500 font-mono">12/28</span>
-                    </div>
+              <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Pay securely via Stripe Hosted Checkout link. Click below to open your Stripe Checkout payment session.
+                </p>
+                {stripeCheckoutUrl && (
+                  <div className="pt-2">
+                    <a
+                      href={stripeCheckoutUrl}
+                      className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shadow-md cursor-pointer"
+                    >
+                      <span>Pay via Stripe Checkout Link</span>
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

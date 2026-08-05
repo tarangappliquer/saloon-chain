@@ -55,7 +55,8 @@ internal sealed class PaymentService(
             Status: result.Status,
             ClientSecret: result.TransactionId != null ? $"{result.TransactionId}_secret" : null,
             TransactionId: result.TransactionId,
-            PublishableKey: provider == PaymentProvider.Stripe ? stripeOptions.Value.PublishableKey : null
+            PublishableKey: provider == PaymentProvider.Stripe ? stripeOptions.Value.PublishableKey : null,
+            CheckoutUrl: result.CheckoutUrl
         );
     }
 

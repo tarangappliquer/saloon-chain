@@ -33,7 +33,8 @@ internal sealed record CreatePaymentResponse(
     PaymentStatus Status,
     string? ClientSecret,
     string? TransactionId,
-    string? PublishableKey
+    string? PublishableKey,
+    string? CheckoutUrl = null
 );
 
 internal sealed record ProcessManualPaymentRequest(
@@ -50,7 +51,8 @@ internal sealed record PaymentResultDto(
     int PaymentId,
     PaymentStatus Status,
     string? TransactionId,
-    string? ErrorMessage
+    string? ErrorMessage,
+    string? CheckoutUrl = null
 );
 
 internal sealed record WebhookProcessResult(

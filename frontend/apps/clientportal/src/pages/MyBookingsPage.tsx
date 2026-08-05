@@ -71,9 +71,23 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
         {/* Booking Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-xs font-semibold text-muted-foreground">Booking #{b.id}</span>
               <Badge status={b.status} />
+              {b.isPaid || b.paymentStatus === 'Succeeded' || b.status === 'Confirmed' ? (
+                <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
+                  ✓ Paid
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-300 border border-amber-500/20 flex items-center gap-1">
+                  ⏳ Payment Pending
+                </span>
+              )}
+              {b.paymentProvider && (
+                <span className="rounded-full bg-accent/80 px-2.5 py-0.5 text-xs font-medium text-foreground border border-border">
+                  💳 {b.paymentProvider === 'InHouse' ? 'POS Terminal' : b.paymentProvider === 'Cash' ? 'Cash on Arrival' : b.paymentProvider}
+                </span>
+              )}
             </div>
             <h2 className="font-display text-lg font-bold text-foreground mt-1">{b.locationName}</h2>
           </div>

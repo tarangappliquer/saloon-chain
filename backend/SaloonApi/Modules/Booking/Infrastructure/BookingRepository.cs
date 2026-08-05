@@ -23,6 +23,8 @@ internal sealed record BookingLocationRow(int LocationId, int RoomId, DateTime W
 
 internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
 
+internal sealed record MyBookingHeaderRow(int Id, int LocationId, string LocationName, string Status, string? PaymentProvider = null, string? PaymentStatus = null);
+
 // One treatment line of a booking, scheduled or not (schedule fields null until picked). Used both
 // for the in-progress draft (GetById, powers refresh-restore) and directly as the API response shape.
 internal sealed record BookingTreatmentLineDto(
@@ -39,7 +41,7 @@ internal sealed record MyBookingTreatmentRow(
 internal sealed record MyBookingTreatmentDto(
     string TreatmentName, string? TherapistName, DateTime? StartTime, DateTime? EndTime, short SlotCount, decimal Price);
 
-internal sealed record MyBookingDto(int Id, string LocationName, string Status, IReadOnlyList<MyBookingTreatmentDto> Treatments);
+internal sealed record MyBookingDto(int Id, string LocationName, string Status, string? PaymentProvider, string? PaymentStatus, bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments);
 
 internal sealed record AdminBookingHeaderRow(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status);
@@ -198,11 +200,14 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId });
 
-        var bookings = (await multi.ReadAsync<BookingHeaderRow>()).ToList();
+        var bookings = (await multi.ReadAsync<MyBookingHeaderRow>()).ToList();
         var treatments = (await multi.ReadAsync<MyBookingTreatmentRow>()).ToList();
 
         return bookings.Select(b => new MyBookingDto(
             b.Id, b.LocationName, b.Status,
+            b.PaymentProvider,
+            b.PaymentStatus,
+            b.PaymentStatus?.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) == true || b.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase),
             treatments.Where(t => t.BookingId == b.Id)
                       .OrderBy(t => t.SequenceOrder)
                       .Select(t => new MyBookingTreatmentDto(t.TreatmentName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))

@@ -30,7 +30,7 @@ const getSwalThemeClasses = (danger: boolean) => ({
   popup: '!rounded-2xl !border !border-border !bg-card !text-card-foreground !shadow-lift !p-6 !font-sans !max-w-md',
   title: '!text-lg !font-bold !text-foreground !pt-1',
   htmlContainer: '!text-xs !text-muted-foreground !mt-2',
-  actions: '!flex !items-center !justify-end !gap-3 !w-full !mt-5 !pt-4 !border-t !border-border/60',
+  actions: '!flex !items-center !justify-end !gap-3 !w-full !mt-5 !pt-4 !p-2 !border-t !border-border/60',
   confirmButton: danger
     ? '!px-4 !py-2 !rounded-lg !bg-destructive hover:!opacity-90 !text-destructive-foreground !font-semibold !text-xs !transition-all !cursor-pointer !border-0 !shadow-sm'
     : '!px-4 !py-2 !rounded-lg !bg-primary hover:!opacity-90 !text-primary-foreground !font-semibold !text-xs !transition-all !cursor-pointer !border-0 !shadow-sm',

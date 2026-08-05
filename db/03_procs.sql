@@ -536,9 +536,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status,
+           p.Provider AS PaymentProvider, p.Status AS PaymentStatus
     FROM dbo.Bookings b
         JOIN dbo.Locations l ON l.Id = b.LocationId
+        LEFT JOIN (
+            SELECT BookingId, Provider, Status,
+                   ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
+            FROM dbo.Payments
+        ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
