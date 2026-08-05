@@ -1,13 +1,13 @@
-using System.Globalization;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Auth;
 using Stripe;
+using System.Globalization;
 
 namespace SaloonApi.Modules.Payment.Application;
 
-internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOptions<PortalUrlOptions> portalOptions) : IPaymentGateway
+internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOptions<PortalUrlOptions> portalOptions, ILogger<StripePaymentGateway> logger) : IPaymentGateway
 {
     private readonly StripeOptions _options = options.Value;
     private readonly PortalUrlOptions _portalOptions = portalOptions.Value;
@@ -115,9 +115,9 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
         try
         {
             Event stripeEvent;
-            if (!string.IsNullOrEmpty(_options.WebhookSecret) && !string.IsNullOrEmpty(signatureHeader))
+            if (!string.IsNullOrEmpty(signatureHeader) && !string.IsNullOrEmpty(_options.WebhookSecret))
             {
-                stripeEvent = EventUtility.ConstructEvent(payload, signatureHeader, _options.WebhookSecret);
+                stripeEvent = EventUtility.ConstructEvent(payload, signatureHeader, _options.WebhookSecret, throwOnApiVersionMismatch: false);
             }
             else
             {
@@ -185,5 +185,12 @@ internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOpt
         {
             return await Task.FromResult(new WebhookProcessResult(false, ex.Message, null, null, null));
         }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception ex1)
+        {
+            logger.LogError(ex1, "Error processing Stripe webhook");
+            return await Task.FromResult(new WebhookProcessResult(false, ex1.Message, null, null, null));
+        }
+#pragma warning restore CA1031
     }
 }

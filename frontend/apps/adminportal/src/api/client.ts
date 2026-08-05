@@ -3,6 +3,7 @@ import {
   AdminBookingsApi,
   AdminCatalogApi,
   AdminCustomersApi,
+  AdminDashboardApi,
   AdminStaffApi,
   AuthApi,
   CatalogApi,
@@ -125,8 +126,8 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response?.status === 401) onUnauthorized?.();
-    const body = error.response?.data as { title?: string; detail?:string, message?: string; errors?: Record<string, string[]> } | undefined;
-    throw new ApiError(error.response?.status ?? 0, body?.detail?? body?.title ?? body?.message ?? error.message, body?.errors);
+    const body = error.response?.data as { title?: string; detail?: string, message?: string; errors?: Record<string, string[]> } | undefined;
+    throw new ApiError(error.response?.status ?? 0, body?.detail ?? body?.title ?? body?.message ?? error.message, body?.errors);
   },
 );
 
@@ -136,8 +137,10 @@ export const adminBookingsApi = new AdminBookingsApi(configuration, API_BASE, ax
 export const adminCatalogApi = new AdminCatalogApi(configuration, API_BASE, axiosInstance);
 export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance);
 export const adminCustomersApi = new AdminCustomersApi(configuration, API_BASE, axiosInstance);
+export const adminDashboardApi = new AdminDashboardApi(configuration, API_BASE, axiosInstance);
 export const adminStaffApi = new AdminStaffApi(configuration, API_BASE, axiosInstance);
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
+

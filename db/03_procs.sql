@@ -1695,3 +1695,128 @@ BEGIN
     ORDER BY l.Name;
 END;
 GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetDashboardStats
+    @Role       NVARCHAR(50),
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL,
+    @StartDate  DATE = NULL,
+    @EndDate    DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @StartDate IS NULL
+        SET @StartDate = CAST(SYSUTCDATETIME() AS DATE);
+
+    IF @EndDate IS NULL
+        SET @EndDate = @StartDate;
+
+    DECLARE @Yesterday DATE = DATEADD(day, -1, @StartDate);
+
+    DECLARE @ScopedLocations TABLE (LocationId INT PRIMARY KEY);
+
+    IF @Role IN ('RootSuperAdmin', 'root_super_admin')
+    BEGIN
+        INSERT INTO @ScopedLocations (LocationId)
+        SELECT Id FROM dbo.Locations WHERE IsDelete = 0 AND IsActive = 1;
+    END
+    ELSE IF @Role IN ('SuperAdmin', 'Admin', 'superadmin', 'admin') AND @ChainId IS NOT NULL
+    BEGIN
+        INSERT INTO @ScopedLocations (LocationId)
+        SELECT Id FROM dbo.Locations WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
+    END
+    ELSE IF @LocationId IS NOT NULL
+    BEGIN
+        INSERT INTO @ScopedLocations (LocationId)
+        VALUES (@LocationId);
+    END
+    ELSE IF @ChainId IS NOT NULL
+    BEGIN
+        INSERT INTO @ScopedLocations (LocationId)
+        SELECT Id FROM dbo.Locations WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
+    END
+    ELSE
+    BEGIN
+        INSERT INTO @ScopedLocations (LocationId)
+        SELECT Id FROM dbo.Locations WHERE IsDelete = 0 AND IsActive = 1;
+    END;
+
+    DECLARE @TodayRevenue DECIMAL(18, 2) = 0;
+    DECLARE @YesterdayRevenue DECIMAL(18, 2) = 0;
+    DECLARE @AppointmentsToday INT = 0;
+    DECLARE @AppointmentsInProgress INT = 0;
+    DECLARE @ActiveTherapists INT = 0;
+
+    SELECT @TodayRevenue = ISNULL(SUM(p.Amount), 0)
+    FROM dbo.Payments p
+        JOIN dbo.Bookings b ON b.Id = p.BookingId
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+    WHERE p.Status = 'Succeeded'
+      AND p.IsDelete = 0
+      AND CAST(p.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate;
+
+    SELECT @YesterdayRevenue = ISNULL(SUM(p.Amount), 0)
+    FROM dbo.Payments p
+        JOIN dbo.Bookings b ON b.Id = p.BookingId
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+    WHERE p.Status = 'Succeeded'
+      AND p.IsDelete = 0
+      AND CAST(p.CreatedDate AS DATE) = @Yesterday;
+
+    SELECT @AppointmentsToday = COUNT(DISTINCT b.Id)
+    FROM dbo.Bookings b
+        JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+    WHERE b.Status <> 'Cancelled'
+      AND b.IsDelete = 0
+      AND bt.IsDelete = 0
+      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate));
+
+    SELECT @AppointmentsInProgress = COUNT(DISTINCT b.Id)
+    FROM dbo.Bookings b
+        JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+    WHERE b.Status = 'Confirmed'
+      AND b.IsDelete = 0
+      AND bt.IsDelete = 0
+      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate));
+
+    SELECT @ActiveTherapists = COUNT(DISTINCT tp.Id)
+    FROM dbo.TherapistProfile tp
+    WHERE tp.IsActive = 1 AND tp.IsDelete = 0
+      AND (
+          tp.LocationId IN (SELECT LocationId FROM @ScopedLocations)
+          OR tp.LocationId IS NULL
+      );
+
+    -- 1st Result Set: Aggregated KPIs
+    SELECT
+        @TodayRevenue AS TodayRevenue,
+        @YesterdayRevenue AS YesterdayRevenue,
+        @AppointmentsToday AS AppointmentsToday,
+        @AppointmentsInProgress AS AppointmentsInProgress,
+        @ActiveTherapists AS ActiveTherapists;
+
+    -- 2nd Result Set: Today's / Date Range Upcoming Appointments List
+    SELECT TOP 20
+        b.Id AS BookingId,
+        CAST(ISNULL(bt.StartTime, b.CreatedDate) AS TIME) AS StartTimeSlot,
+        CAST(ISNULL(bt.EndTime, DATEADD(minute, 30, b.CreatedDate)) AS TIME) AS EndTimeSlot,
+        c.Name AS CustomerName,
+        l.Name AS LocationName,
+        tp.Name AS TherapistName,
+        b.Status,
+        ISNULL((SELECT SUM(Price) FROM dbo.BookingTreatments WHERE BookingId = b.Id AND IsDelete = 0), 0) AS TotalAmount
+    FROM dbo.Bookings b
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+        JOIN dbo.Locations l ON l.Id = b.LocationId
+        JOIN dbo.Users c ON c.Id = b.CustomerId
+        LEFT JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id AND bt.SequenceOrder = 1 AND bt.IsDelete = 0
+        LEFT JOIN dbo.TherapistProfile tp ON tp.Id = bt.TherapistId
+    WHERE b.IsDelete = 0
+      AND b.Status <> 'Cancelled'
+      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate))
+    ORDER BY ISNULL(bt.StartTime, b.CreatedDate) ASC;
+END;
+GO

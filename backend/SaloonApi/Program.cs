@@ -157,44 +157,6 @@ builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
 var app = builder.Build();
 
-try
-{
-    using var scope = app.Services.CreateScope();
-    var factory = scope.ServiceProvider.GetRequiredService<SqlConnectionFactory>();
-    using var db = factory.Create();
-    await db.OpenAsync();
-    using var cmd = db.CreateCommand();
-    cmd.CommandText = @"
-CREATE OR ALTER PROCEDURE dbo.sp_Catalog_Search
-    @Search NVARCHAR(200) = NULL
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SELECT DISTINCT
-        l.Id, l.ChainId, c.Name AS ChainName, l.Name, l.Address,
-        l.OpenTime, l.CloseTime, l.WorkingDaysMask, l.TimeZoneId
-    FROM dbo.Locations l
-        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
-        LEFT JOIN dbo.Treatments t ON t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
-        LEFT JOIN dbo.TreatmentCategories tc ON tc.Id = t.TreatmentCategoryId AND tc.IsDelete = 0 AND tc.IsActive = 1
-    WHERE l.IsDelete = 0 AND l.IsActive = 1 AND c.IsDelete = 0 AND c.IsActive = 1
-        AND (
-            @Search IS NULL OR TRIM(@Search) = '' OR
-            c.Name LIKE '%' + @Search + '%' OR
-            l.Name LIKE '%' + @Search + '%' OR
-            l.Address LIKE '%' + @Search + '%' OR
-            t.Name LIKE '%' + @Search + '%' OR
-            tc.Name LIKE '%' + @Search + '%'
-        )
-    ORDER BY l.Name;
-END;";
-    await cmd.ExecuteNonQueryAsync();
-}
-catch (Microsoft.Data.SqlClient.SqlException ex)
-{
-    Log.Warning(ex, "Failed to apply sp_Catalog_Search migration on startup");
-}
 
 var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
@@ -236,6 +198,7 @@ app.MapAdminCatalogEndpoints();
 app.MapAdminStaffEndpoints();
 app.MapAdminBookingEndpoints();
 app.MapAdminCustomersEndpoints();
+app.MapAdminDashboardEndpoints();
 app.MapSchedulingEndpoints();
 app.MapProfileEndpoints();
 

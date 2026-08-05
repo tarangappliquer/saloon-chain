@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { catalogApi, searchVenuesApi } from '../api/client';
+import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
 
 interface VenueCardData extends Location {
@@ -32,7 +32,7 @@ export function ExplorePage() {
     async function loadVenues() {
       setLoading(true);
       try {
-        const searchRes = await searchVenuesApi(searchQuery.trim() || undefined);
+        const searchRes = await catalogApi.apiCatalogSearchGet(searchQuery.trim() || undefined);
         const searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
         const venueList: VenueCardData[] = [];
         const allCatsSet = new Set<string>();

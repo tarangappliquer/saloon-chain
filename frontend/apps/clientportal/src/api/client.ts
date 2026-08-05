@@ -114,7 +114,7 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response?.status === 401) onUnauthorized?.();
-    const body = error.response?.data as { title?: string; detail?:string, message?: string; errors?: Record<string, string[]> } | undefined;
+    const body = error.response?.data as { title?: string; detail?: string, message?: string; errors?: Record<string, string[]> } | undefined;
     throw new ApiError(error.response?.status ?? 0, body?.detail ?? body?.title ?? body?.message ?? error.message, body?.errors);
   },
 );
@@ -127,8 +127,4 @@ export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance)
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 
-export async function searchVenuesApi(query?: string) {
-  return axiosInstance.get<Array<Location & { chainName: string }>>('/api/catalog/search', {
-    params: { q: query || undefined },
-  });
-}
+

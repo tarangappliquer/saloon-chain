@@ -311,49 +311,49 @@ export function SchedulingPage() {
       <Card>
         <CardContent className="py-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 items-end gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</span>
-                <Select
-                  isClearable
-                  isDisabled={currentUser?.role === 'Manager'}
-                  value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
-                  onChange={(picked: SingleValue<SelectOption>) => changeLocation(picked?.value ?? '')}
-                  options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                  unstyled
-                  classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[160px]')}
-                />
-              </div>
-              <DateInput
-                label="Date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="min-w-full"
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</span>
+              <Select
+                isClearable
+                isDisabled={currentUser?.role === 'Manager'}
+                value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => changeLocation(picked?.value ?? '')}
+                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                unstyled
+                classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[160px]')}
               />
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift Type</span>
-                <Select
-                  value={SHIFT_TYPES.map((s) => ({ value: s, label: s })).find((o) => o.value === shiftType) ?? null}
-                  onChange={(picked: SingleValue<SelectOption>) => handleShiftTypeChange(picked?.value ?? shiftType)}
-                  options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
-                  unstyled
-                  classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[130px]')}
-                />
-              </div>
-              <TimeInput
-                required
-                label="Start Time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full"
+            </div>
+            <DateInput
+              label="Date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="min-w-full"
+            />
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift Type</span>
+              <Select
+                value={SHIFT_TYPES.map((s) => ({ value: s, label: s })).find((o) => o.value === shiftType) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => handleShiftTypeChange(picked?.value ?? shiftType)}
+                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
+                unstyled
+                classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[130px]')}
               />
-              <TimeInput
-                required
-                label="End Time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                error={getFieldError(shiftSubmitError, 'endTime')}
-                className="w-full"
-              />
+            </div>
+            <TimeInput
+              required
+              label="Start Time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="w-full"
+            />
+            <TimeInput
+              required
+              label="End Time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              error={getFieldError(shiftSubmitError, 'endTime')}
+              className="w-full"
+            />
           </div>
         </CardContent>
       </Card>
