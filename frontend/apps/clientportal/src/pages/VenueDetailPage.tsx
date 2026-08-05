@@ -31,7 +31,7 @@ export function VenueDetailPage() {
       try {
         const treatmentsRes = await catalogApi.apiCatalogTreatmentsGet(Number(locationId));
         setTreatments(treatmentsRes.data as unknown as Treatment[]);
-        
+
         // Mock location details if no dedicated get endpoint
         setLocation({
           id: Number(locationId),
@@ -94,7 +94,7 @@ export function VenueDetailPage() {
 
           {/* Top Badge */}
           <div className="absolute top-4 left-4 rounded-full bg-black/60 px-3.5 py-1 text-xs font-semibold text-white backdrop-blur-md">
-            Verified Partner • Fresha Verified
+            Verified Partner • ShoppeyVerified
           </div>
         </div>
 
@@ -140,11 +140,10 @@ export function VenueDetailPage() {
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 capitalize transition-all ${
-              activeTab === tab
+            className={`pb-3 capitalize transition-all ${activeTab === tab
                 ? 'border-b-2 border-primary text-primary font-bold'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             {tab}
           </button>

@@ -6,7 +6,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   helperText?: string;
-  showPasswordIcon?:boolean;
+  showPasswordIcon?: boolean;
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -18,18 +18,18 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full space-y-1.5">
         {label && (
-          <label htmlFor={inputId} className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <label htmlFor={inputId} className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             {label}
           </label>
         )}
-        <div className="relative flex gap-1">
+        <div className="relative flex flex-row gap-1">
           <input
             ref={ref}
             id={inputId}
             type={isPassword ? (revealed ? "text" : "password") : type}
             className={cn(
               "flex h-9 w-full rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50",
-              isPassword && "pr-9",
+              isPassword && showPasswordIcon && "pr-9",
               error && "border-destructive focus-visible:outline-destructive",
               className
             )}
@@ -40,7 +40,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               type="button"
               tabIndex={-1}
               onClick={() => setRevealed((r) => !r)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors"
               aria-label={revealed ? "Hide password" : "Show password"}
             >
               {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

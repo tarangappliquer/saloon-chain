@@ -142,7 +142,7 @@ export function ExplorePage() {
       <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-primary/90 via-primary/70 to-indigo-900 p-8 text-white shadow-xl sm:p-12">
         <div className="relative z-10 max-w-2xl space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1 text-xs font-semibold backdrop-blur-md">
-            <span>✨ Fresha Marketplace</span>
+            <span>✨ ShoppeyMarketplace</span>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">
             Book top-rated salons & spa specialists
@@ -192,11 +192,10 @@ export function ExplorePage() {
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 ${
-                  active
+                className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 ${active
                     ? 'bg-primary text-white shadow-md shadow-primary/25 scale-105'
                     : 'border border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground'
-                }`}
+                  }`}
               >
                 {cat}
               </button>

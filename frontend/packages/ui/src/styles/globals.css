@@ -311,6 +311,12 @@
     scrollbar-width: thin;
     scrollbar-color: var(--color-border-strong) transparent;
   }
+
+  /* Hide native browser password reveal buttons */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
 }
 
 @layer components {

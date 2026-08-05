@@ -62,11 +62,10 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link
       to={to}
-      className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 ${
-        active
+      className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 ${active
           ? 'bg-primary text-white shadow-xs font-bold'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-      }`}
+        }`}
     >
       {children}
     </Link>
@@ -89,7 +88,7 @@ function Nav() {
       <nav aria-label="Main Navigation" className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-6">
           <Link to="/explore" className="flex items-center gap-2 shrink-0">
-            <BrandMark label="Fresha Saloon" />
+            <BrandMark label="ShoppeySaloon" />
           </Link>
           <div className="flex items-center gap-1">
             <NavLink to="/explore">Explore</NavLink>
