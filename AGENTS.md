@@ -49,3 +49,7 @@ Security warnings and destructive action confirmations: use full clarity.
   2. Run `openapi-generator-cli generate` targeting that non-default port (e.g. `http://localhost:5199/openapi/v1.json`).
   3. Immediately kill the backend process and release the non-default port once generation completes.
 - **Port Cleanup Rule**: If an agent starts any process or opens any port, the agent **MUST kill/close the process and release the port** before completing the turn.
+
+### Architecture & System Flow Documentation
+
+For a detailed breakdown of all business logic, database procedures, Stripe checkout verification flows, role-based data scoping, and frontend/backend interactions, refer to [ARCHITECTURE_FLOWS.md](file:///d:/Workspace/SaloonChains/ARCHITECTURE_FLOWS.md).
