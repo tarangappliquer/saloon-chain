@@ -86,6 +86,7 @@ export function SchedulingPage() {
   const paramLocationId = searchParams.get('locationId');
 
   const [chainId, setChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
+  const [chains, setChains] = useState<{ id: number; name: string }[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [date, setDate] = useState(today());
@@ -115,7 +116,8 @@ export function SchedulingPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number }[];
+        const cs = data as unknown as { id: number; name: string }[];
+        setChains(cs);
         if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
@@ -275,11 +277,12 @@ export function SchedulingPage() {
 
   const flatTreatments = extractFlatTreatments(bookings);
   const timeSlots = generateTimeSlots(startTime, endTime, 15);
+  const selectedChain = chains.find((c) => c.id === chainId);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Roster & Shift Scheduling"
+        title={selectedChain ? `${selectedChain.name} — Roster & Shift Scheduling` : 'Roster & Shift Scheduling'}
         description="View room schedule grid with booked slots and manage therapist shifts and room openings."
         action={
           paramLocationId ? (
