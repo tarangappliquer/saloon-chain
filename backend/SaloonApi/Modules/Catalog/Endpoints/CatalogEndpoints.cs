@@ -47,5 +47,10 @@ internal static class CatalogEndpoints
             Results.Ok(await repo.GetTreatmentsAsync(locationId, categoryId)))
             .Produces<IEnumerable<TreatmentDto>>()
             .WithDescription("List the treatments a location offers, optionally filtered by category.");
+
+        group.MapGet("/search", async (string? q, CatalogRepository repo) =>
+            Results.Ok(await repo.SearchVenuesAsync(q)))
+            .Produces<IEnumerable<VenueSearchResultDto>>()
+            .WithDescription("Search saloons, locations, treatments, and categories.");
     }
 }

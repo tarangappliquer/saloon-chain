@@ -63,7 +63,7 @@ export function LoginPage() {
         {/* Header / Brand Mark */}
         <div className="mb-6 flex flex-col items-center text-center">
           <BrandMark
-            label="ShoppeySaloon"
+            label="Shoppey Saloon"
             subtitle={mode === 'login' ? 'Sign in to manage your appointments' : 'Register to start booking treatments'}
           />
         </div>
@@ -74,8 +74,8 @@ export function LoginPage() {
             type="button"
             onClick={() => handleModeChange('login')}
             className={`py-2 text-xs font-bold rounded-lg transition-all ${mode === 'login'
-                ? 'bg-card text-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-card text-foreground shadow-xs'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             Sign In
@@ -84,8 +84,8 @@ export function LoginPage() {
             type="button"
             onClick={() => handleModeChange('register')}
             className={`py-2 text-xs font-bold rounded-lg transition-all ${mode === 'register'
-                ? 'bg-card text-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-card text-foreground shadow-xs'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             Create Account

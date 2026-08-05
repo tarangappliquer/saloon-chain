@@ -145,7 +145,7 @@ BEGIN
     SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
     FROM EligibleRooms er
         JOIN EligibleShifts es
-            ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+        ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
             AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
 
     -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location.
@@ -487,18 +487,27 @@ BEGIN
     WHERE b.Status = 'Draft' AND bt.IsDelete = 0
         AND bt.ExpiresAt IS NOT NULL AND bt.ExpiresAt <= SYSUTCDATETIME();
 
-    -- Delete draft bookings inactive for 15+ minutes from database
-    DELETE FROM dbo.BookingTreatments
-    WHERE BookingId IN (
-        SELECT Id
+    -- Delete unpaid payment records older than 30 minutes
+    DELETE FROM dbo.Payments
+    WHERE Status <> 'Succeeded'
+        AND CreatedDate <= DATEADD(MINUTE, -30, SYSUTCDATETIME());
+
+    -- Delete draft bookings inactive/unpaid for 30+ minutes from database
+    DECLARE @StaleBookingIds TABLE (Id INT);
+
+    INSERT INTO @StaleBookingIds
+        (Id)
+    SELECT Id
     FROM dbo.Bookings
     WHERE Status = 'Draft'
-        AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME())
-    );
+        AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -30, SYSUTCDATETIME());
 
-    DELETE FROM dbo.Bookings
-    WHERE Status = 'Draft'
-        AND COALESCE(UpdatedDate, CreatedDate) <= DATEADD(MINUTE, -15, SYSUTCDATETIME());
+    DELETE FROM dbo.Payments WHERE BookingId IN (SELECT Id
+    FROM @StaleBookingIds);
+    DELETE FROM dbo.BookingTreatments WHERE BookingId IN (SELECT Id
+    FROM @StaleBookingIds);
+    DELETE FROM dbo.Bookings WHERE Id IN (SELECT Id
+    FROM @StaleBookingIds);
 
     SELECT DISTINCT LocationId, RoomId, WorkDate
     FROM @Expired;
@@ -537,17 +546,17 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status,
-           p.Provider AS PaymentProvider, p.Status AS PaymentStatus
+        p.Provider AS PaymentProvider, p.Status AS PaymentStatus
     FROM dbo.Bookings b
         JOIN dbo.Locations l ON l.Id = b.LocationId
         LEFT JOIN (
             SELECT BookingId, Provider, Status,
-                   ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
-            FROM dbo.Payments
+            ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
+        FROM dbo.Payments
         ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
-        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -30, SYSUTCDATETIME())))
         AND b.IsDelete = 0
     ORDER BY b.Id DESC;
 
@@ -1658,5 +1667,31 @@ BEGIN
     SET StripeCustomerId = @StripeCustomerId,
         UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @UserId AND IsDelete = 0;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_Search
+    @Search NVARCHAR(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT DISTINCT
+        l.Id, l.ChainId, c.Name AS ChainName, l.Name, l.Address,
+        l.OpenTime, l.CloseTime, l.WorkingDaysMask, l.TimeZoneId
+    FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+        LEFT JOIN dbo.Treatments t ON t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
+        LEFT JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId AND tc.IsDelete = 0 AND tc.IsActive = 1
+    WHERE l.IsDelete = 0 AND l.IsActive = 1 AND c.IsDelete = 0 AND c.IsActive = 1
+        AND (
+            @Search IS NULL OR TRIM(@Search) = '' OR
+            c.Name LIKE '%' + @Search + '%' OR
+            l.Name LIKE '%' + @Search + '%' OR
+            l.Address LIKE '%' + @Search + '%' OR
+            t.Name LIKE '%' + @Search + '%' OR
+            tc.Name LIKE '%' + @Search + '%'
+        )
+    ORDER BY l.Name;
 END;
 GO

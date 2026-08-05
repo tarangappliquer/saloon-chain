@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/client';
-import type { Location, Treatment } from '../api/types';
+import type { Chain, Location, Treatment } from '../api/types';
 
 interface Specialist {
   id: number;
@@ -22,36 +22,46 @@ export function VenueDetailPage() {
   const navigate = useNavigate();
   const [location, setLocation] = useState<Location | null>(null);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [specialists, setSpecialists] = useState<Specialist[]>(SAMPLE_SPECIALISTS);
   const [activeTab, setActiveTab] = useState<'services' | 'team' | 'reviews' | 'about'>('services');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       if (!locationId) return;
+      const targetLocId = Number(locationId);
+
       try {
-        const treatmentsRes = await catalogApi.apiCatalogTreatmentsGet(Number(locationId));
+        const treatmentsRes = await catalogApi.apiCatalogTreatmentsGet(targetLocId);
         setTreatments(treatmentsRes.data as unknown as Treatment[]);
 
-        // Mock location details if no dedicated get endpoint
-        setLocation({
-          id: Number(locationId),
-          chainId: 1,
-          name: Number(locationId) === 2 ? 'The Crown Barbershop - Westside' : 'Luxe Beauty Lounge - Downtown',
-          address: '123 Fashion Street, Suite 100, Central City',
-          openTime: '09:00:00',
-          closeTime: '20:00:00',
-          workingDaysMask: 127,
-          timeZoneId: 'UTC',
-        });
+        // Fetch location & chain details
+        const chainsRes = await catalogApi.apiCatalogChainsGet();
+        const chains = chainsRes.data as unknown as Chain[];
+        let foundLoc: Location | null = null;
+
+        for (const chain of chains) {
+          const locsRes = await catalogApi.apiCatalogLocationsGet(chain.id);
+          const locs = locsRes.data as unknown as Location[];
+          const matching = locs.find((l) => l.id === targetLocId);
+          if (matching) {
+            foundLoc = matching;
+            break;
+          }
+        }
+
+        if (foundLoc) {
+          setLocation(foundLoc);
+        }
+        setSpecialists(SAMPLE_SPECIALISTS);
       } catch {
         setTreatments([
           { id: 101, categoryId: 1, categoryName: 'Hair & Styling', name: 'Signature Haircut & Blowdry', price: 45, durationSlots: 2 },
           { id: 102, categoryId: 1, categoryName: 'Hair & Styling', name: 'Full Balayage & Toning', price: 120, durationSlots: 4 },
           { id: 103, categoryId: 2, categoryName: 'Nails', name: 'Gel Manicure & Hand Care', price: 35, durationSlots: 2 },
-          { id: 104, categoryId: 3, categoryName: 'Facial & Skincare', name: 'Deep Hydrating Glow Facial', price: 75, durationSlots: 3 },
         ]);
         setLocation({
-          id: Number(locationId) || 1,
+          id: targetLocId || 1,
           chainId: 1,
           name: 'Luxe Beauty Lounge - Downtown',
           address: '123 Fashion Street, Suite 100',
@@ -60,6 +70,7 @@ export function VenueDetailPage() {
           workingDaysMask: 127,
           timeZoneId: 'UTC',
         });
+        setSpecialists(SAMPLE_SPECIALISTS);
       } finally {
         setLoading(false);
       }
@@ -94,7 +105,7 @@ export function VenueDetailPage() {
 
           {/* Top Badge */}
           <div className="absolute top-4 left-4 rounded-full bg-black/60 px-3.5 py-1 text-xs font-semibold text-white backdrop-blur-md">
-            Verified Partner • ShoppeyVerified
+            Verified Partner • Shoppey Verified
           </div>
         </div>
 
@@ -108,14 +119,14 @@ export function VenueDetailPage() {
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                 <span>📍 {location?.address ?? 'Central Location'}</span>
                 <span>•</span>
-                <span className="text-emerald-500 font-semibold">Open today (9:00 AM - 8:00 PM)</span>
+                <span className="text-emerald-500 font-semibold">Open today ({location?.openTime ?? '9:00 AM'} - {location?.closeTime ?? '8:00 PM'})</span>
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() => navigate('/book')}
-              className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary/90 transition"
+              onClick={() => navigate(`/book?locationId=${locationId}`)}
+              className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary/90 transition cursor-pointer"
             >
               Book Appointment
             </button>
@@ -141,8 +152,8 @@ export function VenueDetailPage() {
             type="button"
             onClick={() => setActiveTab(tab)}
             className={`pb-3 capitalize transition-all ${activeTab === tab
-                ? 'border-b-2 border-primary text-primary font-bold'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'border-b-2 border-primary text-primary font-bold'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             {tab}
@@ -177,8 +188,8 @@ export function VenueDetailPage() {
                       <div className="mt-4 flex items-center justify-end">
                         <button
                           type="button"
-                          onClick={() => navigate('/book')}
-                          className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition"
+                          onClick={() => navigate(`/book?locationId=${locationId}`)}
+                          className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition cursor-pointer"
                         >
                           + Select Service
                         </button>
@@ -194,7 +205,7 @@ export function VenueDetailPage() {
 
       {activeTab === 'team' && (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {SAMPLE_SPECIALISTS.map((s) => (
+          {specialists.map((s) => (
             <div key={s.id} className="flex flex-col items-center text-center rounded-2xl border border-border bg-card p-6 space-y-3">
               <img src={s.avatarUrl} alt={s.name} className="h-20 w-20 rounded-full object-cover shadow-md" />
               <div>

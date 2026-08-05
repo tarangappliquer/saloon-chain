@@ -99,7 +99,7 @@ function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingD
             <div>
               <span className="block text-[11px] uppercase font-bold text-muted-foreground">Saloon & Venue</span>
               <p className="font-bold text-foreground text-sm mt-0.5">{booking.locationName}</p>
-              <p className="text-muted-foreground">ShoppeyVerified Venue</p>
+              <p className="text-muted-foreground">Shoppey Verified Venue</p>
             </div>
           </div>
 

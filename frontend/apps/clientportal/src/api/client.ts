@@ -126,3 +126,9 @@ export const bookingApi = new BookingApi(configuration, API_BASE, axiosInstance)
 export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
+
+export async function searchVenuesApi(query?: string) {
+  return axiosInstance.get<Array<Location & { chainName: string }>>('/api/catalog/search', {
+    params: { q: query || undefined },
+  });
+}

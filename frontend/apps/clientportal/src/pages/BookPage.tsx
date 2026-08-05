@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { Outlet, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { PageHeader } from '@saloon/ui';
 import { bookingApi, catalogApi } from '../api/client';
@@ -18,6 +18,8 @@ export function useBookingContext() {
 
 export function BookPage() {
   const { bookingId } = useParams<{ bookingId?: string }>();
+  const [searchParams] = useSearchParams();
+  const searchLocId = searchParams.get('locationId') ? Number(searchParams.get('locationId')) : null;
   const isEditingBooking = Boolean(bookingId);
 
   const [chains, setChains] = useState<Chain[]>([]);
@@ -27,14 +29,28 @@ export function BookPage() {
   const [locationId, setLocationId] = useState<number | null>(null);
 
   useEffect(() => {
-    catalogApi.apiCatalogChainsGet().then(({ data }) => {
+    catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
       const cs = data as unknown as Chain[];
       setChains(cs);
-      if (!isEditingBooking && cs.length > 0) {
+
+      if (searchLocId && !isEditingBooking) {
+        for (const c of cs) {
+          const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
+          const locs = locsRes.data as unknown as Location[];
+          if (locs.some((l) => l.id === searchLocId)) {
+            setChainId(c.id);
+            setLocations(locs);
+            setLocationId(searchLocId);
+            return;
+          }
+        }
+      }
+
+      if (!isEditingBooking && cs.length > 0 && !chainId) {
         setChainId(cs[0].id);
       }
     });
-  }, [isEditingBooking]);
+  }, [isEditingBooking, searchLocId]);
 
   useEffect(() => {
     if (!isEditingBooking || !bookingId) return;
@@ -65,9 +81,9 @@ export function BookPage() {
     catalogApi.apiCatalogLocationsGet(chainId).then(({ data }) => {
       const locs = data as unknown as Location[];
       setLocations(locs);
-      if (locs.length > 0) setLocationId(locs[0].id);
+      if (locs.length > 0 && !searchLocId) setLocationId(locs[0].id);
     });
-  }, [chainId, isEditingBooking]);
+  }, [chainId, isEditingBooking, searchLocId]);
 
   useEffect(() => {
     if (!locationId) return;

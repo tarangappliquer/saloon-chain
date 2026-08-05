@@ -28,7 +28,7 @@ export function ForgotPasswordPage() {
     <main className="min-h-[calc(100vh-5rem)] flex items-center justify-center p-4 sm:p-6">
       <Card className="w-full max-w-md p-6 sm:p-8 shadow-lift border-border bg-card/95 backdrop-blur-md rounded-3xl">
         <div className="mb-6 flex flex-col items-center text-center">
-          <BrandMark label="ShoppeySaloon" subtitle="Reset your password" />
+          <BrandMark label="Shoppey Saloon" subtitle="Reset your password" />
         </div>
 
         {submitted ? (

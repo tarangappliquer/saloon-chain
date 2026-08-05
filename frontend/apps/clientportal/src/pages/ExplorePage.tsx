@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { catalogApi } from '../api/client';
-import type { Chain, Location } from '../api/types';
+import { catalogApi, searchVenuesApi } from '../api/client';
+import type { Location, Treatment } from '../api/types';
 
 interface VenueCardData extends Location {
   chainName: string;
@@ -9,18 +9,9 @@ interface VenueCardData extends Location {
   reviewCount: number;
   imageUrl: string;
   categories: string[];
+  treatmentNames: string[];
   startingPrice: number;
 }
-
-const CATEGORIES = [
-  'All',
-  'Hair & Styling',
-  'Barbershop',
-  'Nails & Manicure',
-  'Skincare & Facials',
-  'Massage & Spa',
-  'Brows & Lashes',
-];
 
 const SAMPLE_IMAGES = [
   'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80',
@@ -32,37 +23,57 @@ const SAMPLE_IMAGES = [
 export function ExplorePage() {
   const navigate = useNavigate();
   const [venues, setVenues] = useState<VenueCardData[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>(['All']);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   useEffect(() => {
     async function loadVenues() {
+      setLoading(true);
       try {
-        const chainsRes = await catalogApi.apiCatalogChainsGet();
-        const chains = chainsRes.data as unknown as Chain[];
+        const searchRes = await searchVenuesApi(searchQuery.trim() || undefined);
+        const searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
         const venueList: VenueCardData[] = [];
+        const allCatsSet = new Set<string>();
 
-        for (const chain of chains) {
-          const locsRes = await catalogApi.apiCatalogLocationsGet(chain.id);
-          const locs = locsRes.data as unknown as Location[];
+        for (let idx = 0; idx < searchResults.length; idx++) {
+          const loc = searchResults[idx];
+          let locationCategories: string[] = [];
+          let treatmentNames: string[] = [];
+          let startingPrice = 25;
 
-          locs.forEach((loc, idx) => {
-            venueList.push({
-              ...loc,
-              chainName: chain.name,
-              rating: 4.8 + (idx % 3) * 0.1,
-              reviewCount: 45 + idx * 28,
-              imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
-              categories: [
-                'Hair & Styling',
-                idx % 2 === 0 ? 'Nails & Manicure' : 'Barbershop',
-                'Skincare & Facials',
-              ],
-              startingPrice: 25 + (idx % 4) * 15,
-            });
+          try {
+            const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
+            const treats = treatsRes.data as unknown as Treatment[];
+            if (treats && treats.length > 0) {
+              locationCategories = Array.from(new Set(treats.map((t) => t.categoryName).filter(Boolean)));
+              treatmentNames = treats.map((t) => t.name).filter(Boolean);
+              locationCategories.forEach((cat) => allCatsSet.add(cat));
+              startingPrice = Math.min(...treats.map((t) => t.price));
+            }
+          } catch {
+            // Ignore treatment fetch error for specific location
+          }
+
+          if (locationCategories.length === 0) {
+            locationCategories = ['Hair & Styling', 'Barbershop', 'Nails & Manicure'];
+            locationCategories.forEach((cat) => allCatsSet.add(cat));
+          }
+
+          venueList.push({
+            ...loc,
+            chainName: loc.chainName || 'Shoppey Saloon Chain',
+            rating: 4.8 + (idx % 3) * 0.1,
+            reviewCount: 45 + (loc.id * 19) % 150,
+            imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
+            categories: locationCategories,
+            treatmentNames: treatmentNames,
+            startingPrice: startingPrice,
           });
         }
+
+        setAvailableCategories(['All', ...Array.from(allCatsSet)]);
         setVenues(venueList);
       } catch {
         // Fallback demo data if API call returns empty
@@ -81,6 +92,7 @@ export function ExplorePage() {
             reviewCount: 184,
             imageUrl: SAMPLE_IMAGES[0],
             categories: ['Hair & Styling', 'Nails & Manicure', 'Skincare & Facials'],
+            treatmentNames: ['Signature Haircut & Blowdry', 'Gel Manicure', 'Deep Hydrating Glow Facial'],
             startingPrice: 35,
           },
           {
@@ -97,43 +109,28 @@ export function ExplorePage() {
             reviewCount: 96,
             imageUrl: SAMPLE_IMAGES[1],
             categories: ['Barbershop', 'Hair & Styling'],
+            treatmentNames: ['Executive Haircut', 'Beard Trim & Shave'],
             startingPrice: 25,
           },
-          {
-            id: 3,
-            chainId: 1,
-            name: 'Serene Spa & Wellness Hub',
-            chainName: 'Luxe Salon Chain',
-            address: '789 Harmony Way',
-            openTime: '10:00:00',
-            closeTime: '21:00:00',
-            workingDaysMask: 127,
-            timeZoneId: 'UTC',
-            rating: 5.0,
-            reviewCount: 210,
-            imageUrl: SAMPLE_IMAGES[2],
-            categories: ['Massage & Spa', 'Skincare & Facials', 'Brows & Lashes'],
-            startingPrice: 50,
-          },
         ]);
+        setAvailableCategories(['All', 'Hair & Styling', 'Barbershop', 'Nails & Manicure', 'Skincare & Facials']);
       } finally {
         setLoading(false);
       }
     }
 
-    loadVenues();
-  }, []);
+    const timer = setTimeout(() => {
+      loadVenues();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const filteredVenues = venues.filter((venue) => {
-    const matchesSearch =
-      venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (venue.address && venue.address.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      venue.chainName.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesCategory =
-      selectedCategory === 'All' || venue.categories.some((cat) => cat.includes(selectedCategory));
-
-    return matchesSearch && matchesCategory;
+    return (
+      selectedCategory === 'All' ||
+      venue.categories.some((cat) => cat.toLowerCase().includes(selectedCategory.toLowerCase()))
+    );
   });
 
   return (
@@ -142,7 +139,7 @@ export function ExplorePage() {
       <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-primary/90 via-primary/70 to-indigo-900 p-8 text-white shadow-xl sm:p-12">
         <div className="relative z-10 max-w-2xl space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1 text-xs font-semibold backdrop-blur-md">
-            <span>✨ ShoppeyMarketplace</span>
+            <span>✨ Shoppey Marketplace</span>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">
             Book top-rated salons & spa specialists
@@ -160,7 +157,7 @@ export function ExplorePage() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search venue name, service, or location..."
+                  placeholder="Search saloon, location, treatment, or category..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
@@ -185,7 +182,7 @@ export function ExplorePage() {
       <div className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Popular Categories</h2>
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {CATEGORIES.map((cat) => {
+          {availableCategories.map((cat) => {
             const active = selectedCategory === cat;
             return (
               <button
@@ -193,8 +190,8 @@ export function ExplorePage() {
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
                 className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 ${active
-                    ? 'bg-primary text-white shadow-md shadow-primary/25 scale-105'
-                    : 'border border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  ? 'bg-primary text-white shadow-md shadow-primary/25 scale-105'
+                  : 'border border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground'
                   }`}
               >
                 {cat}

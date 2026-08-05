@@ -11,6 +11,10 @@ internal sealed record LocationDto(
     int Id, int ChainId, string Name, string? Address,
     TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
 
+internal sealed record VenueSearchResultDto(
+    int Id, int ChainId, string ChainName, string Name, string? Address,
+    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
+
 internal sealed record TreatmentDto(
     int Id, int CategoryId, string CategoryName, string Name, decimal Price, short DurationSlots);
 
@@ -269,5 +273,11 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateRoom", new
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task<IEnumerable<VenueSearchResultDto>> SearchVenuesAsync(string? search)
+    {
+        using var db = factory.Create();
+        return await db.QuerySpAsync<VenueSearchResultDto>("dbo.sp_Catalog_Search", new { Search = search });
     }
 }

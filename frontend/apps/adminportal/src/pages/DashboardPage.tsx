@@ -10,7 +10,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title={`Welcome back, ${user?.name ?? 'Partner'}`}
-        subtitle={`ShoppeyPartner Dashboard • Overview of today's salon performance, appointments, and shortcuts.`}
+        subtitle={`Shoppey Partner Dashboard • Overview of today's salon performance, appointments, and shortcuts.`}
         action={user ? <Badge status={user.role} /> : undefined}
       />
 
@@ -55,7 +55,7 @@ export function DashboardPage() {
         <Card hoverable className="p-6 md:col-span-2 space-y-4">
           <div className="flex items-center justify-between border-b border-border pb-4">
             <div>
-              <h3 className="font-display text-lg font-bold text-foreground">ShoppeyCalendar Diary</h3>
+              <h3 className="font-display text-lg font-bold text-foreground">Shoppey Calendar Diary</h3>
               <p className="text-xs text-muted-foreground">Manage today's appointment schedule and therapist rooms.</p>
             </div>
             <Link
