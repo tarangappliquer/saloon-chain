@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -40,11 +40,13 @@ export function LocationsPage() {
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [deletingLocation, setDeletingLocation] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     adminCatalogApi
@@ -178,14 +180,18 @@ export function LocationsPage() {
     }
   }
 
-  async function handleDelete(loc: Location) {
-    if (!window.confirm(`Delete "${loc.name}"? This cannot be undone.`)) return;
+  async function handleConfirmDelete() {
+    if (!deletingLocation) return;
     setError(null);
+    setDeleting(true);
     try {
-      await adminCatalogApi.apiAdminCatalogLocationsIdDelete(loc.id);
+      await adminCatalogApi.apiAdminCatalogLocationsIdDelete(deletingLocation.id);
+      setDeletingLocation(null);
       if (chainId !== null) await loadLocations(chainId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete location');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -213,6 +219,18 @@ export function LocationsPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deletingLocation !== null}
+        title="Delete Location"
+        description={`Are you sure you want to delete "${deletingLocation?.name}"? All associated rooms, schedules, and treatment mappings will be permanently removed.`}
+        confirmLabel="Delete Location"
+        cancelLabel="Keep Location"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setDeletingLocation(null)}
+      />
+
       <PageHeader
         title="Salon Locations"
         description="Manage physical salon locations, operating hours, and active status per saloon chain."
@@ -338,14 +356,14 @@ export function LocationsPage() {
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left text-xs border-collapse min-w-[950px]">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3.5">Name</th>
                   <th className="px-6 py-3.5">Address</th>
                   <th className="px-6 py-3.5">Hours & Timezone</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5 text-right">Actions</th>
+                  <th className="px-6 py-3.5 text-right whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -359,15 +377,15 @@ export function LocationsPage() {
                     <td className="px-6 py-4">
                       <Badge status={l.isActive === false ? 'Inactive' : 'Active'} />
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-6 py-4 text-right whitespace-nowrap min-w-max">
+                      <div className="flex items-center justify-end gap-2 shrink-0 w-max">
                         {canAddLocationUser && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleNavigateToUsers(l)}
                           >
-                            <UserPlus className="h-3.5 w-3.5 mr-1 text-primary" />
+                            <UserPlus className="h-3.5 w-3.5 text-primary" />
                             Add User
                           </Button>
                         )}
@@ -376,7 +394,7 @@ export function LocationsPage() {
                           size="sm"
                           onClick={() => handleNavigateToRooms(l)}
                         >
-                          <DoorClosed className="h-3.5 w-3.5 mr-1" />
+                          <DoorClosed className="h-3.5 w-3.5" />
                           Rooms
                         </Button>
                         <Button
@@ -384,7 +402,7 @@ export function LocationsPage() {
                           size="sm"
                           onClick={() => handleNavigateToSchedule(l)}
                         >
-                          <Calendar className="h-3.5 w-3.5 mr-1" />
+                          <Calendar className="h-3.5 w-3.5" />
                           Schedule
                         </Button>
                         <Button
@@ -392,7 +410,7 @@ export function LocationsPage() {
                           size="sm"
                           onClick={() => handleNavigateToTreatments(l)}
                         >
-                          <Sparkles className="h-3.5 w-3.5 mr-1" />
+                          <Sparkles className="h-3.5 w-3.5" />
                           Treatments
                         </Button>
                         <Button
@@ -412,7 +430,7 @@ export function LocationsPage() {
                         <Button
                           variant="danger"
                           size="sm"
-                          onClick={() => handleDelete(l)}
+                          onClick={() => setDeletingLocation(l)}
                         >
                           Delete
                         </Button>

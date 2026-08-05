@@ -1,5 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { AuthApi, BookingApi, CatalogApi, Configuration, ProfileApi } from '@saloon/api-client';
+import { AuthApi, BookingApi, CatalogApi, Configuration, PaymentApi, ProfileApi } from '@saloon/api-client';
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
 // Where the "Exit emulation" banner sends the browser back to -- separate Vite app/port
@@ -93,7 +93,7 @@ async function tryRefresh(): Promise<boolean> {
 // Not exported -- every request must go through the generated api-client classes below (authApi,
 // bookingApi, etc), never a raw axiosInstance call from page code. Exists only to wire the shared
 // auth/refresh-token interceptors into those classes' constructors.
-export const axiosInstance = axios.create({ baseURL: API_BASE });
+const axiosInstance = axios.create({ baseURL: API_BASE });
 
 axiosInstance.interceptors.request.use((config) => {
   if (authToken) config.headers.set('Authorization', `Bearer ${authToken}`);
@@ -114,12 +114,6 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response?.status === 401) onUnauthorized?.();
-    // Backend error bodies are RFC7807 ProblemDetails (AppExceptionHandler) or a FluentValidation
-    // ValidationProblem -- both carry `title`, never `message`. Falling back to `message` first
-    // meant every real error (hold expired, slot taken, validation failure) surfaced as the bare
-    // HTTP status text instead of the server's actual reason. Only the ValidationProblem carries
-    // `errors` (per-field messages), which callers read via getFieldError() to bind a message to the
-    // specific form field that failed instead of just showing the generic title.
     const body = error.response?.data as { title?: string; detail?:string, message?: string; errors?: Record<string, string[]> } | undefined;
     throw new ApiError(error.response?.status ?? 0, body?.detail ?? body?.title ?? body?.message ?? error.message, body?.errors);
   },
@@ -130,4 +124,5 @@ const configuration = new Configuration();
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
 export const bookingApi = new BookingApi(configuration, API_BASE, axiosInstance);
 export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance);
+export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);

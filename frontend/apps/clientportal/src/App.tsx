@@ -8,6 +8,8 @@ import { PaymentStep } from './features/booking/PaymentStep';
 import { ScheduleStep } from './features/booking/ScheduleStep';
 import { SummaryStep } from './features/booking/SummaryStep';
 import { TreatmentsStep } from './features/booking/TreatmentsStep';
+import { ExplorePage } from './pages/ExplorePage';
+import { VenueDetailPage } from './pages/VenueDetailPage';
 import { BookPage } from './pages/BookPage';
 import { EmulatePage } from './pages/EmulatePage';
 import { LoginPage } from './pages/LoginPage';
@@ -60,9 +62,9 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link
       to={to}
-      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
+      className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 ${
         active
-          ? 'bg-primary/10 text-primary shadow-2xs'
+          ? 'bg-primary text-white shadow-xs font-bold'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
       }`}
     >
@@ -84,14 +86,15 @@ function Nav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
-      <nav aria-label="Main Navigation" className="mx-auto flex max-w-5xl items-center justify-between px-6 py-2.5">
+      <nav aria-label="Main Navigation" className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-6">
-          <Link to="/my-bookings" className="flex items-center gap-2 shrink-0">
-            <BrandMark label="Saloon" />
+          <Link to="/explore" className="flex items-center gap-2 shrink-0">
+            <BrandMark label="Fresha Saloon" />
           </Link>
           <div className="flex items-center gap-1">
+            <NavLink to="/explore">Explore</NavLink>
             <NavLink to="/my-bookings">My Bookings</NavLink>
-            <NavLink to="/book">Book</NavLink>
+            <NavLink to="/book">Book Now</NavLink>
           </div>
         </div>
 
@@ -110,7 +113,7 @@ function Nav() {
           <button
             type="button"
             onClick={logout}
-            className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition"
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition"
           >
             Sign out
           </button>
@@ -122,16 +125,32 @@ function Nav() {
 
 function AppRoutes() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <EmulationBanner />
       <Nav />
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<Navigate to="/my-bookings" replace />} />
+          <Route path="/" element={<Navigate to="/explore" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/emulate" element={<EmulatePage />} />
+          <Route
+            path="/explore"
+            element={
+              <RequireAuth>
+                <ExplorePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/venue/:locationId"
+            element={
+              <RequireAuth>
+                <VenueDetailPage />
+              </RequireAuth>
+            }
+          />
           <Route
             path="/book"
             element={
@@ -162,7 +181,7 @@ function AppRoutes() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/my-bookings" replace />} />
+          <Route path="*" element={<Navigate to="/explore" replace />} />
         </Routes>
       </main>
     </div>

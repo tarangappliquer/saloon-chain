@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError, CLIENT_PORTAL_URL, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminCustomer, AuthResponse } from '../../api/types';
@@ -18,6 +18,7 @@ export function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [emulatingId, setEmulatingId] = useState<number | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [deletingCustomer, setDeletingCustomer] = useState<AdminCustomer | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<AdminCustomer | null>(null);
@@ -110,15 +111,17 @@ export function CustomersPage() {
     }
   }
 
-  async function handleDelete(c: AdminCustomer) {
-    if (!window.confirm(`Delete customer "${c.name}"? This cannot be undone.`)) return;
+  async function handleConfirmDelete() {
+    if (!deletingCustomer) return;
     setError(null);
-    setSavingId(c.id);
+    setSavingId(deletingCustomer.id);
     try {
-      await adminCustomersApi.apiAdminCustomersIdDelete(c.id);
+      await adminCustomersApi.apiAdminCustomersIdDelete(deletingCustomer.id);
+      setDeletingCustomer(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete customer');
+    } finally {
       setSavingId(null);
     }
   }
@@ -146,6 +149,18 @@ export function CustomersPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deletingCustomer !== null}
+        title="Delete Customer Account"
+        description={`Are you sure you want to delete customer "${deletingCustomer?.name}" (${deletingCustomer?.email})? This action cannot be undone.`}
+        confirmLabel="Delete Customer"
+        cancelLabel="Keep Customer"
+        variant="danger"
+        loading={savingId === deletingCustomer?.id}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setDeletingCustomer(null)}
+      />
+
       <PageHeader
         title="Customer Directory"
         description="Manage customer accounts and launch client portal emulation sessions."
@@ -256,7 +271,7 @@ export function CustomersPage() {
                     <td className="px-6 py-4">
                       <Badge status={c.isActive ? 'Active' : 'Inactive'} />
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
                         {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
                           <Button
@@ -275,7 +290,7 @@ export function CustomersPage() {
                         <Button variant="ghost" size="sm" disabled={savingId === c.id} onClick={() => toggleActive(c)}>
                           {c.isActive ? 'Deactivate' : 'Activate'}
                         </Button>
-                        <Button variant="danger" size="sm" disabled={savingId === c.id} onClick={() => handleDelete(c)}>
+                        <Button variant="danger" size="sm" disabled={savingId === c.id} onClick={() => setDeletingCustomer(c)}>
                           Delete
                         </Button>
                       </div>

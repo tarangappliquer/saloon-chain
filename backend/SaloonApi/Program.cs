@@ -96,44 +96,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization(options =>
 {
-    // Broad-to-narrow: RootSuperAdmin is the platform owner (no scope at all), SuperAdmin/Admin are
-    // scoped to one chain (ICurrentUser.ChainId), Manager/Receptionist/Therapist/Other to one
-    // location (ICurrentUser.LocationId) -- see dbo.Users in 01_tables.sql. These policies gate
-    // *which endpoints* a role may call; per-record chain/location scoping is left to the endpoint/
-    // repository layer to check against ICurrentUser where it matters.
     options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
-    // Chains are the tenant boundary -- create/activate/delete, and creating a chain's first
-    // SuperAdmin/Admin, is RootSuperAdmin's alone (a chain's own SuperAdmin doesn't get to create
-    // more chains). Not exposed in the admin portal (single-saloon product decision) but kept
-    // enforced here so re-enabling multi-chain later is a frontend change, not a backend one.
-    // Layered on top of a route's existing AdminAccess requirement (see AdminCatalogEndpoints'
-    // chains routes), not a replacement for it -- ASP.NET Core ANDs multiple RequireAuthorization
-    // policies together, so the net effect of AdminAccess + ChainManagement is RootSuperAdmin only
-    // (RootSuperAdmin must therefore also be in AdminAccess below, or the AND never passes).
     options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
-    // A chain's own SuperAdmin may see and edit *their* chain's details (name/active state) -- just
-    // not create or delete chains, which stays RootSuperAdmin-only via ChainManagement above. Scoping
-    // to the caller's own chain is checked in AdminCatalogEndpoints' PUT /chains/{id} handler, same
-    // layering trick as ChainManagement.
     options.AddPolicy("ChainDetailsManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin)));
-    // Locations/Rooms are SuperAdmin/Admin's remit (within their own chain, see AdminCatalogEndpoints'
-    // ChainId checks), not Manager's/Receptionist's (they run one location day to day, not a creator
-    // of them) -- RootSuperAdmin can do it too, for any chain, same layering trick as ChainManagement above.
     options.AddPolicy("LocationManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
-    // A location's own Manager may edit *their* location's details -- not create/delete locations,
-    // which stays LocationManagement's remit above. Scoping to the caller's own location is checked
-    // in AdminCatalogEndpoints' PUT /locations/{id} handler.
     options.AddPolicy("LocationDetailsManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("AdminAccess", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
     options.AddPolicy("StaffAccess", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
-    // Creating a customer account is RootSuperAdmin/SuperAdmin/Admin's remit, not Manager's -- edit/
-    // delete/view stay under the Admin Customers group's own AdminAccess (Manager included there).
-    // Layered on top of that group requirement, same trick as ChainManagement/LocationManagement above.
     options.AddPolicy("CustomerManagement", p => p.RequireRole(
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
 });
@@ -183,8 +157,6 @@ builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
 var app = builder.Build();
 
-// Must run first: everything downstream (exception handler, HTTPS redirection, auth) needs the
-// scheme/remote-IP already corrected from X-Forwarded-* before it makes any decision on them.
 var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto

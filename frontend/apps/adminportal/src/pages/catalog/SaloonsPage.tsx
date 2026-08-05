@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Building2, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -22,6 +22,7 @@ export function SaloonsPage() {
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Locations modal state for selected chain
@@ -92,12 +93,13 @@ export function SaloonsPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!window.confirm('Are you sure you want to delete this saloon chain? This action cannot be undone.')) return;
+  async function handleConfirmDelete() {
+    if (deleteConfirmId === null) return;
     setError(null);
-    setDeletingId(id);
+    setDeletingId(deleteConfirmId);
     try {
-      await adminCatalogApi.apiAdminCatalogChainsIdDelete(id);
+      await adminCatalogApi.apiAdminCatalogChainsIdDelete(deleteConfirmId);
+      setDeleteConfirmId(null);
       await loadChains();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete saloon chain');
@@ -138,6 +140,18 @@ export function SaloonsPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirmId !== null}
+        title="Delete Saloon Chain"
+        description="Are you sure you want to delete this saloon chain? All associated location data and settings will be permanently removed. This action cannot be undone."
+        confirmLabel="Delete Saloon Chain"
+        cancelLabel="Keep Chain"
+        variant="danger"
+        loading={deletingId !== null}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setDeleteConfirmId(null)}
+      />
+
       <PageHeader
         title="Saloon Chains"
         description={
@@ -246,13 +260,13 @@ export function SaloonsPage() {
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left text-xs border-collapse min-w-[700px]">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3.5">ID</th>
                   <th className="px-6 py-3.5">Saloon Chain Name</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5 text-right">Actions</th>
+                  <th className="px-6 py-3.5 text-right whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -263,15 +277,15 @@ export function SaloonsPage() {
                     <td className="px-6 py-4">
                       <Badge status={c.isActive !== false ? 'Active' : 'Inactive'} />
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-6 py-4 text-right whitespace-nowrap min-w-max">
+                      <div className="flex items-center justify-end gap-2 shrink-0 w-max">
                         {isRootSuperAdmin && (
                           <Button
                             variant="primary"
                             size="sm"
                             onClick={() => handleNavigateToUsers(c.id)}
                           >
-                            <UserPlus className="h-3.5 w-3.5 mr-1" />
+                            <UserPlus className="h-3.5 w-3.5" />
                             Add User
                           </Button>
                         )}
@@ -280,7 +294,7 @@ export function SaloonsPage() {
                           size="sm"
                           onClick={() => handleOpenLocationsModal(c)}
                         >
-                          <MapPin className="h-3.5 w-3.5 mr-1" />
+                          <MapPin className="h-3.5 w-3.5" />
                           Locations
                         </Button>
                         {canEditChain && (
@@ -293,7 +307,7 @@ export function SaloonsPage() {
                             variant="danger"
                             size="sm"
                             disabled={deletingId === c.id}
-                            onClick={() => handleDelete(c.id)}
+                            onClick={() => setDeleteConfirmId(c.id)}
                           >
                             {deletingId === c.id ? 'Deleting...' : 'Delete'}
                           </Button>

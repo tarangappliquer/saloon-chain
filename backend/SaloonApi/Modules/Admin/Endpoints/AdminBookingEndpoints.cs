@@ -1,7 +1,6 @@
+using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Shared.Auth;
-using SaloonApi.Shared.Caching;
-using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
 
@@ -32,22 +31,17 @@ internal static class AdminBookingEndpoints
         // itself has no caller-scoping (it's the "override" proc precisely because it skips the
         // owns-this-booking check sp_Booking_Cancel does for a customer), so without this a Manager
         // could cancel any booking anywhere in the system just by guessing/incrementing the id.
-        group.MapPost("/{id:int}/cancel", async (int id, BookingRepository repo, ICurrentUser currentUser, IAvailabilityCache cache, SseBroadcaster sse) =>
+        group.MapPost("/{id:int}/cancel", async (int id, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
         {
             if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
                 return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
 
-            var affected = await repo.CancelAsAdminAsync(id);
-            foreach (var slot in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
-            {
-                await cache.InvalidateAsync(slot.LocationId, slot.WorkDate);
-                sse.Publish(SseBroadcaster.Group(slot.LocationId, slot.WorkDate), "slot-changed");
-            }
+            await bookingService.CancelAsAdminAsync(id);
             return Results.NoContent();
         }).RequireAuthorization("AdminAccess")
           .Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status401Unauthorized)
           .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("Cancel a customer's booking on their behalf and free its slot.");
+          .WithDescription("Cancel a customer's booking on their behalf, process refund, send email and free its slot.");
     }
 }

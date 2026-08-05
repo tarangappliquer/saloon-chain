@@ -577,10 +577,37 @@ function ScheduleGridView({ rooms, roster, date, timeSlots, flatTreatments }: Sc
                               </div>
                             </div>
                           ) : isOpen ? (
-                            /* OPEN AVAILABLE SLOT */
-                            <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2 text-center text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                              Available {opening ? `(${opening.categoryName})` : ''}
-                            </div>
+                            /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
+                            (() => {
+                              const categoryLabel = opening ? opening.categoryName : 'All Categories';
+                              const activeTherapists = (roster.therapistShifts || []).filter((s) => {
+                                const startStr = s.startTime.slice(0, 5);
+                                const endStr = s.endTime.slice(0, 5);
+                                return slot >= startStr && slot < endStr;
+                              });
+                              const therapistLabel = activeTherapists.length > 0
+                                ? activeTherapists.map((t) => t.therapistName).join(', ')
+                                : 'No Therapist Assigned';
+
+                              return (
+                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                      Available
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-[110px]" title={categoryLabel}>
+                                      {categoryLabel}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] font-medium text-foreground/90 flex items-center gap-1 pt-0.5">
+                                    <span className="text-muted-foreground text-[10px] uppercase font-bold">Staff:</span>
+                                    <span className={activeTherapists.length > 0 ? "font-semibold text-emerald-700 dark:text-emerald-300 truncate" : "text-muted-foreground italic text-[10px]"}>
+                                      {therapistLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()
                           ) : (
                             /* CLOSED ROOM SLOT */
                             <div className="rounded-md bg-muted/15 p-2 text-center text-[10px] text-muted-foreground/40 italic">

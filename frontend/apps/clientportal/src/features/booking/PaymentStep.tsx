@@ -1,24 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
-import type { AxiosResponse, AxiosError } from 'axios';
-import { axiosInstance } from '../../api/client';
+import type { AxiosError } from 'axios';
+import { paymentApi } from '../../api/client';
 import { BookingSummary } from './BookingSummary';
 import { useBookingFlow } from './useBookingFlow';
 
 export type PaymentProviderType = 'Stripe' | 'Cash' | 'InHouse';
-
-interface CreatePaymentIntentResponse {
-  paymentId: number;
-  bookingId: number;
-  amount: number;
-  currency: string;
-  provider: PaymentProviderType;
-  status: string;
-  clientSecret: string | null;
-  transactionId: string | null;
-  publishableKey: string | null;
-}
 
 export function PaymentStep() {
   const { bookingId } = useParams<{ bookingId: string }>();
@@ -42,14 +30,14 @@ export function PaymentStep() {
     if (selectedProvider === 'Stripe' && bookingId && !stripeClientSecret) {
       setIsProcessing(true);
       setPaymentError(null);
-      axiosInstance
-        .post<CreatePaymentIntentResponse>('/api/payments/create-intent', {
+      paymentApi
+        .apiPaymentsCreateIntentPost({
           bookingId: Number(bookingId),
           provider: 'Stripe',
         })
-        .then((res: AxiosResponse<CreatePaymentIntentResponse>) => {
-          setStripeClientSecret(res.data.clientSecret);
-          setStripePublishableKey(res.data.publishableKey);
+        .then((res) => {
+          setStripeClientSecret(res.data.clientSecret ?? null);
+          setStripePublishableKey(res.data.publishableKey ?? null);
         })
         .catch((err: AxiosError<{ title?: string }>) => {
           setPaymentError(err.response?.data?.title ?? err.message ?? 'Failed to initialize payment.');
@@ -63,12 +51,12 @@ export function PaymentStep() {
     setPaymentError(null);
     try {
       if (selectedProvider === 'Stripe') {
-        const res = await axiosInstance.post<CreatePaymentIntentResponse>('/api/payments/create-intent', {
+        const res = await paymentApi.apiPaymentsCreateIntentPost({
           bookingId: Number(bookingId),
           provider: 'Stripe',
         });
-        
-        await axiosInstance.post('/api/payments/confirm-manual', {
+
+        await paymentApi.apiPaymentsConfirmManualPost({
           paymentId: res.data.paymentId,
           success: true,
           transactionId: res.data.transactionId ?? `stripe_tx_${Date.now()}`,
@@ -77,29 +65,29 @@ export function PaymentStep() {
         const confirmed = await flow.confirmAll();
         if (confirmed) navigate('/book/confirmed');
       } else if (selectedProvider === 'Cash') {
-        const res = await axiosInstance.post<CreatePaymentIntentResponse>('/api/payments/create-intent', {
+        const res = await paymentApi.apiPaymentsCreateIntentPost({
           bookingId: Number(bookingId),
           provider: 'Cash',
         });
 
-        await axiosInstance.post('/api/payments/confirm-manual', {
+        await paymentApi.apiPaymentsConfirmManualPost({
           paymentId: res.data.paymentId,
           success: true,
-          transactionId: res.data.transactionId,
+          transactionId: res.data.transactionId ?? undefined,
         });
 
         const confirmed = await flow.confirmAll();
         if (confirmed) navigate('/book/confirmed');
       } else if (selectedProvider === 'InHouse') {
-        const res = await axiosInstance.post<CreatePaymentIntentResponse>('/api/payments/create-intent', {
+        const res = await paymentApi.apiPaymentsCreateIntentPost({
           bookingId: Number(bookingId),
           provider: 'InHouse',
         });
 
-        await axiosInstance.post('/api/payments/confirm-manual', {
+        await paymentApi.apiPaymentsConfirmManualPost({
           paymentId: res.data.paymentId,
           success: true,
-          transactionId: res.data.transactionId,
+          transactionId: res.data.transactionId ?? undefined,
         });
 
         const confirmed = await flow.confirmAll();

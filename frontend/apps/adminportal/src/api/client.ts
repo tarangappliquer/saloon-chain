@@ -7,6 +7,7 @@ import {
   AuthApi,
   CatalogApi,
   Configuration,
+  PaymentApi,
   ProfileApi,
   SchedulingApi,
 } from '@saloon/api-client';
@@ -124,10 +125,6 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response?.status === 401) onUnauthorized?.();
-    // Backend error bodies are RFC7807 ProblemDetails (AppExceptionHandler) or a FluentValidation
-    // ValidationProblem -- both carry `title`, never `message`. Only the latter carries `errors`
-    // (per-field validation messages), which callers read via getFieldError() to bind a message to
-    // the specific form field that failed instead of just showing the generic title.
     const body = error.response?.data as { title?: string; detail?:string, message?: string; errors?: Record<string, string[]> } | undefined;
     throw new ApiError(error.response?.status ?? 0, body?.detail?? body?.title ?? body?.message ?? error.message, body?.errors);
   },
@@ -141,5 +138,6 @@ export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance)
 export const adminCustomersApi = new AdminCustomersApi(configuration, API_BASE, axiosInstance);
 export const adminStaffApi = new AdminStaffApi(configuration, API_BASE, axiosInstance);
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
+export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);

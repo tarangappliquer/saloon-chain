@@ -436,6 +436,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- Enforce 48-hour (2-day) cancellation policy
+    DECLARE @EarliestStartTime DATETIME2;
+    SELECT @EarliestStartTime = MIN(StartTime)
+    FROM dbo.BookingTreatments
+    WHERE BookingId = @BookingId AND IsDelete = 0 AND StartTime IS NOT NULL;
+
+    IF @EarliestStartTime IS NOT NULL AND @EarliestStartTime <= DATEADD(HOUR, 48, SYSUTCDATETIME())
+        THROW 50005, 'Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.', 1;
+
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Infrastructure;
+using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.Realtime;
@@ -10,7 +11,7 @@ using SaloonApi.Shared.Realtime;
 namespace SaloonApi.Modules.Booking.Application;
 
 internal sealed class BookingService(
-    BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse, IBackgroundEmailQueue emailQueue)
+    BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse, IBackgroundEmailQueue emailQueue, PaymentRepository paymentRepo)
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
@@ -88,11 +89,6 @@ internal sealed class BookingService(
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
             await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
 
-        // Enqueue-only: this must stay fast (no SMTP I/O on the confirm request path) -- actual
-        // sending happens on EmailQueueBackgroundService. Details is a fresh read rather than
-        // something threaded through ConfirmAsync's return value because sp_Booking_Confirm's
-        // shape is deliberately lean (just enough for cache invalidation); the email needs
-        // names and each treatment's own therapist/time that read never carried.
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
         if (details is not null)
             emailQueue.Enqueue(BuildConfirmationEmail(details));
@@ -102,17 +98,12 @@ internal sealed class BookingService(
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
 
-        // Plain decimal, no currency symbol -- matches how prices are already shown everywhere
-        // else in the app (e.g. TreatmentsPage.tsx's toFixed(2)); nothing in this app configures
-        // a currency/locale, so "C" formatting would print an ambiguous generic currency sign.
-        // Each treatment gets its own row (name, time, therapist, price) since they're scheduled
-        // independently and may run at different times with different therapists.
         var treatmentRows = new StringBuilder();
         foreach (var t in details.Treatments)
         {
             var when = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
             treatmentRows.Append(CultureInfo.InvariantCulture,
-                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; {t.Price:F2}</li>");
+                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; ${t.Price:F2}</li>");
         }
 
         var html = $"""
@@ -133,11 +124,94 @@ internal sealed class BookingService(
             HtmlBody: html);
     }
 
+    private static EmailMessage BuildCancellationEmail(ConfirmationDetailsDto details)
+    {
+        var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
+
+        var treatmentRows = new StringBuilder();
+        foreach (var t in details.Treatments)
+        {
+            var when = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
+            treatmentRows.Append(CultureInfo.InvariantCulture,
+                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; ${t.Price:F2}</li>");
+        }
+
+        var html = $"""
+            <p>Hi {details.CustomerName},</p>
+            <p>Your appointment has been cancelled.</p>
+            <p><strong>Appointment number: APT-{appointmentNumber}</strong></p>
+            <ul>
+              <li><strong>Location:</strong> {details.LocationName}</li>
+            </ul>
+            <p><strong>Cancelled Treatments:</strong></p>
+            <ul>{treatmentRows}</ul>
+            <p>If you were charged, a full refund has been issued to your original payment method.</p>
+            <p>If you have any questions, please contact our support team.</p>
+            """;
+
+        return new EmailMessage(
+            To: [new EmailAddress(details.CustomerEmail, details.CustomerName)],
+            Subject: $"Appointment cancelled - APT-{appointmentNumber}",
+            HtmlBody: html);
+    }
+
     public async Task CancelAsync(int bookingId, int customerId)
     {
+        var details = await repo.GetConfirmationDetailsAsync(bookingId);
+
+        var booking = await repo.GetByIdAsync(bookingId, customerId);
+        if (booking is not null)
+        {
+            var scheduledTimes = booking.Treatments
+                .Where(t => t.StartTime.HasValue)
+                .Select(t => t.StartTime!.Value)
+                .ToList();
+
+            if (scheduledTimes.Count > 0)
+            {
+                var earliest = scheduledTimes.Min();
+                // 2 days (48 hours) cancellation policy check
+                if (earliest <= DateTime.UtcNow.AddDays(2))
+                {
+                    throw new InvalidOperationException("Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.");
+                }
+            }
+        }
+
         var affected = await repo.CancelAsync(bookingId, customerId);
+
+        // Refund flow: Automatically process refund for any completed payments for this booking
+        var payments = await paymentRepo.GetByBookingIdAsync(bookingId);
+        foreach (var p in payments.Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) || p.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase)))
+        {
+            await paymentRepo.UpdateStatusAsync(p.Id, "Refunded", p.TransactionId, failureReason: "Automated refund: Booking cancelled >48h prior to appointment");
+        }
+
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
             await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+
+        if (details is not null)
+            emailQueue.Enqueue(BuildCancellationEmail(details));
+    }
+
+    public async Task CancelAsAdminAsync(int bookingId)
+    {
+        var details = await repo.GetConfirmationDetailsAsync(bookingId);
+
+        var affected = await repo.CancelAsAdminAsync(bookingId);
+
+        // Refund flow: Automatically process refund for any completed payments for this booking
+        var payments = await paymentRepo.GetByBookingIdAsync(bookingId);
+        foreach (var p in payments.Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) || p.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase)))
+        {
+            await paymentRepo.UpdateStatusAsync(p.Id, "Refunded", p.TransactionId, failureReason: "Automated refund: Booking cancelled by admin");
+        }
+
+        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+
+        if (details is not null)
+            emailQueue.Enqueue(BuildCancellationEmail(details));
     }
 
     public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null) => repo.GetMineAsync(customerId, chainId);

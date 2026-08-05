@@ -170,3 +170,16 @@ export interface Profile {
   role: UserRole;
   photoPath: string | null;
 }
+
+export interface PaymentRecord {
+  id: number;
+  bookingId: number;
+  amount: number;
+  currency: string;
+  provider: string;
+  paymentMethod: string;
+  status: string;
+  transactionId: string | null;
+  failureReason: string | null;
+  createdDate: string;
+}
