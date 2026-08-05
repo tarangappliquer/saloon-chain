@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader } from '@saloon/ui';
 import { API_BASE, adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { TimeInput } from '../../components/TimeInput';
+import { DateInput } from '../../components/DateInput';
 
 const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
 
@@ -304,8 +306,8 @@ export function SchedulingPage() {
 
       {/* Control bar: Location, Date, Shift Type & Time Window */}
       <Card>
-        <CardContent className="py-4">
-          <div className="flex flex-wrap items-end gap-4">
+        <CardContent className="py-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 items-end gap-3">
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</span>
                 <Select
@@ -315,15 +317,14 @@ export function SchedulingPage() {
                   onChange={(picked: SingleValue<SelectOption>) => changeLocation(picked?.value ?? '')}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
                   unstyled
-                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
+                  classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[160px]')}
                 />
               </div>
-              <Input
-                type="date"
+              <DateInput
                 label="Date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="h-8 text-xs min-w-[140px]"
+                className="min-w-full"
               />
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift Type</span>
@@ -332,25 +333,23 @@ export function SchedulingPage() {
                   onChange={(picked: SingleValue<SelectOption>) => handleShiftTypeChange(picked?.value ?? shiftType)}
                   options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
                   unstyled
-                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[130px]')}
+                  classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[130px]')}
                 />
               </div>
-              <Input
+              <TimeInput
                 required
-                type="time"
                 label="Start Time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="h-8 text-xs w-[110px]"
+                className="w-full"
               />
-              <Input
+              <TimeInput
                 required
-                type="time"
                 label="End Time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 error={getFieldError(shiftSubmitError, 'endTime')}
-                className="h-8 text-xs w-[110px]"
+                className="w-full"
               />
           </div>
         </CardContent>

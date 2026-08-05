@@ -1,1 +1,3 @@
 @import "@saloon/ui/styles/globals.css";
+@import "timepicker-ui/main.css";
+@import 'timepicker-ui/theme-dark.css';

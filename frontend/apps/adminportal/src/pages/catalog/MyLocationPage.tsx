@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Loading
 import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Location } from '../../api/types';
+import { TimeInput } from '../../components/TimeInput';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -186,16 +187,14 @@ export function MyLocationPage() {
                   onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
                   error={getFieldError(submitError, 'timeZoneId')}
                 />
-                <Input
+                <TimeInput
                   required
-                  type="time"
                   label="Opening Time"
                   value={form.openTime}
                   onChange={(e) => setForm({ ...form, openTime: e.target.value })}
                 />
-                <Input
+                <TimeInput
                   required
-                  type="time"
                   label="Closing Time"
                   value={form.closeTime}
                   onChange={(e) => setForm({ ...form, closeTime: e.target.value })}

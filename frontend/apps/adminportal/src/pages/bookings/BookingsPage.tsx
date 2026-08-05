@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import Select, { type SingleValue } from 'react-select';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, ApiError, paymentApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, PaymentRecord } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { DateInput } from '../../components/DateInput';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -333,11 +334,10 @@ export function BookingsPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase text-muted-foreground">Date:</span>
-              <Input
-                type="date"
+              <DateInput
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="h-8 text-xs min-w-[140px]"
+                className="min-w-[140px]"
               />
             </div>
           </div>

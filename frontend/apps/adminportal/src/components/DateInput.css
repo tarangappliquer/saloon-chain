@@ -1,0 +1,96 @@
+/* Restyle react-datepicker's popup to match this app's design tokens (see
+   packages/ui/src/styles/globals.css) instead of its default blue/Helvetica look.
+   Uses the same --color-* CSS variables Tailwind reads, so light/dark and accent
+   follow automatically -- no JS theme logic needed here. */
+.react-datepicker-wrapper{
+  width: 100%;
+}
+.react-datepicker {
+  font-family: inherit;
+  font-size: 0.75rem;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.react-datepicker-popper {
+  z-index: 50;
+}
+
+.react-datepicker__triangle {
+  display: none;
+}
+
+.react-datepicker__header {
+  background-color: var(--color-accent);
+  border-bottom: 1px solid var(--color-border);
+  padding-top: 0.625rem;
+}
+
+.react-datepicker__current-month,
+.react-datepicker-time__header {
+  color: var(--color-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.react-datepicker__day-name {
+  color: var(--color-muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.react-datepicker__navigation-icon::before {
+  border-color: var(--color-muted-foreground);
+}
+
+.react-datepicker__navigation:hover .react-datepicker__navigation-icon::before {
+  border-color: var(--color-foreground);
+}
+
+.react-datepicker__day {
+  color: var(--color-foreground);
+  border-radius: 0.5rem;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.react-datepicker__day:hover {
+  background-color: var(--color-accent);
+  color: var(--color-accent-foreground);
+}
+
+.react-datepicker__day--today {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+.react-datepicker__day--selected:hover,
+.react-datepicker__day--keyboard-selected:hover {
+  background-color: var(--color-primary-hover, var(--color-primary));
+}
+
+.react-datepicker__day--outside-month {
+  color: var(--color-muted-foreground);
+  opacity: 0.5;
+}
+
+.react-datepicker__day--disabled,
+.react-datepicker__day--excluded {
+  color: var(--color-muted-foreground);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.react-datepicker__day--disabled:hover,
+.react-datepicker__day--excluded:hover {
+  background-color: transparent;
+}
