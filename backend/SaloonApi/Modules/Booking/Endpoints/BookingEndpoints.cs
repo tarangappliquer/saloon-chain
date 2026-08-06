@@ -139,10 +139,11 @@ internal static class BookingEndpoints
 
         // Anonymous: the event carries no customer data, just "something changed for this
         // location+date, refetch" -- and EventSource can't send an Authorization header anyway.
-        app.MapGet("/api/booking/stream", async (int locationId, DateOnly date, HttpContext ctx, SseBroadcaster sse, CancellationToken ct) =>
+        app.MapGet("/api/booking/stream", async (int locationId, DateOnly? date, HttpContext ctx, SseBroadcaster sse, CancellationToken ct) =>
         {
             ctx.Response.Headers.ContentType = "text/event-stream";
-            var (id, reader) = sse.Subscribe(SseBroadcaster.Group(locationId, date));
+            var groupKey = date.HasValue ? SseBroadcaster.Group(locationId, date.Value) : SseBroadcaster.LocationGroup(locationId);
+            var (id, reader) = sse.Subscribe(groupKey);
             try
             {
                 await foreach (var message in reader.ReadAllAsync(ct))

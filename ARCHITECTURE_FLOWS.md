@@ -1,6 +1,6 @@
 # SaloonChains - Architecture, Logic & System Flow Reference
 
-This document provides a comprehensive reference of system architecture, data models, business logic, and runtime flows for AI coding agents working on the SaloonChains repository.
+This document provides a comprehensive reference of system architecture, data models, business logic, database procedures, real-time streaming, and runtime flows for AI coding agents working on the SaloonChains repository.
 
 ---
 
@@ -40,7 +40,7 @@ SaloonChains is a multi-tenant salon management and customer booking web platfor
   - `apps/clientportal`: Public venue explore, multi-step booking wizard, Stripe checkout, customer profile, and booking history.
   - `packages/ui`: Shared Tailwind CSS component library (`@saloon/ui`).
   - `packages/api-client`: Auto-generated TypeScript-Axios client (`@saloon/api-client`).
-- **Database Scripts**: `db/` (Schema definitions in `01_tables.sql`, `02_indexes.sql`, `03_procs.sql`, `04_seed.sql`).
+- **Database Scripts**: `db/` (Schema definitions in `01_tables.sql`, `02_types.sql`, `03_procs.sql`, `04_seed.sql`, `migrations/`).
 
 ---
 
@@ -55,48 +55,76 @@ SaloonChains is a multi-tenant salon management and customer booking web platfor
 
 ---
 
-## 3. Real-Time Admin Dashboard Flow
+## 3. Open Room & Open Date Domain Rules
 
-### Endpoint & Data Source:
-- **Endpoint**: `GET /api/admin/dashboard?startDate={yyyy-MM-dd}&endDate={yyyy-MM-dd}`
-- **Handler**: `AdminDashboardEndpoints.cs`
-- **Stored Procedure**: `dbo.sp_Admin_GetDashboardStats`
+### Core Domain Rules:
+1. **Opened Room**: A room is considered **Opened** for a shift/date if and only if:
+   - **Room Status**: Room is active and not deleted (`r.IsDelete = 0 AND r.IsActive = 1`).
+   - **Category Assigned**: Treatment category is assigned to the room for that shift/date (`dbo.RoomCategoryAssignments`).
+   - **Therapist Assigned**: Active therapist is assigned to work that shift/date (`dbo.ShiftAssignments` + `dbo.TherapistProfile`).
+2. **Opened Date**: A date is considered **Opened** for a location if and only if:
+   - In at least one shift (e.g. Morning, Evening, or FullDay) on that date, at least one room is Opened (satisfying Rule 1).
 
-### Business Logic & SQL Filtering:
-1. Accepts optional `@StartDate` and `@EndDate` (defaults to current date if omitted).
-2. Calculates:
-   - **Today's Revenue**: Total sum of paid bookings/treatments within the selected date range.
-   - **Yesterday's Revenue**: Total sum of paid bookings/treatments for the prior matching date period (used for percentage trend comparison).
-   - **Appointments Today**: Total count of bookings scheduled for the selected range.
-   - **Appointments In-Progress**: Count of bookings currently in active service (`InService`).
-   - **Active Therapists**: Count of unique therapists assigned to active shifts on the selected date.
-   - **Upcoming Appointments**: List of scheduled appointments sorted by time slot.
-3. Filtering automatically adapts based on user role (`RootSuperAdmin` = no filter, `Admin`/`SuperAdmin` = `@ChainId`, `Manager` = `@LocationId`).
-
-### UI Date Controls:
-- Located inside the **Shoppey Calendar Diary** card header on `DashboardPage.tsx`.
-- Supports **📅 Single Date** mode (selects a single day) and **🗓 Date Range** mode (selects Start Date and End Date).
+### SQL Stored Procedure Enforcement:
+- `dbo.sp_Booking_GetLocationOpenDates`: Joins `dbo.RoomCategoryAssignments`, `dbo.Rooms`, `dbo.ShiftAssignments`, and `dbo.TherapistProfile` to return only dates matching both category AND therapist shift criteria.
+- `dbo.sp_Booking_HasLocationRoomOpenings`: Checks for active room openings backed by therapist shift assignments.
+- **Weekly Mask Override**: In `BookingService.cs`, explicitly opened dates (`openDates.Contains(d)`) override the location default `WorkingDaysMask`.
 
 ---
 
-## 4. Multi-Step Booking & Hold Expiry Flow
+## 4. 15-Minute Slot Calculation & Grid Math
 
-```
-┌──────────────┐     ┌────────────────┐     ┌──────────────┐     ┌──────────────┐
-│ Select Venue │ ──► │ Pick Treatments│ ──► │ Pick Schedule│ ──► │  Stripe Pay  │ ──► Confirmed
-└──────────────┘     └────────────────┘     └──────────────┘     └──────────────┘
-```
+### Slot Units:
+- Every duration slot represents **15 minutes** (`slotMinutes = 15`).
+- Treatment duration math across database, backend `SlotCalculator`, and frontend displays: `durationSlots * 15` minutes.
 
-1. **Draft Creation**: `dbo.sp_Booking_CreateDraft` initializes a booking in `Draft` status.
-2. **Treatment Reservation**: `dbo.sp_Booking_ScheduleTreatment` assigns a room, therapist, start time, and end time. Sets a hold timestamp `ExpiresAt` (typically 15 minutes).
-3. **Background Hold Sweep**:
-   - `HoldExpirySweepService` runs every 30 seconds.
-   - Calls `dbo.sp_Booking_ExpireStaleHolds`.
-   - Clears expired room/therapist/time holds on unconfirmed treatments so other customers can book those slots. The draft itself remains intact for re-scheduling.
+### Candidate Start Walk:
+- `SlotCalculator.ComputeAvailableSlots` walks candidate start times in 15-minute increments (`00:00`, `00:15`, `00:30`, `00:45`, etc.).
+- Off-interval interval overlap formula for 15-minute grid alignment:
+  `slot < t.endTimeStr && nextSlot > t.startTimeStr`
 
 ---
 
-## 5. Stripe Checkout & Session Verification Flow
+## 5. Cascade Deletion Policy for Bookings
+
+- Deleting a booking entry from `[dbo].[Bookings]` automatically deletes all associated child rows in `[dbo].[BookingTreatments]` and `[dbo].[Payments]` via foreign key `ON DELETE CASCADE`:
+  - `CONSTRAINT FK_BookingTreatments_Bookings FOREIGN KEY (BookingId) REFERENCES dbo.Bookings(Id) ON DELETE CASCADE`
+  - `CONSTRAINT FK_Payments_Bookings FOREIGN KEY (BookingId) REFERENCES dbo.Bookings(Id) ON DELETE CASCADE`
+- **Transactional Procedure**: `dbo.sp_Booking_Delete` deletes booking records cleanly within a single database transaction.
+
+---
+
+## 6. Real-Time SSE Fan-Out Architecture
+
+### Backend Event Broadcasting:
+- **`SseBroadcaster.cs`**: Manages Server-Sent Events fan-out to connected clients.
+- **Location-Wide Broadcast**: `sse.Publish(locationId, workDate, "slot-changed")` notifies both location-wide subscribers (`LocationGroup(locationId)`) and date-specific subscribers (`Group(locationId, date)`).
+- **Anonymous Endpoint**: `GET /api/booking/stream?locationId={id}&date={yyyy-MM-dd}` (`date` is optional).
+
+### Client Portal Reactive Listener:
+- **`useAvailabilityStream.ts`**: Subscribes to location-wide SSE stream.
+- **`ScheduleStep.tsx`**: On receiving a `slot-changed` event, automatically re-runs `loadDates` and `loadSlots` in real time, lighting up newly opened calendar dates and updated time slots with zero manual page refreshes.
+
+---
+
+## 7. Multi-Treatment Selection & Validation Flow
+
+```
+┌──────────────────────────┐     ┌────────────────────────────┐     ┌────────────────────────┐
+│ Multi-Treatment Selection│ ──► │ Available Dates Filtering  │ ──► │ Slot Picker Validation │
+└──────────────────────────┘     └────────────────────────────┘     └────────────────────────┘
+```
+
+1. **Available Dates Multi-Treatment Verification**:
+   - `GET /api/booking/available-dates?locationId=X&treatmentIds=1,2,3`: `BookingService.GetAvailableDatesAsync` verifies that **every** selected treatment has `> 0` available slots for each date in the window.
+2. **Pre-Addition Popup Modal**:
+   - In `ScheduleStep.tsx`, attempting to add a new treatment intercepts the action (`handleAddTreatment`). If the target treatment has 0 slots on the currently selected date, displays a validation popup offering **"Switch Date & Add Treatment"** or **"Cancel"**.
+3. **Unserviceable Warning Banners**:
+   - `SlotPicker.tsx` displays warning banners with inline `"Remove [Treatment]"` buttons if any selected treatment is unserviceable on the selected date.
+
+---
+
+## 8. Stripe Checkout & Session Verification Flow
 
 ```
 Client Portal                   SaloonApi                     Stripe API
@@ -120,22 +148,17 @@ Client Portal                   SaloonApi                     Stripe API
      │◄── Return Succeeded Result ──│     (Status = 'Confirmed')   │
 ```
 
-### Key Workflow Details:
 1. **Checkout Redirect**: `StripePaymentGateway.cs` constructs a Stripe Checkout Session with `SuccessUrl` set to:
    `SuccessUrl = $"{baseUrl}/book/confirmed?bookingId={bookingId}&session_id={{CHECKOUT_SESSION_ID}}"`
-2. **Stripe Webhooks**: `POST /api/payments/stripe-webhook` listens for asynchronous webhook events (`checkout.session.completed`, `payment_intent.succeeded`, `charge.succeeded`). Disables API version mismatch strict exceptions using `throwOnApiVersionMismatch: false` in `EventUtility.ConstructEvent`.
+2. **Stripe Webhooks**: `POST /api/payments/stripe-webhook` listens for asynchronous webhook events (`checkout.session.completed`, `payment_intent.succeeded`, `charge.succeeded`).
 3. **Client Session Verification**:
-   - When returning to `/book/confirmed?bookingId=X&session_id=cs_test_Y`, `ConfirmedStep.tsx` displays a **Verifying Payment** state.
-   - Calls `POST /api/payments/verify-checkout-session` (`paymentApi.apiPaymentsVerifyCheckoutSessionPost`).
-   - `PaymentService.VerifyCheckoutSessionAsync` fetches the session directly from Stripe API via `SessionService.GetAsync(sessionId)`.
-   - If session payment status is `paid`:
-     - Updates payment record status to `Succeeded`.
-     - Invokes `dbo.sp_Booking_Confirm` to transition booking from `Draft` to `Confirmed`.
-   - `ConfirmedStep.tsx` renders the **Appointment Confirmed!** view.
+   - `ConfirmedStep.tsx` calls `POST /api/payments/verify-checkout-session`.
+   - `PaymentService.VerifyCheckoutSessionAsync` verifies payment status directly with Stripe API.
+   - Invokes `dbo.sp_Booking_Confirm` to transition booking from `Draft` to `Confirmed`.
 
 ---
 
-## 6. Mandatory Agent Policies & Rules
+## 9. Mandatory Agent Policies & Rules
 
 ### Direct Axios Rule:
 - **DO NOT use `axiosInstance` directly** for API calls in frontend applications.
@@ -143,8 +166,6 @@ Client Portal                   SaloonApi                     Stripe API
 
 ### OpenAPI Generation Workflow:
 When updating backend minimal APIs or regenerating `@saloon/api-client`:
-1. Start backend service on a non-default port (e.g. `dotnet run --urls "http://localhost:5199"`).
+1. Start backend service on a non-default port (`dotnet run --urls "http://localhost:5199"`).
 2. Run `npx @openapitools/openapi-generator-cli generate -i http://localhost:5199/openapi/v1.json -g typescript-axios -o ./packages/api-client/src` from `frontend/`.
 3. Immediately kill the background process (`taskkill /F /PID <pid>`) and release port `5199`.
-
----

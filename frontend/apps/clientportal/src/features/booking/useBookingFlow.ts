@@ -125,7 +125,7 @@ export function useBookingFlow(bookingId: number) {
     try {
       const now = new Date();
       const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30);
+      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
       const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
       const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
       const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to, tIdsStr, bookingId);

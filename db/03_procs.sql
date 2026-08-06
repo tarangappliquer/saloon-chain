@@ -136,10 +136,10 @@ BEGIN
                 WHERE tp.IsDelete = 0 AND tp.IsActive = 1
                     AND (tp.LocationId = @LocationId OR tp.LocationId IS NULL)
                     AND NOT EXISTS (
-              SELECT 1
-                    FROM dbo.ShiftAssignments sa2
-                    WHERE sa2.LocationId = @LocationId AND sa2.WorkDate = @WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
-          )
+                        SELECT 1
+                        FROM dbo.ShiftAssignments sa2
+                        WHERE sa2.TherapistId = tp.Id AND sa2.WorkDate = @WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
+                    )
         )
     -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift explicitly
     -- assigned to a room (the normal case now) only pairs with that same room.
@@ -173,6 +173,13 @@ BEGIN
         SELECT 1
         FROM dbo.RoomCategoryAssignments rca
             JOIN dbo.Rooms r ON r.Id = rca.RoomId
+            JOIN dbo.ShiftAssignments sa ON sa.LocationId = @LocationId
+                AND sa.WorkDate = rca.WorkDate
+                AND (sa.ShiftType = rca.ShiftType OR sa.ShiftType = 'FullDay' OR rca.ShiftType = 'FullDay')
+                AND (sa.RoomId IS NULL OR sa.RoomId = r.Id)
+                AND sa.IsDelete = 0 AND sa.IsActive = 1
+            JOIN dbo.TherapistProfile tp ON tp.Id = sa.TherapistId
+                AND tp.IsDelete = 0 AND tp.IsActive = 1
         WHERE r.LocationId = @LocationId
           AND r.IsDelete = 0 AND r.IsActive = 1
           AND rca.IsDelete = 0 AND rca.IsActive = 1
@@ -190,6 +197,13 @@ BEGIN
     SELECT DISTINCT rca.WorkDate
     FROM dbo.RoomCategoryAssignments rca
         JOIN dbo.Rooms r ON r.Id = rca.RoomId
+        JOIN dbo.ShiftAssignments sa ON sa.LocationId = @LocationId
+            AND sa.WorkDate = rca.WorkDate
+            AND (sa.ShiftType = rca.ShiftType OR sa.ShiftType = 'FullDay' OR rca.ShiftType = 'FullDay')
+            AND (sa.RoomId IS NULL OR sa.RoomId = r.Id)
+            AND sa.IsDelete = 0 AND sa.IsActive = 1
+        JOIN dbo.TherapistProfile tp ON tp.Id = sa.TherapistId
+            AND tp.IsDelete = 0 AND tp.IsActive = 1
     WHERE r.LocationId = @LocationId
       AND r.IsDelete = 0 AND r.IsActive = 1
       AND rca.IsDelete = 0 AND rca.IsActive = 1

@@ -31,7 +31,10 @@ internal sealed class BookingService(
         for (var d = from; d <= to; d = d.AddDays(1))
         {
             var bit = ((int)d.DayOfWeek + 6) % 7; // Mon=bit0 .. Sun=bit6
-            if ((mask & (1 << bit)) == 0 || holidays.Contains(d)) continue;
+            var isDayMaskAllowed = (mask & (1 << bit)) != 0;
+            var isExplicitlyOpened = openDates != null && openDates.Contains(d);
+
+            if ((!isDayMaskAllowed && !isExplicitlyOpened) || holidays.Contains(d)) continue;
             if (openDates != null && !openDates.Contains(d)) continue;
 
             if (treatmentIds != null && treatmentIds.Count > 0)
@@ -248,6 +251,6 @@ internal sealed class BookingService(
     private async Task InvalidateAndNotifyAsync(int locationId, DateOnly date)
     {
         await cache.InvalidateAsync(locationId, date);
-        sse.Publish(SseBroadcaster.Group(locationId, date), "slot-changed");
+        sse.Publish(locationId, date, "slot-changed");
     }
 }

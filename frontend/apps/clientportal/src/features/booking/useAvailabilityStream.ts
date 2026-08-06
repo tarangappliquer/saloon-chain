@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { API_BASE } from '../../api/client';
 
 // Anonymous, unauthenticated: the event carries no data beyond "refetch this location+date".
-export function useAvailabilityStream(locationId: number | null, date: string | null, onChange: () => void) {
+export function useAvailabilityStream(locationId: number | null, date: string | null | undefined, onChange: () => void) {
   // Callers typically pass a fresh closure every render (useBookingFlow returns a new object each
   // time, so anything derived from it is a new identity too). Keeping onChange out of the effect's
   // deps -- reading it via a ref instead -- means the EventSource only reconnects when the
@@ -12,8 +12,11 @@ export function useAvailabilityStream(locationId: number | null, date: string | 
   onChangeRef.current = onChange;
 
   useEffect(() => {
-    if (!locationId || !date) return;
-    const source = new EventSource(`${API_BASE}/api/booking/stream?locationId=${locationId}&date=${date}`);
+    if (!locationId) return;
+    const url = date
+      ? `${API_BASE}/api/booking/stream?locationId=${locationId}&date=${date}`
+      : `${API_BASE}/api/booking/stream?locationId=${locationId}`;
+    const source = new EventSource(url);
     const handler = () => onChangeRef.current();
     source.addEventListener('slot-changed', handler);
     return () => source.close();

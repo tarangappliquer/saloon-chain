@@ -111,10 +111,16 @@ export function ScheduleStep() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [treatmentIdsKey, locationId, date, loadSlots]);
 
-  const reloadSlots = () => {
-    if (booking && locationId && date) loadSlots(locationId, date, booking.treatments.map((t) => t.treatmentId));
+  const handleRealtimeUpdate = () => {
+    if (booking && locationId) {
+      const tIds = booking.treatments.map((t) => t.treatmentId);
+      loadDates(locationId, tIds, Number(bookingId));
+      if (date) {
+        loadSlots(locationId, date, tIds);
+      }
+    }
   };
-  useAvailabilityStream(locationId, date, reloadSlots);
+  useAvailabilityStream(locationId, date, handleRealtimeUpdate);
 
   if (!booking) return null;
 
