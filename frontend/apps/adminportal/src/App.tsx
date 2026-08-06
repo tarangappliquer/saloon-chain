@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, memo, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
@@ -44,7 +44,7 @@ function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNo
   return roles.includes(user.role) ? <>{children}</> : <Navigate to="/" replace />;
 }
 
-function NavLink({ to, children }: { to: string; children: ReactNode }) {
+const NavLink = memo(function NavLink({ to, children }: { to: string; children: ReactNode }) {
   const location = useLocation();
   const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
   return (
@@ -59,12 +59,11 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
       {children}
     </Link>
   );
-}
+});
 
-function Nav() {
+const Nav = memo(function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
-  // const canManageCatalog = ADMIN_ACCESS.includes(user.role);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
@@ -77,7 +76,6 @@ function Nav() {
             <NavLink to="/">Dashboard</NavLink>
             {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to="/catalog/saloons">Saloons</NavLink>}
             {user.role === 'Manager' && <NavLink to="/my-location">My Location</NavLink>}
-            {/* {canManageCatalog && <NavLink to="/staff/therapists">Therapists</NavLink>} */}
             <NavLink to="/bookings">Bookings</NavLink>
             {ADMIN_ACCESS.includes(user.role) && <NavLink to="/customers">Customers</NavLink>}
           </div>
@@ -102,7 +100,7 @@ function Nav() {
       </nav>
     </header>
   );
-}
+});
 
 function AppRoutes() {
   const { refetch } = usePortalConfig();

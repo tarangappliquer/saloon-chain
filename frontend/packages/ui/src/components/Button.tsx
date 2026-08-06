@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "../lib/utils";
@@ -36,7 +37,7 @@ export interface ButtonProps
   children?: ReactNode;
 }
 
-export function Button({
+function ButtonBase({
   children,
   variant = "primary",
   size = "md",
@@ -52,5 +53,7 @@ export function Button({
     </button>
   );
 }
+
+export const Button = memo(ButtonBase);
 
 export { buttonVariants };

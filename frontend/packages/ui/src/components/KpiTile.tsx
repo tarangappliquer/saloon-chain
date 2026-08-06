@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 export interface KpiTileProps {
   title: string;
@@ -9,7 +9,7 @@ export interface KpiTileProps {
   subtext?: string;
 }
 
-export function KpiTile({ title, value, change, changeType = "neutral", icon, subtext }: KpiTileProps) {
+function KpiTileBase({ title, value, change, changeType = "neutral", icon, subtext }: KpiTileProps) {
   const getChangeBadgeColor = () => {
     switch (changeType) {
       case "positive":
@@ -39,3 +39,5 @@ export function KpiTile({ title, value, change, changeType = "neutral", icon, su
     </div>
   );
 }
+
+export const KpiTile = memo(KpiTileBase);

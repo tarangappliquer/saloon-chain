@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { Scissors } from "lucide-react";
 
-export function BrandMark({ label = "SaloonChains", subtitle }: { label?: string; subtitle?: string }) {
+function BrandMarkBase({ label = "SaloonChains", subtitle }: { label?: string; subtitle?: string }) {
   return (
     <div className="flex items-center gap-3">
       <div className="brand-mark flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-md">
@@ -15,3 +16,5 @@ export function BrandMark({ label = "SaloonChains", subtitle }: { label?: string
     </div>
   );
 }
+
+export const BrandMark = memo(BrandMarkBase);

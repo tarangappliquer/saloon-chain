@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, memo, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
@@ -25,7 +25,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
-function EmulationBanner() {
+const EmulationBanner = memo(function EmulationBanner() {
   const { user, logout } = useAuth();
   const { adminPortalUrl } = usePortalConfig();
   if (!user?.isEmulated) return null;
@@ -57,9 +57,9 @@ function EmulationBanner() {
       </button>
     </div>
   );
-}
+});
 
-function NavLink({ to, children }: { to: string; children: ReactNode }) {
+const NavLink = memo(function NavLink({ to, children }: { to: string; children: ReactNode }) {
   const location = useLocation();
   const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
   return (
@@ -73,9 +73,9 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
       {children}
     </Link>
   );
-}
+});
 
-function Nav() {
+const Nav = memo(function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
 
@@ -123,7 +123,7 @@ function Nav() {
       </nav>
     </header>
   );
-}
+});
 
 function AppRoutes() {
   const { refetch } = usePortalConfig();
