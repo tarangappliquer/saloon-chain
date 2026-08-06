@@ -5,7 +5,7 @@ namespace SaloonApi.Shared.Caching;
 
 // Cache-aside only: the SP under sp_getapplock is the correctness boundary, this just saves a
 // round-trip to SQL Server for repeated availability reads. Invalidated on every write.
-internal sealed class RedisAvailabilityCache(IConnectionMultiplexer redis, ILogger<RedisAvailabilityCache> logger) : IAvailabilityCache
+internal sealed class RedisAvailabilityCache(IRedisConnectionProvider connectionProvider, ILogger<RedisAvailabilityCache> logger) : IAvailabilityCache
 {
     private static string DateKey(int locationId, DateOnly date) => $"avail:{locationId}:{date:yyyy-MM-dd}";
 
@@ -19,6 +19,9 @@ internal sealed class RedisAvailabilityCache(IConnectionMultiplexer redis, ILogg
 
     public async Task<string?> GetAsync(int locationId, DateOnly date, IReadOnlyList<int> treatmentIds)
     {
+        IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
+        if (redis is null) return null;
+
 #pragma warning disable CA1031
         try
         {
@@ -35,6 +38,9 @@ internal sealed class RedisAvailabilityCache(IConnectionMultiplexer redis, ILogg
 
     public async Task SetAsync(int locationId, DateOnly date, IReadOnlyList<int> treatmentIds, string json, TimeSpan ttl)
     {
+        IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
+        if (redis is null) return;
+
 #pragma warning disable CA1031
         try
         {
@@ -52,6 +58,9 @@ internal sealed class RedisAvailabilityCache(IConnectionMultiplexer redis, ILogg
 
     public async Task InvalidateAsync(int locationId, DateOnly date)
     {
+        IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
+        if (redis is null) return;
+
 #pragma warning disable CA1031
         try
         {
