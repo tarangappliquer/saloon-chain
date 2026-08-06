@@ -7,7 +7,8 @@ namespace SaloonApi.Modules.Identity.Infrastructure;
 
 internal sealed record UserRecord(
     int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
-    UserRole Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId);
+    UserRole Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
+    string? PhotoPath);
 
 internal sealed record StaffUserDto(
     int Id, string Name, string Email, string? Phone, UserRole Role,
@@ -165,13 +166,15 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
 
     private static UserRecord ToRecord(UserRow row) => new(
         row.Id, row.Name, row.Email, row.PasswordHash, row.PasswordSalt,
-        Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator, row.StripeCustomerId);
+        Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator, row.StripeCustomerId,
+        row.PhotoPath);
 
     // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- UserRecord/
     // StaffUserDto expose it as the enum, converted just above.
     private sealed record UserRow(
         int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
-        string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId);
+        string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
+        string? PhotoPath);
 
     private sealed record StaffUserRow(
         int Id, string Name, string Email, string? Phone, string Role,

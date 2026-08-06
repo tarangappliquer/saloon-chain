@@ -43,7 +43,7 @@ internal static class AuthEndpoints
 
             return Results.Ok(new AuthResponse(
                 result.Value.Id, result.Value.Name, req.Email, result.Value.Role.ToString(), result.Value.Token,
-                result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken));
+                result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken, PhotoPath: result.Value.PhotoPath));
         }).WithValidation<LoginRequest>()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -137,7 +137,8 @@ internal static class AuthEndpoints
             bool canEmulate = me.Role == UserRole.RootSuperAdmin || me.IsEmulator;
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
-                CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName));
+                CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName,
+                PhotoPath: me.PhotoPath));
         }).RequireAuthorization()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -153,7 +154,8 @@ internal sealed record ResetPasswordRequest(string Token, string NewPassword);
 
 internal sealed record AuthResponse(
     int UserId, string Name, string Email, string Role, string Token,
-    bool CanEmulate = false, bool IsEmulated = false, string? EmulatedByName = null, string RefreshToken = "");
+    bool CanEmulate = false, bool IsEmulated = false, string? EmulatedByName = null, string RefreshToken = "",
+    string? PhotoPath = null);
 
 internal sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {

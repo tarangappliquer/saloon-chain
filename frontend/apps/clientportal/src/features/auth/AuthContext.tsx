@@ -8,6 +8,8 @@ interface AuthUser {
   email: string;
   isEmulated: boolean;
   emulatedByName: string | null;
+  photoPath: string | null;
+  photoVersion: number;
 }
 
 interface AuthContextValue {
@@ -17,6 +19,7 @@ interface AuthContextValue {
   loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
   updateName: (name: string) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: res.email,
       isEmulated: res.isEmulated,
       emulatedByName: res.emulatedByName,
+      photoPath: res.photoPath ?? null,
+      photoVersion: Date.now(),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
     setUser(authUser);
@@ -82,14 +87,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
+  // state) so the top-nav avatar picks up a just-uploaded photo from the server's source of truth.
+  const refreshUser = useCallback(async () => {
+    const { data } = await authApi.apiAuthMeGet();
+    const res = data as unknown as AuthResponse;
+    setUser((u) => {
+      if (!u) return u;
+      const updated = { ...u, photoPath: res.photoPath, photoVersion: Date.now() };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
   }, [logout]);
 
   const value = useMemo(
-    () => ({ user, login, register, loginWithToken, logout, updateName }),
-    [user, login, register, loginWithToken, logout, updateName]
+    () => ({ user, login, register, loginWithToken, logout, updateName, refreshUser }),
+    [user, login, register, loginWithToken, logout, updateName, refreshUser]
   );
 
   return (

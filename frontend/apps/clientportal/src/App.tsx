@@ -107,9 +107,19 @@ const Nav = memo(function Nav() {
             className="flex items-center gap-2 rounded-lg border border-border bg-card p-1 pr-3 text-foreground hover:bg-accent transition"
             title="Profile"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-              {initials}
-            </span>
+            {user.photoPath ? (
+              <img
+                src={`${API_BASE}${user.photoPath}?v=${user.photoVersion}`}
+                alt={user.name}
+                loading="lazy"
+                decoding="async"
+                className="h-7 w-7 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                {initials}
+              </span>
+            )}
             <span className="hidden text-xs font-semibold sm:inline">{user.name}</span>
           </Link>
           <button

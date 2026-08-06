@@ -65,6 +65,13 @@ const Nav = memo(function Nav() {
   const { user, logout } = useAuth();
   if (!user) return null;
 
+  const initials = user.name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
       <nav aria-label="Admin Navigation" className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2.5">
@@ -86,6 +93,19 @@ const Nav = memo(function Nav() {
             to="/profile"
             className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
           >
+            {user.photoPath ? (
+              <img
+                src={`${API_BASE}${user.photoPath}?v=${user.photoVersion}`}
+                alt={user.name}
+                loading="lazy"
+                decoding="async"
+                className="h-6 w-6 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+                {initials}
+              </span>
+            )}
             <span className="font-semibold">{user.name}</span>
             <Badge status={user.role} />
           </Link>

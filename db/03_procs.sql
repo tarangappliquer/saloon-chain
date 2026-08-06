@@ -731,9 +731,11 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetUserByEmail
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, Email, PasswordHash, PasswordSalt, Role, ChainId, LocationId, TherapistId, IsEmulator, StripeCustomerId
-    FROM dbo.Users
-    WHERE Email = @Email AND IsDelete = 0 AND IsActive = 1;
+    SELECT u.Id, u.Name, u.Email, u.PasswordHash, u.PasswordSalt, u.Role, u.ChainId, u.LocationId, u.TherapistId,
+        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath
+    FROM dbo.Users u
+        LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
+    WHERE u.Email = @Email AND u.IsDelete = 0 AND u.IsActive = 1;
 END
 GO
 
@@ -744,9 +746,11 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetUserById
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, Email, PasswordHash, PasswordSalt, Role, ChainId, LocationId, TherapistId, IsEmulator, StripeCustomerId
-    FROM dbo.Users
-    WHERE Id = @Id AND IsDelete = 0 AND IsActive = 1;
+    SELECT u.Id, u.Name, u.Email, u.PasswordHash, u.PasswordSalt, u.Role, u.ChainId, u.LocationId, u.TherapistId,
+        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath
+    FROM dbo.Users u
+        LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
+    WHERE u.Id = @Id AND u.IsDelete = 0 AND u.IsActive = 1;
 END
 GO
 

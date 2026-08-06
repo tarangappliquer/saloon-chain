@@ -28,7 +28,7 @@ internal sealed class AuthService(
         return (id, accessToken, refreshToken);
     }
 
-    public async Task<(int Id, string Name, UserRole Role, bool CanEmulate, string Token, string RefreshToken)?> LoginAsync(string email, string password)
+    public async Task<(int Id, string Name, UserRole Role, bool CanEmulate, string Token, string RefreshToken, string? PhotoPath)?> LoginAsync(string email, string password)
     {
         var user = await repo.GetByEmailAsync(email);
         if (user is null || !PasswordHasher.Verify(password, user.PasswordHash, user.PasswordSalt))
@@ -37,7 +37,7 @@ internal sealed class AuthService(
         var (accessToken, refreshToken) = await IssueTokensAsync(
             user.Id, user.Email, user.Role, user.ChainId, user.LocationId, user.TherapistId);
         bool canEmulate = user.Role == UserRole.RootSuperAdmin || user.IsEmulator;
-        return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken);
+        return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken, user.PhotoPath);
     }
 
     public async Task<(int Id, string Name, string Email, UserRole Role, bool CanEmulate, string Token, string RefreshToken)?> RefreshAsync(string refreshToken)

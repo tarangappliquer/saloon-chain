@@ -35,6 +35,7 @@ export interface AuthResponse {
   isEmulated: boolean;
   emulatedByName: string | null;
   refreshToken: string;
+  photoPath: string | null;
 }
 
 export interface Chain {

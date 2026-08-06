@@ -6,7 +6,7 @@ import { Camera } from 'lucide-react';
 import type { Profile } from '../api/types';
 
 export function ProfilePage() {
-  const { user, updateName } = useAuth();
+  const { user, updateName, refreshUser } = useAuth();
   const isEmulated = Boolean(user?.isEmulated);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState('');
@@ -25,6 +25,7 @@ export function ProfilePage() {
     const updated = res as unknown as Profile;
     setProfile(updated);
     setCacheBuster(Date.now());
+    await refreshUser();
     setSuccess('Profile photo updated.');
   };
 
