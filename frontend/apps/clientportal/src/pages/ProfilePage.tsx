@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
 import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
@@ -48,7 +48,7 @@ export function ProfilePage() {
     load();
   }, []);
 
-  async function handleSave(e: FormEvent) {
+  async function handleSave(e: SyntheticEvent) {
     e.preventDefault();
     if (isEmulated) return;
     setError(null);

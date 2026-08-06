@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Therapist } from '../../api/types';
@@ -28,7 +28,7 @@ export function TherapistsPage() {
     load();
   }, []);
 
-  async function handleCreate(e: FormEvent) {
+  async function handleCreate(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitError(null);

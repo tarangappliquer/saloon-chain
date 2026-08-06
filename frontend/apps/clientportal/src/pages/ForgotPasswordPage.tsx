@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ArrowLeft, Loader2, MailCheck } from 'lucide-react';
@@ -10,7 +10,7 @@ export function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { authApi, ApiError, getFieldError } from '../api/client';
@@ -15,7 +15,7 @@ export function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!token) return;
     setError(null);

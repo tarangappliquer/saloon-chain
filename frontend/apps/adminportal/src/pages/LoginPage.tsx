@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ApiError, getFieldError } from '../api/client';
@@ -21,7 +21,7 @@ export function LoginPage() {
 
   if (user) return null;
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitError(null);
