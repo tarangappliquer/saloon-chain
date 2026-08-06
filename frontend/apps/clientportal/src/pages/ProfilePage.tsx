@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Button, Card, Input, LoadingFallback, PageHeader, TusUploadControl, useTusResumableUpload } from '@saloon/ui';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Button, Card, Input, LoadingFallback, PageHeader, TusUploadControl, UppyPhotoUploadModal, useTusResumableUpload } from '@saloon/ui';
 import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
+import { Camera } from 'lucide-react';
 import type { Profile } from '../api/types';
 
 export function ProfilePage() {
@@ -15,9 +16,17 @@ export function ProfilePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [cacheBuster, setCacheBuster] = useState(Date.now());
+  const [uppyOpen, setUppyOpen] = useState(false);
+
+  const refreshProfilePhoto = async () => {
+    const { data: res } = await profileApi.apiProfileGet();
+    const updated = res as unknown as Profile;
+    setProfile(updated);
+    setCacheBuster(Date.now());
+    setSuccess('Profile photo updated.');
+  };
 
   async function load() {
     setLoading(true);
@@ -79,17 +88,6 @@ export function ProfilePage() {
     },
   });
 
-  async function handlePhotoSelected() {
-    if (isEmulated) return;
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) return;
-    setError(null);
-    setSuccess(null);
-    setSelectedFile(file);
-    tusUpload.startUpload(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }
-
   if (loading) return <LoadingFallback />;
   if (!profile) return null;
 
@@ -105,27 +103,55 @@ export function ProfilePage() {
 
       <Card className="p-6">
         <div className="mb-6 flex items-center gap-6">
-          <div className="h-20 w-20 overflow-hidden rounded-2xl border border-border bg-muted shadow-2xs">
+          <div
+            onClick={() => !isEmulated && setUppyOpen(true)}
+            className="group relative h-20 w-20 cursor-pointer overflow-hidden rounded-2xl border border-border bg-muted shadow-2xs transition-all hover:ring-2 hover:ring-primary/50"
+            title="Click to edit profile photo"
+          >
             {profile.photoPath ? (
-              <img src={`${API_BASE}${profile.photoPath}?v=${cacheBuster}`} alt="Profile" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+              <img
+                src={`${API_BASE}${profile.photoPath}?v=${cacheBuster}`}
+                alt="Profile"
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
             ) : (
               <div className="flex h-full w-full items-center justify-center font-display text-2xl font-bold text-muted-foreground">
                 {profile.name.substring(0, 2).toUpperCase()}
               </div>
             )}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <Camera className="h-5 w-5 text-white" />
+            </div>
           </div>
-          <div className="space-y-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handlePhotoSelected}
-              disabled={tusUpload.isUploading || isEmulated}
-              className="text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
-            />
-            <p className="text-xs text-muted-foreground">JPG, PNG, or WEBP (Max 5 MB)</p>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                type="button"
+                disabled={isEmulated}
+                onClick={() => setUppyOpen(true)}
+                className="text-xs flex items-center gap-1.5"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                Upload & Crop Photo
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Crop, rotate, and zoom with Uppy (Max 5 MB)</p>
           </div>
         </div>
+
+        <UppyPhotoUploadModal
+          open={uppyOpen}
+          onClose={() => setUppyOpen(false)}
+          apiBase={API_BASE}
+          token={getAuthToken() || undefined}
+          category="profile-photos"
+          onSuccess={refreshProfilePhoto}
+        />
 
         <TusUploadControl
           fileName={selectedFile?.name}

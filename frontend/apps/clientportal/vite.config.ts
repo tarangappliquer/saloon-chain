@@ -8,6 +8,19 @@ export default defineConfig({
     server: {
         port: 58569,
     },
+    optimizeDeps: {
+        include: [
+            '@uppy/core',
+            '@uppy/react',
+            '@uppy/tus',
+            '@uppy/image-editor',
+            '@uppy/dashboard',
+            '@uppy/drag-drop',
+            '@uppy/status-bar',
+            '@uppy/progress-bar',
+            '@uppy/file-input',
+        ],
+    },
     build: {
         target: 'es2022',
         cssCodeSplit: true,

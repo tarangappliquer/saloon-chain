@@ -14,5 +14,6 @@ export * from './components/KpiTile';
 export * from './components/BrandMark';
 export * from './components/ConnectivityBanner';
 export * from './components/TusUploadControl';
+export * from './components/UppyPhotoUploadModal';
 export * from './utils/tusUpload';
 export * from './utils/useTusResumableUpload';
