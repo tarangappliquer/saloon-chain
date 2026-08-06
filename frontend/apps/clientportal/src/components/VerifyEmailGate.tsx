@@ -14,16 +14,17 @@ export function VerifyEmailGate() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const customerId = user?.customerId;
   useEffect(() => {
-    if (!user) return;
-    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${user.customerId}`);
+    if (!customerId) return;
+    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${customerId}`);
     const handler = () => refreshUser();
     source.addEventListener('email-verified', handler);
     return () => {
       source.removeEventListener('email-verified', handler);
       source.close();
     };
-  }, [user?.customerId, refreshUser]);
+  }, [customerId, refreshUser]);
 
   async function handleSend() {
     setError(null);

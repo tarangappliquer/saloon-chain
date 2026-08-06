@@ -14,7 +14,7 @@ export function VerifyEmailGate() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.userId) return;
     const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${user.userId}`);
     const handler = () => refreshUser();
     source.addEventListener('email-verified', handler);

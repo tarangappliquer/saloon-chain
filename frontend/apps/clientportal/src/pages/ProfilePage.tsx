@@ -58,9 +58,14 @@ export function ProfilePage() {
 
   // Live-updates the Verified badge if the confirmation link gets clicked in another tab/device
   // while this page is open, instead of leaving it stuck on "Unverified" until a manual reload.
+  // Depends on the primitive fields (not `profile` itself) so a name/phone save -- which produces
+  // a new profile object with the same id/verified state -- doesn't tear down and reopen the SSE
+  // connection for no reason.
+  const profileUserId = profile?.userId;
+  const profileIsEmailVerified = profile?.isEmailVerified;
   useEffect(() => {
-    if (!profile || profile.isEmailVerified) return;
-    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${profile.userId}`);
+    if (!profileUserId || profileIsEmailVerified) return;
+    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${profileUserId}`);
     const handler = () => {
       load();
       setSuccess('Email address verified.');
@@ -70,7 +75,7 @@ export function ProfilePage() {
       source.removeEventListener('email-verified', handler);
       source.close();
     };
-  }, [profile?.userId, profile?.isEmailVerified]);
+  }, [profileUserId, profileIsEmailVerified]);
 
   async function handleSave(e: SyntheticEvent) {
     e.preventDefault();
