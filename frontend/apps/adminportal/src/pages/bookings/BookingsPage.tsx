@@ -80,13 +80,19 @@ function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingD
               </div>
               <h2 className="text-xl font-extrabold text-foreground mt-1">{booking.locationName}</h2>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <span className="text-[11px] text-muted-foreground uppercase font-bold block">Total Amount</span>
+                <span className="font-mono text-lg font-bold text-primary">${totalAmount.toFixed(2)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Customer & Location Info */}
@@ -379,6 +385,7 @@ export function BookingsPage() {
                   <th className="px-6 py-3.5">Booking Date</th>
                   <th className="px-6 py-3.5">Customer</th>
                   <th className="px-6 py-3.5">Treatments & Schedule</th>
+                  <th className="px-6 py-3.5">Total Amount</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
@@ -399,6 +406,8 @@ export function BookingsPage() {
                       day: 'numeric',
                       year: 'numeric',
                     });
+
+                  const rowTotal = b.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
 
                   return (
                     <tr
@@ -430,6 +439,9 @@ export function BookingsPage() {
                             </li>
                           ))}
                         </ul>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-mono font-bold text-foreground">
+                        ${rowTotal.toFixed(2)}
                       </td>
                       <td className="px-6 py-4">
                         <Badge status={b.status} />

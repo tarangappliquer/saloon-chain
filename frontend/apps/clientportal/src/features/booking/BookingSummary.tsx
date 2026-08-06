@@ -17,6 +17,8 @@ export function BookingSummary({ lines, onConfirm, onEdit, loading }: Props) {
   const secondsLeft = useCountdown(earliest);
   const expired = secondsLeft <= 0;
 
+  const totalAmount = lines.reduce((sum, l) => sum + (l.price || 0), 0);
+
   return (
     <Card className="p-6 space-y-4 border-primary/20 bg-primary/5">
       <div className="space-y-3">
@@ -40,6 +42,11 @@ export function BookingSummary({ lines, onConfirm, onEdit, loading }: Props) {
             <span className="font-mono text-xs font-semibold text-primary">${line.price.toFixed(2)}</span>
           </div>
         ))}
+
+        <div className="flex items-center justify-between text-sm font-bold text-foreground pt-2 border-t border-border/60">
+          <span>Total Amount</span>
+          <span className="font-mono text-base text-primary">${totalAmount.toFixed(2)}</span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">

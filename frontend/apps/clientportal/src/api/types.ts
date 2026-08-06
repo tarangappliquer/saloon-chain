@@ -85,6 +85,7 @@ export interface MyBooking {
   id: number;
   locationName: string;
   status: string;
+  createdDate?: string;
   paymentProvider?: string | null;
   paymentStatus?: string | null;
   isPaid?: boolean;

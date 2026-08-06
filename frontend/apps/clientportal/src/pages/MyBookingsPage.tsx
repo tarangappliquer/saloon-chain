@@ -5,7 +5,7 @@ import { ApiError, bookingApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
 
-type Tab = 'upcoming' | 'past' | 'draft';
+type Tab = 'upcoming' | 'past' | 'cancelled' | 'draft';
 
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
@@ -90,6 +90,21 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
               )}
             </div>
             <h2 className="font-display text-lg font-bold text-foreground mt-1">{b.locationName}</h2>
+            {startMs !== Infinity ? (
+              <p className="text-xs font-semibold text-primary mt-1 flex items-center gap-1.5">
+                <span>📅 Date:</span>
+                <span>
+                  {new Date(startMs).toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">📅 Date: Unscheduled</p>
+            )}
           </div>
           <div className="flex items-center justify-between sm:justify-end gap-4 pt-2 sm:pt-0 border-t sm:border-0 border-border/50">
             <div className="text-left sm:text-right">
@@ -210,14 +225,16 @@ export function MyBookingsPage() {
   const isDev = import.meta.env.DEV;
   const now = Date.now();
   const drafts = bookings.filter((b) => b.status === 'Draft');
-  const nonDrafts = bookings.filter((b) => b.status !== 'Draft');
-  const upcoming = nonDrafts.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c));
-  const past = nonDrafts.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a));
-  const shown = tab === 'draft' ? drafts : tab === 'upcoming' ? upcoming : past;
+  const cancelled = bookings.filter((b) => b.status === 'Cancelled');
+  const confirmed = bookings.filter((b) => b.status === 'Confirmed');
+  const upcoming = confirmed.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c));
+  const past = confirmed.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a));
+  const shown = tab === 'draft' ? drafts : tab === 'cancelled' ? cancelled : tab === 'upcoming' ? upcoming : past;
 
   const tabs: [Tab, string][] = [
     ['upcoming', `Upcoming (${upcoming.length})`],
     ['past', `Past (${past.length})`],
+    ['cancelled', `Cancelled (${cancelled.length})`],
   ];
   if (isDev) {
     tabs.push(['draft', `Draft (${drafts.length})`]);

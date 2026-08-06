@@ -23,7 +23,7 @@ internal sealed record BookingLocationRow(int LocationId, int RoomId, DateTime W
 
 internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
 
-internal sealed record MyBookingHeaderRow(int Id, int LocationId, string LocationName, string Status, string? PaymentProvider = null, string? PaymentStatus = null);
+internal sealed record MyBookingHeaderRow(int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider = null, string? PaymentStatus = null);
 
 // One treatment line of a booking, scheduled or not (schedule fields null until picked). Used both
 // for the in-progress draft (GetById, powers refresh-restore) and directly as the API response shape.
@@ -41,7 +41,7 @@ internal sealed record MyBookingTreatmentRow(
 internal sealed record MyBookingTreatmentDto(
     string TreatmentName, string? TherapistName, DateTime? StartTime, DateTime? EndTime, short SlotCount, decimal Price);
 
-internal sealed record MyBookingDto(int Id, string LocationName, string Status, string? PaymentProvider, string? PaymentStatus, bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments);
+internal sealed record MyBookingDto(int Id, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider, string? PaymentStatus, bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments);
 
 internal sealed record AdminBookingHeaderRow(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status);
@@ -87,6 +87,25 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
 
         return new AvailabilityData(location, treatments, eligible, existing);
+    }
+
+    public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Booking_HasLocationRoomOpenings", new { LocationId = locationId });
+    }
+
+    public async Task<HashSet<DateOnly>> GetLocationOpenDatesAsync(int locationId, DateOnly from, DateOnly to)
+    {
+        using var db = factory.Create();
+        var openDates = await db.QuerySpAsync<DateTime>("dbo.sp_Booking_GetLocationOpenDates", new
+        {
+            LocationId = locationId,
+            FromDate = from.ToDateTime(TimeOnly.MinValue),
+            ToDate = to.ToDateTime(TimeOnly.MinValue)
+        });
+
+        return openDates.Select(DateOnly.FromDateTime).ToHashSet();
     }
 
     public async Task<int> CreateDraftAsync(int locationId, int customerId, IEnumerable<int> treatmentIds)
@@ -204,7 +223,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var treatments = (await multi.ReadAsync<MyBookingTreatmentRow>()).ToList();
 
         return bookings.Select(b => new MyBookingDto(
-            b.Id, b.LocationName, b.Status,
+            b.Id, b.LocationName, b.Status, b.CreatedDate,
             b.PaymentProvider,
             b.PaymentStatus,
             b.PaymentStatus?.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) == true || b.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase),

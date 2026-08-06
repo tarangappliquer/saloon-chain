@@ -15,10 +15,20 @@ internal static class BookingEndpoints
         var group = app.MapGroup("/api/booking").RequireAuthorization().WithTags("Booking")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
-        group.MapGet("/available-dates", async (int locationId, DateOnly from, DateOnly to, BookingService svc) =>
-            Results.Ok(await svc.GetAvailableDatesAsync(locationId, from, to)))
+        group.MapGet("/available-dates", async (int locationId, DateOnly from, DateOnly to, string? treatmentIds, int? excludeBookingId, BookingService svc) =>
+        {
+            var ids = new List<int>();
+            if (!string.IsNullOrEmpty(treatmentIds))
+            {
+                foreach (var part in treatmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (int.TryParse(part, out var id)) ids.Add(id);
+                }
+            }
+            return Results.Ok(await svc.GetAvailableDatesAsync(locationId, from, to, ids, excludeBookingId));
+        })
             .Produces<IReadOnlyList<DateOnly>>()
-            .WithDescription("List dates in range that have at least one open slot at a location.");
+            .WithDescription("List dates in range that have at least one open slot for all requested treatments at a location.");
 
         group.MapGet("/available-slots", async (int locationId, string treatmentIds, DateOnly date, int? excludeBookingId, BookingService svc) =>
         {

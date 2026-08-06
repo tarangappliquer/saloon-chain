@@ -115,10 +115,11 @@ BEGIN
                 SELECT r.RoomId, 'FullDay' AS ShiftType
                 FROM ActiveRooms r
                 WHERE NOT EXISTS (
-            SELECT 1
-                FROM dbo.RoomCategoryAssignments rca2
-                WHERE rca2.RoomId = r.RoomId AND rca2.WorkDate = @WorkDate AND rca2.IsDelete = 0 AND rca2.IsActive = 1
-        )
+                    SELECT 1
+                    FROM dbo.RoomCategoryAssignments rca2
+                        JOIN dbo.Rooms r2 ON r2.Id = rca2.RoomId
+                    WHERE r2.LocationId = @LocationId AND rca2.IsDelete = 0 AND rca2.IsActive = 1
+                )
         ),
         EligibleShifts
         AS
@@ -163,6 +164,40 @@ GO
 -- 1 Bookings row (Status='Draft') + 1 unscheduled BookingTreatments row per treatment. No
 -- room/therapist/time yet, so no lock/conflict-check needed here (that only matters once a
 -- specific slot is claimed -- see sp_Booking_ScheduleTreatment below).
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_HasLocationRoomOpenings
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.RoomCategoryAssignments rca
+            JOIN dbo.Rooms r ON r.Id = rca.RoomId
+        WHERE r.LocationId = @LocationId
+          AND r.IsDelete = 0 AND r.IsActive = 1
+          AND rca.IsDelete = 0 AND rca.IsActive = 1
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasRoomOpenings;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetLocationOpenDates
+    @LocationId INT,
+    @FromDate   DATE,
+    @ToDate     DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT DISTINCT rca.WorkDate
+    FROM dbo.RoomCategoryAssignments rca
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId
+    WHERE r.LocationId = @LocationId
+      AND r.IsDelete = 0 AND r.IsActive = 1
+      AND rca.IsDelete = 0 AND rca.IsActive = 1
+      AND rca.WorkDate BETWEEN @FromDate AND @ToDate
+    ORDER BY rca.WorkDate;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_CreateDraft
     @LocationId   INT,
     @CustomerId   INT,
@@ -556,7 +591,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status,
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status, b.CreatedDate,
         p.Provider AS PaymentProvider, p.Status AS PaymentStatus
     FROM dbo.Bookings b
         JOIN dbo.Locations l ON l.Id = b.LocationId
@@ -567,7 +602,7 @@ BEGIN
         ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
-        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -30, SYSUTCDATETIME())))
+        AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -30, SYSUTCDATETIME())))
         AND b.IsDelete = 0
     ORDER BY b.Id DESC;
 
@@ -580,7 +615,7 @@ BEGIN
         LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
-        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
+        AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
         AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
 GO
@@ -1212,6 +1247,7 @@ BEGIN
         JOIN dbo.Locations l ON l.Id = b.LocationId
         JOIN dbo.Users c ON c.Id = b.CustomerId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0
+        AND b.Status <> 'Cancelled'
         AND EXISTS (
           SELECT 1
         FROM dbo.BookingTreatments bt
@@ -1228,6 +1264,7 @@ BEGIN
         LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
         LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND bt.IsDelete = 0
+        AND b.Status <> 'Cancelled'
         AND CAST(bt.StartTime AS DATE) = @WorkDate
     ORDER BY bt.StartTime;
 END

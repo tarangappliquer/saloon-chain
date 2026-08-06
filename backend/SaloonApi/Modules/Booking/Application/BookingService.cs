@@ -13,7 +13,8 @@ namespace SaloonApi.Modules.Booking.Application;
 internal sealed class BookingService(
     BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse, IBackgroundEmailQueue emailQueue, PaymentRepository paymentRepo)
 {
-    public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(int locationId, DateOnly from, DateOnly to)
+    public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(
+        int locationId, DateOnly from, DateOnly to, IReadOnlyList<int>? treatmentIds = null, int? excludeBookingId = null)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
         if (from < today) from = today;
@@ -23,11 +24,32 @@ internal sealed class BookingService(
         var mask = (data.Location?.WorkingDaysMask ?? 0) == 0 ? 127 : data.Location!.WorkingDaysMask;
         var holidays = (await catalog.GetHolidayDatesAsync(locationId, from, to)).ToHashSet();
 
+        var hasRoomOpenings = await repo.HasLocationRoomOpeningsAsync(locationId);
+        var openDates = hasRoomOpenings ? await repo.GetLocationOpenDatesAsync(locationId, from, to) : null;
+
         var dates = new List<DateOnly>();
         for (var d = from; d <= to; d = d.AddDays(1))
         {
             var bit = ((int)d.DayOfWeek + 6) % 7; // Mon=bit0 .. Sun=bit6
-            if ((mask & (1 << bit)) != 0 && !holidays.Contains(d)) dates.Add(d);
+            if ((mask & (1 << bit)) == 0 || holidays.Contains(d)) continue;
+            if (openDates != null && !openDates.Contains(d)) continue;
+
+            if (treatmentIds != null && treatmentIds.Count > 0)
+            {
+                var allTreatmentsAvailable = true;
+                foreach (var tid in treatmentIds)
+                {
+                    var slots = await GetAvailableSlotsAsync(locationId, [tid], d, excludeBookingId);
+                    if (slots.Count == 0)
+                    {
+                        allTreatmentsAvailable = false;
+                        break;
+                    }
+                }
+                if (!allTreatmentsAvailable) continue;
+            }
+
+            dates.Add(d);
         }
         return dates;
     }

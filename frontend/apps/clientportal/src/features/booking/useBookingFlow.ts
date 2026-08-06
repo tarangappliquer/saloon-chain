@@ -5,6 +5,7 @@ import type { AvailableSlot, BookingDetails, ScheduleResponse } from '../../api/
 interface State {
   booking: BookingDetails | null;
   dates: string[];
+  datesFetched: boolean;
   // Slots are fetched per treatment (one API call per treatment id), because each treatment has
   // its own duration -- a single combined call would only return blocks sized for the sum of all
   // durations, which can't be picked independently per treatment.
@@ -30,6 +31,7 @@ type Action =
 const initialState: State = {
   booking: null,
   dates: [],
+  datesFetched: false,
   slotsByTreatment: {},
   loading: false,
   error: null,
@@ -47,7 +49,7 @@ function reducer(state: State, action: Action): State {
     case 'RESTORE_DONE':
       return { ...state, restoring: false };
     case 'DATES_LOADED':
-      return { ...state, loading: false, dates: action.dates };
+      return { ...state, loading: false, dates: action.dates, datesFetched: true };
     case 'SLOTS_LOADED':
       return { ...state, loading: false, slotsByTreatment: action.slotsByTreatment };
     case 'LINE_SCHEDULED': {
@@ -118,14 +120,15 @@ export function useBookingFlow(bookingId: number) {
     })();
   }, [bookingId]);
 
-  const loadDates = useCallback(async (locationId: number) => {
+  const loadDates = useCallback(async (locationId: number, treatmentIds: number[], bookingId?: number) => {
     dispatch({ type: 'LOADING' });
     try {
       const now = new Date();
       const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 13);
+      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30);
       const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
-      const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to);
+      const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
+      const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to, tIdsStr, bookingId);
       dispatch({ type: 'DATES_LOADED', dates: data });
     } catch (err) {
       dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available dates') });
@@ -152,7 +155,6 @@ export function useBookingFlow(bookingId: number) {
     async (treatmentId: number, slot: AvailableSlot) => {
       if (inFlight.current) return;
       inFlight.current = true;
-      dispatch({ type: 'LOADING' });
       try {
         const { data } = await bookingApi.apiBookingIdTreatmentsTreatmentIdSchedulePut(bookingId, treatmentId, {
           roomId: slot.roomId,

@@ -56,10 +56,8 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
     if (b.status === 'Cancelled') continue;
     for (const t of b.treatments) {
       if (t.startTime && t.endTime) {
-        const start = new Date(t.startTime);
-        const end = new Date(t.endTime);
-        const startStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
-        const endStr = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+        const startStr = t.startTime.includes('T') ? t.startTime.split('T')[1].slice(0, 5) : t.startTime.slice(0, 5);
+        const endStr = t.endTime.includes('T') ? t.endTime.split('T')[1].slice(0, 5) : t.endTime.slice(0, 5);
         flat.push({
           bookingId: b.id,
           customerName: b.customerName,
@@ -529,10 +527,13 @@ function ScheduleGridView({
                       const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
                       const isOpen = !!opening;
 
+                      const slotIdx = timeSlots.indexOf(slot);
+                      const nextSlot = slotIdx >= 0 && slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
+
                       // Find any treatment booking that covers this room and time slot
                       const matchedTreatment = flatTreatments.find((t) => {
                         const matchRoom = t.roomId ? t.roomId === room.id : t.roomName === room.name;
-                        return matchRoom && slot >= t.startTimeStr && slot < t.endTimeStr;
+                        return matchRoom && slot < t.endTimeStr && nextSlot > t.startTimeStr;
                       });
 
                       const isTempBooked = matchedTreatment?.status === 'Draft';
