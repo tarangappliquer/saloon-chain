@@ -43,7 +43,8 @@ internal static class AuthEndpoints
 
             return Results.Ok(new AuthResponse(
                 result.Value.Id, result.Value.Name, req.Email, result.Value.Role.ToString(), result.Value.Token,
-                result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken, PhotoPath: result.Value.PhotoPath));
+                result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken, PhotoPath: result.Value.PhotoPath,
+                IsEmailVerified: result.Value.IsEmailVerified));
         }).WithValidation<LoginRequest>()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -62,7 +63,8 @@ internal static class AuthEndpoints
                 ? Results.Unauthorized()
                 : Results.Ok(new AuthResponse(
                     result.Value.Id, result.Value.Name, result.Value.Email, result.Value.Role.ToString(), result.Value.Token,
-                    result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken));
+                    result.Value.CanEmulate, RefreshToken: result.Value.RefreshToken,
+                    IsEmailVerified: result.Value.IsEmailVerified));
         }).WithValidation<RefreshRequest>()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -101,6 +103,20 @@ internal static class AuthEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Redeem a password-reset token to set a new password.");
 
+        // No [Authorize]: same trust model as /reset-password -- the token itself (unguessable,
+        // hashed-at-rest, single-use, mailed only to the address being claimed) is the credential.
+        // Deliberately not under the authenticated /api/profile group either, since the browser
+        // clicking this link may not be signed in as this user (or signed in at all).
+        group.MapPost("/email/confirm", async (ConfirmEmailChangeRequest req, AuthService auth) =>
+        {
+            var ok = await auth.ConfirmEmailChangeAsync(req.Token);
+            return ok
+                ? Results.Ok()
+                : Results.Problem("This confirmation link is invalid or has expired.", statusCode: StatusCodes.Status400BadRequest);
+        }).WithValidation<ConfirmEmailChangeRequest>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("Confirm a pending email change using the token mailed to the new address.");
+
         // Staff-as-customer emulation. Reachable by any staff role (StaffAccess policy, now including
         // Manager) -- "all staff can be a customer" is a deliberate product decision -- but
         // AuthService.EmulateCustomerAsync
@@ -115,7 +131,10 @@ internal static class AuthEndpoints
                 ? Results.Problem("Not authorized to emulate this customer.", statusCode: StatusCodes.Status403Forbidden)
                 : Results.Ok(new AuthResponse(
                     result.Value.Id, result.Value.Name, result.Value.Email, nameof(UserRole.Customer), result.Value.Token,
-                    CanEmulate: false, IsEmulated: true, EmulatedByName: currentUser.Email));
+                    CanEmulate: false, IsEmulated: true, EmulatedByName: currentUser.Email,
+                    // Skip the email-verification gate for emulated sessions -- the staff member already
+                    // authenticated properly; a customer's own unverified email shouldn't block support access.
+                    IsEmailVerified: true));
         }).RequireAuthorization("StaffAccess")
           .Produces<AuthResponse>()
           .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -138,7 +157,7 @@ internal static class AuthEndpoints
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
                 CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName,
-                PhotoPath: me.PhotoPath));
+                PhotoPath: me.PhotoPath, IsEmailVerified: me.IsEmailVerified));
         }).RequireAuthorization()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -151,11 +170,12 @@ internal sealed record LoginRequest(string Email, string Password, string? Porta
 internal sealed record RefreshRequest(string RefreshToken);
 internal sealed record ForgotPasswordRequest(string Email);
 internal sealed record ResetPasswordRequest(string Token, string NewPassword);
+internal sealed record ConfirmEmailChangeRequest(string Token);
 
 internal sealed record AuthResponse(
     int UserId, string Name, string Email, string Role, string Token,
     bool CanEmulate = false, bool IsEmulated = false, string? EmulatedByName = null, string RefreshToken = "",
-    string? PhotoPath = null);
+    string? PhotoPath = null, bool IsEmailVerified = false);
 
 internal sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
@@ -190,6 +210,14 @@ internal sealed class ForgotPasswordRequestValidator : AbstractValidator<ForgotP
     public ForgotPasswordRequestValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
+    }
+}
+
+internal sealed class ConfirmEmailChangeRequestValidator : AbstractValidator<ConfirmEmailChangeRequest>
+{
+    public ConfirmEmailChangeRequestValidator()
+    {
+        RuleFor(x => x.Token).NotEmpty();
     }
 }
 

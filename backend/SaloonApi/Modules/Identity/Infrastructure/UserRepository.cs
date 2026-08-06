@@ -8,7 +8,7 @@ namespace SaloonApi.Modules.Identity.Infrastructure;
 internal sealed record UserRecord(
     int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
     UserRole Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
-    string? PhotoPath);
+    string? PhotoPath, bool IsEmailVerified);
 
 internal sealed record StaffUserDto(
     int Id, string Name, string Email, string? Phone, UserRole Role,
@@ -23,7 +23,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<int> CreateAsync(
         string name, string email, byte[] hash, byte[] salt, string? phone,
         UserRole role = UserRole.Customer, int? chainId = null, int? locationId = null, int? therapistId = null,
-        bool isEmulator = false)
+        bool isEmulator = false, bool isEmailVerified = false)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
@@ -39,6 +39,9 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         p.Add("@IsEmulator", isEmulator);
         // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
         p.Add("@CreatedBy", currentUser.UserId);
+        // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal
+        // change-email-verify flow to prove they own their address.
+        p.Add("@IsEmailVerified", isEmailVerified);
         p.Add("@UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("dbo.sp_Auth_CreateUser", p);
@@ -167,14 +170,14 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     private static UserRecord ToRecord(UserRow row) => new(
         row.Id, row.Name, row.Email, row.PasswordHash, row.PasswordSalt,
         Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator, row.StripeCustomerId,
-        row.PhotoPath);
+        row.PhotoPath, row.IsEmailVerified);
 
     // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- UserRecord/
     // StaffUserDto expose it as the enum, converted just above.
     private sealed record UserRow(
         int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
         string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
-        string? PhotoPath);
+        string? PhotoPath, bool IsEmailVerified);
 
     private sealed record StaffUserRow(
         int Id, string Name, string Email, string? Phone, string Role,

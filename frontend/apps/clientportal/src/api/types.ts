@@ -71,6 +71,7 @@ export interface AuthResponse {
   emulatedByName: string | null;
   refreshToken: string;
   photoPath: string | null;
+  isEmailVerified: boolean;
 }
 
 export interface MyBookingTreatment {
@@ -100,4 +101,5 @@ export interface Profile {
   phone: string | null;
   role: string;
   photoPath: string | null;
+  isEmailVerified: boolean;
 }

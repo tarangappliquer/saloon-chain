@@ -691,19 +691,22 @@ GO
 -- or a Customer created on their behalf by RootSuperAdmin/SuperAdmin/Admin/Manager (@CreatedBy=the
 -- creator's user id either way).
 CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
-    @Name          NVARCHAR(200),
-    @Email         NVARCHAR(256),
-    @PasswordHash  VARBINARY(256),
-    @PasswordSalt  VARBINARY(128),
-    @Phone         NVARCHAR(30) = NULL,
-    @Role          VARCHAR(20) = 'Customer',
-    @ChainId       INT = NULL,
-    @LocationId    INT = NULL,
-    @TherapistId   INT = NULL,
-    @IsEmulator    BIT = 0,
-    @CreatedBy     INT = NULL,
+    @Name             NVARCHAR(200),
+    @Email            NVARCHAR(256),
+    @PasswordHash     VARBINARY(256),
+    @PasswordSalt     VARBINARY(128),
+    @Phone            NVARCHAR(30) = NULL,
+    @Role             VARCHAR(20) = 'Customer',
+    @ChainId          INT = NULL,
+    @LocationId       INT = NULL,
+    @TherapistId      INT = NULL,
+    @IsEmulator       BIT = 0,
+    @CreatedBy        INT = NULL,
     -- NULL for self-registration (no logged-in user yet)
-    @UserId        INT OUTPUT
+    -- True only for AdminSeeder's server-configured bootstrap account -- never for self-registration
+    -- or admin-created staff/customers, who still go through the normal email-verification flow.
+    @IsEmailVerified  BIT = 0,
+    @UserId           INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -715,12 +718,12 @@ BEGIN
     -- Defense in depth alongside AdminStaffEndpoints' C#-side clamp -- IsEmulator only ever applies
     -- to RootSuperAdmin/SuperAdmin/Admin, same restriction as sp_Admin_UpdateUser below.
     INSERT INTO dbo.Users
-        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy)
+        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy, IsEmailVerified)
     VALUES
         (
             @Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId,
             CASE WHEN @Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE CAST(0 AS BIT) END,
-            @CreatedBy);
+            @CreatedBy, @IsEmailVerified);
 
     SET @UserId = SCOPE_IDENTITY();
 END
@@ -732,7 +735,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT u.Id, u.Name, u.Email, u.PasswordHash, u.PasswordSalt, u.Role, u.ChainId, u.LocationId, u.TherapistId,
-        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath
+        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath, u.IsEmailVerified
     FROM dbo.Users u
         LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
     WHERE u.Email = @Email AND u.IsDelete = 0 AND u.IsActive = 1;
@@ -747,7 +750,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT u.Id, u.Name, u.Email, u.PasswordHash, u.PasswordSalt, u.Role, u.ChainId, u.LocationId, u.TherapistId,
-        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath
+        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath, u.IsEmailVerified
     FROM dbo.Users u
         LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
     WHERE u.Id = @Id AND u.IsDelete = 0 AND u.IsActive = 1;
@@ -781,7 +784,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SELECT rt.Id, rt.UserId, rt.ExpiresAt, rt.RevokedDate,
-        u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator
+        u.Name, u.Email, u.Role, u.ChainId, u.LocationId, u.TherapistId, u.IsEmulator, u.IsEmailVerified
     FROM dbo.RefreshTokens rt
         JOIN dbo.Users u ON u.Id = rt.UserId
     WHERE rt.TokenHash = @TokenHash AND u.IsDelete = 0 AND u.IsActive = 1;
@@ -865,6 +868,73 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50044, 'User not found.', 1;
+END
+GO
+
+-- Self-service "change email" flow, same opaque/hashed/single-use pattern as the password-reset
+-- token procs above. Rejects up front if another active account already holds @NewEmail -- the
+-- confirm step below re-checks under a transaction since time (and other changes) may have passed
+-- between request and click. @Id <> @UserId lets a caller re-request verification for their OWN
+-- current (unverified) address -- see /api/profile/email/verify-request -- without tripping over
+-- their own row.
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateEmailChangeToken
+    @UserId    INT,
+    @NewEmail  NVARCHAR(256),
+    @TokenHash VARBINARY(32),
+    @ExpiresAt DATETIME2,
+    @Id        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @NewEmail AND IsDelete = 0 AND Id <> @UserId)
+        THROW 50045, 'That email address is already in use.', 1;
+
+    INSERT INTO dbo.EmailChangeTokens
+        (UserId, NewEmail, TokenHash, ExpiresAt)
+    VALUES
+        (@UserId, @NewEmail, @TokenHash, @ExpiresAt);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_GetEmailChangeToken
+    @TokenHash VARBINARY(32)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, UserId, NewEmail, ExpiresAt, ConfirmedDate
+    FROM dbo.EmailChangeTokens
+    WHERE TokenHash = @TokenHash;
+END
+GO
+
+-- Applies the staged email once the link mailed to NewEmail is clicked. The uniqueness re-check and
+-- the Users.Email update happen inside one transaction so a second account can't grab @NewEmail in
+-- the gap between the check and the write.
+CREATE OR ALTER PROCEDURE dbo.sp_Auth_ConfirmEmailChange
+    @Id       INT,
+    @UserId   INT,
+    @NewEmail NVARCHAR(256)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+
+    IF EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @NewEmail AND IsDelete = 0 AND Id <> @UserId)
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50046, 'That email address is already in use.', 1;
+    END
+
+    UPDATE dbo.Users SET Email = @NewEmail, IsEmailVerified = 1, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @UserId AND IsDelete = 0;
+
+    UPDATE dbo.EmailChangeTokens SET ConfirmedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND ConfirmedDate IS NULL;
+
+    COMMIT TRANSACTION;
 END
 GO
 
@@ -1797,7 +1867,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Profile_GetStaff
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT u.Id, u.Name, u.Email, u.Phone, u.Role, sp.PhotoPath
+    SELECT u.Id, u.Name, u.Email, u.Phone, u.Role, sp.PhotoPath, u.IsEmailVerified
     FROM dbo.Users u
         LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
     WHERE u.Id = @UserId AND u.IsDelete = 0;
@@ -1809,7 +1879,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Profile_GetCustomer
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, Email, Phone, Role, ProfilePhoto AS PhotoPath
+    SELECT Id, Name, Email, Phone, Role, ProfilePhoto AS PhotoPath, IsEmailVerified
     FROM dbo.Users
     WHERE Id = @UserId AND IsDelete = 0;
 END

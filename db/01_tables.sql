@@ -182,6 +182,7 @@ CREATE TABLE dbo.Users (
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
     StripeCustomerId NVARCHAR(200) NULL,
+    IsEmailVerified BIT NOT NULL DEFAULT 0, -- proven only by clicking a change-email confirmation link (sp_Auth_ConfirmEmailChange); no signup-time verification exists yet.
     IsDelete      BIT NOT NULL DEFAULT 0,
     IsActive      BIT NOT NULL DEFAULT 1,
     CreatedBy     INT NULL REFERENCES dbo.Users(Id),
@@ -217,6 +218,20 @@ CREATE TABLE dbo.PasswordResetTokens (
     CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
 CREATE INDEX IX_PasswordResetTokens_UserId ON dbo.PasswordResetTokens(UserId);
+
+-- Same opaque/hashed/single-use shape as dbo.PasswordResetTokens above, for the self-service
+-- "change email" flow: a change is staged here and only applied to Users.Email once the link
+-- mailed to NewEmail is clicked. ConfirmedDate NULL = still redeemable, non-null = already used.
+CREATE TABLE dbo.EmailChangeTokens (
+    Id            INT IDENTITY(1,1) PRIMARY KEY,
+    UserId        INT NOT NULL REFERENCES dbo.Users(Id),
+    NewEmail      NVARCHAR(256) NOT NULL,
+    TokenHash     VARBINARY(32) NOT NULL UNIQUE,
+    ExpiresAt     DATETIME2 NOT NULL,
+    ConfirmedDate DATETIME2 NULL,
+    CreatedDate   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX IX_EmailChangeTokens_UserId ON dbo.EmailChangeTokens(UserId);
 
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_CreatedBy FOREIGN KEY (CreatedBy) REFERENCES dbo.Users(Id);
 ALTER TABLE dbo.SaloonChains ADD CONSTRAINT FK_SaloonChains_UpdatedBy FOREIGN KEY (UpdatedBy) REFERENCES dbo.Users(Id);

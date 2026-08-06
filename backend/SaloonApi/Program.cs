@@ -142,6 +142,7 @@ builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<RefreshTokenRepository>();
 builder.Services.AddScoped<PasswordResetTokenRepository>();
+builder.Services.AddScoped<EmailChangeTokenRepository>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<BookingRepository>();

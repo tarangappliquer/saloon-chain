@@ -23,6 +23,9 @@ internal static class AdminSeeder
             return;
 
         var (hash, salt) = PasswordHasher.Hash(password);
-        await repo.CreateAsync(name, email, hash, salt, phone: null, UserRole.RootSuperAdmin);
+        // isEmailVerified: true -- this is a server-configured bootstrap account, not a
+        // self-registration; without this the very first login would be locked out by the
+        // email-verification gate with no other account able to unblock it.
+        await repo.CreateAsync(name, email, hash, salt, phone: null, UserRole.RootSuperAdmin, isEmailVerified: true);
     }
 }

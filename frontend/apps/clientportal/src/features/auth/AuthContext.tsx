@@ -10,6 +10,7 @@ interface AuthUser {
   emulatedByName: string | null;
   photoPath: string | null;
   photoVersion: number;
+  isEmailVerified: boolean;
 }
 
 interface AuthContextValue {
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       emulatedByName: res.emulatedByName,
       photoPath: res.photoPath ?? null,
       photoVersion: Date.now(),
+      isEmailVerified: res.isEmailVerified,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
     setUser(authUser);
@@ -88,13 +90,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
-  // state) so the top-nav avatar picks up a just-uploaded photo from the server's source of truth.
+  // state) so the top-nav avatar picks up a just-uploaded photo, and the email-verification gate
+  // picks up a just-confirmed email, from the server's source of truth.
   const refreshUser = useCallback(async () => {
     const { data } = await authApi.apiAuthMeGet();
     const res = data as unknown as AuthResponse;
     setUser((u) => {
       if (!u) return u;
-      const updated = { ...u, photoPath: res.photoPath, photoVersion: Date.now() };
+      const updated = { ...u, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });

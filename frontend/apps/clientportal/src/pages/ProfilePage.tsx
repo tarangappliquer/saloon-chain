@@ -1,5 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
-import { Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
+import { Badge, Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
 import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import { Camera } from 'lucide-react';
@@ -19,6 +19,13 @@ export function ProfilePage() {
 
   const [cacheBuster, setCacheBuster] = useState(Date.now());
   const [uppyOpen, setUppyOpen] = useState(false);
+
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailSubmitting, setEmailSubmitting] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSubmitError, setEmailSubmitError] = useState<unknown>(null);
+  const [emailChangeSent, setEmailChangeSent] = useState<string | null>(null);
 
   const refreshProfilePhoto = async () => {
     const { data: res } = await profileApi.apiProfileGet();
@@ -49,6 +56,22 @@ export function ProfilePage() {
     load();
   }, []);
 
+  // Live-updates the Verified badge if the confirmation link gets clicked in another tab/device
+  // while this page is open, instead of leaving it stuck on "Unverified" until a manual reload.
+  useEffect(() => {
+    if (!profile || profile.isEmailVerified) return;
+    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${profile.userId}`);
+    const handler = () => {
+      load();
+      setSuccess('Email address verified.');
+    };
+    source.addEventListener('email-verified', handler);
+    return () => {
+      source.removeEventListener('email-verified', handler);
+      source.close();
+    };
+  }, [profile?.userId, profile?.isEmailVerified]);
+
   async function handleSave(e: SyntheticEvent) {
     e.preventDefault();
     if (isEmulated) return;
@@ -67,6 +90,25 @@ export function ProfilePage() {
       setError(err instanceof ApiError ? err.message : 'Failed to update profile');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleChangeEmailRequest(e: SyntheticEvent) {
+    e.preventDefault();
+    if (isEmulated) return;
+    setEmailError(null);
+    setEmailSubmitError(null);
+    setEmailSubmitting(true);
+    try {
+      await profileApi.apiProfileEmailChangeRequestPost({ newEmail });
+      setEmailChangeSent(newEmail);
+      setChangingEmail(false);
+      setNewEmail('');
+    } catch (err) {
+      setEmailSubmitError(err);
+      setEmailError(err instanceof ApiError ? err.message : 'Failed to request email change');
+    } finally {
+      setEmailSubmitting(false);
     }
   }
 
@@ -137,7 +179,6 @@ export function ProfilePage() {
 
         <form onSubmit={handleSave} className="space-y-4">
           <Input required disabled={isEmulated} label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
-          <Input disabled label="Email Address" value={profile.email} helperText="Email cannot be changed." />
           <Input
             disabled={isEmulated}
             label="Phone Number"
@@ -164,6 +205,61 @@ export function ProfilePage() {
             </Button>
           </div>
         </form>
+
+        <div className="mt-6 space-y-2 border-t border-border pt-6">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email Address</label>
+          <div className="flex items-center gap-2">
+            <Input disabled value={profile.email} className="flex-1" />
+            <Badge variant={profile.isEmailVerified ? 'success' : 'warning'}>
+              {profile.isEmailVerified ? 'Verified' : 'Unverified'}
+            </Badge>
+            {!changingEmail && (
+              <Button type="button" variant="secondary" size="sm" disabled={isEmulated} onClick={() => setChangingEmail(true)}>
+                Change
+              </Button>
+            )}
+          </div>
+
+          {changingEmail && (
+            <form onSubmit={handleChangeEmailRequest} className="flex items-start gap-2 pt-1">
+              <Input
+                required
+                type="email"
+                placeholder="new@email.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                error={getFieldError(emailSubmitError, 'newEmail')}
+                className="flex-1"
+              />
+              <Button type="submit" size="sm" disabled={emailSubmitting}>
+                {emailSubmitting ? 'Sending...' : 'Send link'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setChangingEmail(false);
+                  setNewEmail('');
+                  setEmailError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </form>
+          )}
+
+          {emailError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">
+              {emailError}
+            </div>
+          )}
+          {emailChangeSent && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Confirmation link sent to {emailChangeSent}. Check your inbox to finish the change.
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   );

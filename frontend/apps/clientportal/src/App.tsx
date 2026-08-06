@@ -4,6 +4,7 @@ import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemePro
 import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
+import { VerifyEmailGate } from './components/VerifyEmailGate';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
 import { PaymentStep } from './features/booking/PaymentStep';
 import { ScheduleStep } from './features/booking/ScheduleStep';
@@ -17,12 +18,15 @@ const EmulatePage = lazy(() => import('./pages/EmulatePage').then((m) => ({ defa
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })));
 const MyBookingsPage = lazy(() => import('./pages/MyBookingsPage').then((m) => ({ default: m.MyBookingsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  return user ? <>{children}</> : <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.isEmailVerified) return <VerifyEmailGate />;
+  return <>{children}</>;
 }
 
 const EmulationBanner = memo(function EmulationBanner() {
@@ -149,6 +153,7 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/emulate" element={<EmulatePage />} />
             <Route
               path="/explore"

@@ -36,6 +36,7 @@ export interface AuthResponse {
   emulatedByName: string | null;
   refreshToken: string;
   photoPath: string | null;
+  isEmailVerified: boolean;
 }
 
 export interface Chain {
@@ -180,6 +181,7 @@ export interface Profile {
   phone: string | null;
   role: UserRole;
   photoPath: string | null;
+  isEmailVerified: boolean;
 }
 
 export interface PaymentRecord {

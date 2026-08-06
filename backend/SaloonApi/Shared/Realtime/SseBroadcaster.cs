@@ -127,5 +127,9 @@ internal sealed class SseBroadcaster
     public static string Group(int locationId, DateOnly date) => $"{locationId}:{date:yyyy-MM-dd}";
     public static string LocationGroup(int locationId) => $"{locationId}";
 
+    // "user:" prefix (not a bare int) is deliberate -- DispatchLocal's location-group fast path
+    // treats any "<int>:<suffix>" group as a location broadcast, and userId is itself an int.
+    public static string UserGroup(int userId) => $"user:{userId}";
+
     private sealed record SseMessagePayload(string OriginPod, string TargetGroup, string Content);
 }

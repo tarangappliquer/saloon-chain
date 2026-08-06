@@ -4,11 +4,13 @@ import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, T
 import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
+import { VerifyEmailGate } from './components/VerifyEmailGate';
 import type { UserRole } from './api/types';
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const SaloonsPage = lazy(() => import('./pages/catalog/SaloonsPage').then((m) => ({ default: m.SaloonsPage })));
 const SaloonUsersPage = lazy(() => import('./pages/catalog/SaloonUsersPage').then((m) => ({ default: m.SaloonUsersPage })));
@@ -35,12 +37,15 @@ const MANAGER_ONLY: UserRole[] = ['Manager'];
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
-  return user ? <>{children}</> : <Navigate to="/login" replace state={{ from: location }} />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (!user.isEmailVerified) return <VerifyEmailGate />;
+  return <>{children}</>;
 }
 
 function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  if (!user.isEmailVerified) return <VerifyEmailGate />;
   return roles.includes(user.role) ? <>{children}</> : <Navigate to="/" replace />;
 }
 
@@ -134,6 +139,7 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route
               path="/"
               element={
