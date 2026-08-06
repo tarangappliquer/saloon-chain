@@ -99,6 +99,16 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         return await db.ExecuteScalarAsync<bool>(sql, new { LocationId = locationId, ChainId = chainId });
     }
 
+    // Backs AdminSeeder -- skip creating the bootstrap account if a RootSuperAdmin already exists
+    // under ANY email, not just the currently configured SeedAdmin:Email, so changing that setting
+    // later doesn't spawn a second root account.
+    public async Task<bool> ExistsWithRoleAsync(UserRole role)
+    {
+        using var db = factory.Create();
+        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Users WHERE Role = @Role AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
+        return await db.ExecuteScalarAsync<bool>(sql, new { Role = role.ToString() });
+    }
+
     public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)
     {
         using var db = factory.Create();

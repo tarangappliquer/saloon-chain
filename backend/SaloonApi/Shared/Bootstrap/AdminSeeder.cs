@@ -19,7 +19,9 @@ internal static class AdminSeeder
 
         using var scope = services.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<UserRepository>();
-        if (await repo.GetByEmailAsync(email) is not null)
+        // Any RootSuperAdmin, not just one at this exact email -- otherwise changing
+        // SeedAdmin:Email after the first boot would spawn a second root account.
+        if (await repo.ExistsWithRoleAsync(UserRole.RootSuperAdmin))
             return;
 
         var (hash, salt) = PasswordHasher.Hash(password);
