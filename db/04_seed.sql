@@ -16,9 +16,16 @@ DECLARE @Room2 INT = (SELECT Id FROM dbo.Rooms WHERE LocationId = @LocationId AN
 INSERT INTO dbo.TreatmentCategories (LocationId, Name) VALUES (@LocationId, 'Hair Care');
 DECLARE @CategoryId INT = SCOPE_IDENTITY();
 
-INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, Price, DurationSlots) VALUES
-    (@LocationId, @CategoryId, 'Haircut', 25.00, 6),              -- 30 min
-    (@LocationId, @CategoryId, 'Hair Wash & Blowdry', 15.00, 4);  -- 20 min
+DECLARE @NewTreatments TABLE (Id INT, Name NVARCHAR(200));
+INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, DurationSlots)
+OUTPUT inserted.Id, inserted.Name INTO @NewTreatments (Id, Name)
+VALUES
+    (@LocationId, @CategoryId, 'Haircut', 6),              -- 30 min
+    (@LocationId, @CategoryId, 'Hair Wash & Blowdry', 4);  -- 20 min
+
+INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom)
+SELECT Id, CASE Name WHEN 'Haircut' THEN 25.00 ELSE 15.00 END, CAST(GETUTCDATE() AS DATE)
+FROM @NewTreatments;
 
 -- demo holiday: shifts/room assignments below still get generated for this date (uniform loop),
 -- which is exactly what proves the explicit IsHoliday check works even if scheduling forgets it.

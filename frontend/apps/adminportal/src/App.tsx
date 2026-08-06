@@ -12,7 +12,9 @@ import { SaloonUsersPage } from './pages/catalog/SaloonUsersPage';
 import { LocationsPage } from './pages/catalog/LocationsPage';
 import { MyLocationPage } from './pages/catalog/MyLocationPage';
 import { LocationUsersPage } from './pages/catalog/LocationUsersPage';
+import { TreatmentCategoriesPage } from './pages/catalog/TreatmentCategoriesPage';
 import { TreatmentsPage } from './pages/catalog/TreatmentsPage';
+import { TreatmentPricesPage } from './pages/catalog/TreatmentPricesPage';
 import { StaffPage } from './pages/staff/StaffPage';
 import { TherapistsPage } from './pages/staff/TherapistsPage';
 import { RoomsPage } from './pages/staff/RoomsPage';
@@ -157,10 +159,26 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/catalog/treatment-categories"
+            element={
+              <RequireRole roles={ADMIN_ACCESS}>
+                <TreatmentCategoriesPage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="/catalog/treatments"
             element={
               <RequireRole roles={ADMIN_ACCESS}>
                 <TreatmentsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/catalog/treatment-prices"
+            element={
+              <RequireRole roles={ADMIN_ACCESS}>
+                <TreatmentPricesPage />
               </RequireRole>
             }
           />

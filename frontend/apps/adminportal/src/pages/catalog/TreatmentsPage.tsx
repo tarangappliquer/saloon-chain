@@ -6,9 +6,15 @@ import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { TreatmentCatalogTabs } from '../../components/TreatmentCatalogTabs';
+import { DateInput } from '../../components/DateInput';
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function emptyTreatmentForm() {
-  return { categoryId: '', name: '', price: '', durationSlots: '' };
+  return { categoryId: '', name: '', durationSlots: '', effectiveFrom: today(), price: '' };
 }
 
 export function TreatmentsPage() {
@@ -26,12 +32,7 @@ export function TreatmentsPage() {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingCategory, setSavingCategory] = useState(false);
   const [savingTreatment, setSavingTreatment] = useState(false);
-
-  const [categoryName, setCategoryName] = useState('');
-  const [editingCategory, setEditingCategory] = useState<TreatmentCategory | null>(null);
-  const [categorySubmitError, setCategorySubmitError] = useState<unknown>(null);
 
   const [treatmentForm, setTreatmentForm] = useState(emptyTreatmentForm());
   const [editingTreatment, setEditingTreatment] = useState<Treatment | null>(null);
@@ -94,63 +95,14 @@ export function TreatmentsPage() {
     setSearchParams(next, { replace: true });
   }
 
-  function handleStartEditCategory(c: TreatmentCategory) {
-    setEditingCategory(c);
-    setCategoryName(c.name);
-    setError(null);
-    setCategorySubmitError(null);
-  }
-
-  function handleCancelCategoryEdit() {
-    setEditingCategory(null);
-    setCategoryName('');
-    setError(null);
-    setCategorySubmitError(null);
-  }
-
-  async function handleSubmitCategory(e: FormEvent) {
-    e.preventDefault();
-    if (locationId === null) return;
-    setError(null);
-    setCategorySubmitError(null);
-    setSavingCategory(true);
-    try {
-      if (editingCategory) {
-        await adminCatalogApi.apiAdminCatalogTreatmentCategoriesIdPut(editingCategory.id, {
-          name: categoryName,
-          isActive: editingCategory.isActive !== false,
-        });
-        setEditingCategory(null);
-      } else {
-        await adminCatalogApi.apiAdminCatalogTreatmentCategoriesPost({ locationId, name: categoryName });
-      }
-      setCategoryName('');
-      await loadLocationData(locationId);
-    } catch (err) {
-      setCategorySubmitError(err);
-      setError(err instanceof ApiError ? err.message : `Failed to ${editingCategory ? 'update' : 'create'} category`);
-    } finally {
-      setSavingCategory(false);
-    }
-  }
-
-  async function toggleCategoryActive(c: TreatmentCategory) {
-    setError(null);
-    try {
-      await adminCatalogApi.apiAdminCatalogTreatmentCategoriesIdPut(c.id, { name: c.name, isActive: !c.isActive });
-      if (locationId !== null) await loadLocationData(locationId);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update category');
-    }
-  }
-
   function handleStartEditTreatment(t: Treatment) {
     setEditingTreatment(t);
     setTreatmentForm({
       categoryId: String(t.categoryId),
       name: t.name,
-      price: String(t.price),
       durationSlots: String(t.durationSlots),
+      effectiveFrom: t.effectiveFrom,
+      price: '',
     });
     setError(null);
     setTreatmentSubmitError(null);
@@ -174,8 +126,8 @@ export function TreatmentsPage() {
         await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(editingTreatment.id, {
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
-          price: Number(treatmentForm.price),
           durationSlots: Number(treatmentForm.durationSlots),
+          effectiveFrom: treatmentForm.effectiveFrom,
           isActive: editingTreatment.isActive !== false,
         });
         setEditingTreatment(null);
@@ -184,8 +136,9 @@ export function TreatmentsPage() {
           locationId,
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
-          price: Number(treatmentForm.price),
           durationSlots: Number(treatmentForm.durationSlots),
+          effectiveFrom: treatmentForm.effectiveFrom,
+          price: Number(treatmentForm.price),
         });
       }
       setTreatmentForm(emptyTreatmentForm());
@@ -204,8 +157,8 @@ export function TreatmentsPage() {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(t.id, {
         categoryId: t.categoryId,
         name: t.name,
-        price: t.price,
         durationSlots: t.durationSlots,
+        effectiveFrom: t.effectiveFrom,
         isActive: !t.isActive,
       });
       if (locationId !== null) await loadLocationData(locationId);
@@ -220,8 +173,8 @@ export function TreatmentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Treatments Catalog"
-        description="Manage this location's treatment categories, catalog items, and pricing."
+        title="Treatments"
+        description="Manage this location's treatment catalog items and their go-live date."
         action={
           <div className="flex flex-wrap items-center gap-3">
             {paramLocationId && (
@@ -240,7 +193,7 @@ export function TreatmentsPage() {
             {chainId !== null && (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase text-muted-foreground">Saloon:</span>
-                <div className="rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold text-foreground min-w-[160px]">
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold text-foreground min-w-40">
                   {selectedChain?.name ?? `Saloon #${chainId}`}
                 </div>
               </div>
@@ -254,12 +207,14 @@ export function TreatmentsPage() {
                 onChange={(picked: SingleValue<SelectOption>) => handleLocationChange(picked?.value ?? '')}
                 options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
                 unstyled
-                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-40')}
               />
             </div>
           </div>
         }
       />
+
+      <TreatmentCatalogTabs chainId={chainId} locationId={locationId} />
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
@@ -267,123 +222,81 @@ export function TreatmentsPage() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b border-border/50 pb-4">
-            <CardTitle>{editingCategory ? `Edit Category: ${editingCategory.name}` : 'Treatment Categories'}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6 space-y-4">
-            <form onSubmit={handleSubmitCategory} className="flex gap-2">
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>{editingTreatment ? `Edit Treatment: ${editingTreatment.name}` : 'Add New Treatment'}</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form onSubmit={handleSubmitTreatment} className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                Category
+              </label>
+              <Select
+                isClearable
+                value={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === treatmentForm.categoryId) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => setTreatmentForm({ ...treatmentForm, categoryId: picked?.value ?? '' })}
+                placeholder="Select Category..."
+                options={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name }))}
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
+              />
+            </div>
+            <Input
+              required
+              label="Treatment Name"
+              placeholder="Haircut & Styling"
+              value={treatmentForm.name}
+              onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
+              error={getFieldError(treatmentSubmitError, 'name')}
+            />
+            <Input
+              required
+              type="number"
+              label="Duration (15-min slots)"
+              placeholder="2 (30 mins)"
+              value={treatmentForm.durationSlots}
+              onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
+              error={getFieldError(treatmentSubmitError, 'durationSlots')}
+            />
+            <DateInput
+              required
+              label="Effective From"
+              helperText="When this treatment appears/is bookable in the client portal."
+              value={treatmentForm.effectiveFrom}
+              onChange={(e) => setTreatmentForm({ ...treatmentForm, effectiveFrom: e.target.value })}
+              error={getFieldError(treatmentSubmitError, 'effectiveFrom')}
+            />
+            {!editingTreatment && (
               <Input
                 required
-                placeholder="Category Name"
-                value={categoryName}
-                onChange={(e) => setCategoryName(e.target.value)}
-                error={getFieldError(categorySubmitError, 'name')}
+                type="number"
+                step="0.01"
+                label="Default Price ($)"
+                helperText="Effective from today. Schedule future price changes on the Prices page."
+                placeholder="45.00"
+                value={treatmentForm.price}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, price: e.target.value })}
+                error={getFieldError(treatmentSubmitError, 'price')}
               />
-              <Button type="submit" disabled={savingCategory} size="md" className="shrink-0">
-                {savingCategory ? 'Saving...' : editingCategory ? 'Update' : 'Add Category'}
+            )}
+            <div className="flex items-center gap-3 pt-2 sm:col-span-2">
+              <Button type="submit" disabled={savingTreatment} className="flex-1">
+                {savingTreatment ? 'Saving...' : editingTreatment ? 'Update Treatment' : 'Create Treatment'}
               </Button>
-              {editingCategory && (
-                <Button type="button" variant="outline" size="md" className="shrink-0" onClick={handleCancelCategoryEdit} disabled={savingCategory}>
+              {editingTreatment && (
+                <Button type="button" variant="outline" onClick={handleCancelTreatmentEdit} disabled={savingTreatment}>
                   Cancel
                 </Button>
               )}
-            </form>
-            <div className="pt-2">
-              {categories.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No categories yet.</p>
-              ) : (
-                <ul className="divide-y divide-border/50 text-xs">
-                  {categories.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground">{c.name}</span>
-                        <Badge status={c.isActive === false ? 'Inactive' : 'Active'} className="text-[10px] py-0 px-1.5" />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => handleStartEditCategory(c)}>
-                          Edit
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => toggleCategoryActive(c)}>
-                          {c.isActive === false ? 'Activate' : 'Deactivate'}
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="border-b border-border/50 pb-4">
-            <CardTitle>{editingTreatment ? `Edit Treatment: ${editingTreatment.name}` : 'Add New Treatment'}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <form onSubmit={handleSubmitTreatment} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Category
-                </label>
-                <Select
-                  isClearable
-                  value={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === treatmentForm.categoryId) ?? null}
-                  onChange={(picked: SingleValue<SelectOption>) => setTreatmentForm({ ...treatmentForm, categoryId: picked?.value ?? '' })}
-                  placeholder="Select Category..."
-                  options={activeCategoryOptions.map((c) => ({ value: String(c.id), label: c.name }))}
-                  unstyled
-                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
-                />
-              </div>
-              <Input
-                required
-                label="Treatment Name"
-                placeholder="Haircut & Styling"
-                value={treatmentForm.name}
-                onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
-                error={getFieldError(treatmentSubmitError, 'name')}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  required
-                  type="number"
-                  step="0.01"
-                  label="Price ($)"
-                  placeholder="45.00"
-                  value={treatmentForm.price}
-                  onChange={(e) => setTreatmentForm({ ...treatmentForm, price: e.target.value })}
-                  error={getFieldError(treatmentSubmitError, 'price')}
-                />
-                <Input
-                  required
-                  type="number"
-                  label="Duration (5-min slots)"
-                  placeholder="6 (30 mins)"
-                  value={treatmentForm.durationSlots}
-                  onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
-                  error={getFieldError(treatmentSubmitError, 'durationSlots')}
-                />
-              </div>
-              <div className="flex items-center gap-3 pt-2">
-                <Button type="submit" disabled={savingTreatment} className="flex-1">
-                  {savingTreatment ? 'Saving...' : editingTreatment ? 'Update Treatment' : 'Create Treatment'}
-                </Button>
-                {editingTreatment && (
-                  <Button type="button" variant="outline" onClick={handleCancelTreatmentEdit} disabled={savingTreatment}>
-                    Cancel
-                  </Button>
-                )}
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Catalog Items ({treatments.length})</CardTitle>
+          <CardTitle>Treatments ({treatments.length})</CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
@@ -398,10 +311,11 @@ export function TreatmentsPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
-                  <th className="px-6 py-3.5">Category</th>
                   <th className="px-6 py-3.5">Treatment</th>
+                  <th className="px-6 py-3.5">Category</th>
                   <th className="px-6 py-3.5">Price</th>
                   <th className="px-6 py-3.5">Duration</th>
+                  <th className="px-6 py-3.5">Effective From</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
@@ -409,10 +323,30 @@ export function TreatmentsPage() {
               <tbody className="divide-y divide-border/50">
                 {treatments.map((t) => (
                   <tr key={t.id} className="hover:bg-accent/40 transition">
-                    <td className="px-6 py-4 text-muted-foreground">{t.categoryName}</td>
                     <td className="px-6 py-4 font-semibold text-foreground">{t.name}</td>
-                    <td className="px-6 py-4 font-mono font-semibold text-primary">${t.price.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{t.categoryName}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-semibold text-primary">
+                          {t.price === null ? <span className="text-muted-foreground italic font-sans">Not yet effective</span> : `$${t.price.toFixed(2)}`}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            navigate(
+                              `/catalog/treatment-prices?chainId=${chainId}&locationId=${locationId}&treatmentId=${t.id}`,
+                            )
+                          }
+                        >
+                          View
+                        </Button>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-muted-foreground">{t.durationSlots * 15} mins</td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      {t.effectiveFrom} {t.effectiveFrom > today() && <Badge status="Inactive" className="ml-1 text-[10px] py-0 px-1.5" />}
+                    </td>
                     <td className="px-6 py-4">
                       <Badge status={t.isActive === false ? 'Inactive' : 'Active'} />
                     </td>

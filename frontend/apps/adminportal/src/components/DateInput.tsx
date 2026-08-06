@@ -7,6 +7,7 @@ interface DateInputProps {
   value: string; // 'YYYY-MM-DD'
   onChange: (e: { target: { value: string } }) => void;
   error?: string;
+  helperText?: string;
   required?: boolean;
   className?: string;
   minDate?: Date;
@@ -28,7 +29,7 @@ function formatDateValue(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-export function DateInput({ label, value, onChange, error, required, className, minDate, maxDate, excludeDates, filterDate }: DateInputProps) {
+export function DateInput({ label, value, onChange, error, helperText, required, className, minDate, maxDate, excludeDates, filterDate }: DateInputProps) {
   const inputId = label ? label.toLowerCase().replace(/\s+/g, '-') : undefined;
 
   return (
@@ -53,6 +54,7 @@ export function DateInput({ label, value, onChange, error, required, className, 
         className={`flex h-8 w-full rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${error ? 'border-destructive focus-visible:outline-destructive' : ''} ${className ?? ''}`}
       />
       {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+      {!error && helperText && <p className="text-xs text-muted-foreground">{helperText}</p>}
     </div>
   );
 }

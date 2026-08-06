@@ -1,10 +1,12 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { AuthApi, BookingApi, CatalogApi, Configuration, PaymentApi, ProfileApi } from '@saloon/api-client';
+import { AuthApi, BookingApi, CatalogApi, ConfigApi, Configuration, PaymentApi, ProfileApi } from '@saloon/api-client';
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
 // Where the "Exit emulation" banner sends the browser back to -- separate Vite app/port
-// (frontend/apps/adminportal), not reachable through API_BASE.
-export const ADMIN_PORTAL_URL: string = import.meta.env.VITE_ADMIN_PORTAL_URL ?? 'http://localhost:58562';
+// (frontend/apps/adminportal), not reachable through API_BASE. Fetched from GET /api/config/clientportal
+// so a portal's deployed URL can change without a frontend rebuild; main.tsx awaits loadPortalConfig()
+// before the app renders, so this is populated by the time any page can read it.
+export let ADMIN_PORTAL_URL = 'http://localhost:58562';
 
 const TOKEN_KEY = 'saloon_token';
 const REFRESH_KEY = 'saloon_refresh_token';
@@ -124,7 +126,20 @@ const configuration = new Configuration();
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
 export const bookingApi = new BookingApi(configuration, API_BASE, axiosInstance);
 export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance);
+export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
+
+// Called once from main.tsx before the app renders -- fetches the cross-portal URL(s) this app
+// needs. Falls back to ADMIN_PORTAL_URL's hardcoded default on failure so a down/unreachable API
+// doesn't block the app from loading.
+export async function loadPortalConfig(): Promise<void> {
+  try {
+    const { data } = await configApi.apiConfigClientportalGet();
+    ADMIN_PORTAL_URL = data.adminPortalUrl;
+  } catch {
+    // keep default
+  }
+}
 
 

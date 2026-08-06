@@ -84,8 +84,10 @@ CREATE TABLE dbo.Treatments (
     LocationId     INT NOT NULL REFERENCES dbo.Locations(Id),
     CategoryId     INT NOT NULL REFERENCES dbo.TreatmentCategories(Id),
     Name           NVARCHAR(200) NOT NULL,
-    Price          DECIMAL(10,2) NOT NULL,
     DurationSlots  SMALLINT NOT NULL CHECK (DurationSlots > 0), -- units of 5 minutes
+    -- Gates client-portal visibility/bookability independently of price (see sp_Catalog_GetTreatments) --
+    -- a treatment can exist and be priced ahead of when it should actually go live.
+    EffectiveFrom  DATE NOT NULL DEFAULT CAST(SYSUTCDATETIME() AS DATE),
     IsDelete       BIT NOT NULL DEFAULT 0,
     IsActive       BIT NOT NULL DEFAULT 1,
     CreatedBy      INT NULL,
@@ -93,6 +95,26 @@ CREATE TABLE dbo.Treatments (
     UpdatedBy      INT NULL,
     UpdatedDate    DATETIME2 NULL
 );
+
+-- Effective-dated price list: a treatment's price as of any date is the row with the latest
+-- EffectiveFrom <= that date (see sp_Catalog_GetTreatments etc). A price change normally inserts a
+-- new row so past bookings/history stay reconstructable -- in-place UPDATE (sp_Catalog_UpdateTreatmentPrice)
+-- is only allowed while no booking has yet relied on that row (see its own comment).
+CREATE TABLE dbo.TreatmentPrices (
+    Id             INT IDENTITY(1,1) PRIMARY KEY,
+    TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
+    Price          DECIMAL(10,2) NOT NULL,
+    EffectiveFrom  DATE NOT NULL,
+    IsDelete       BIT NOT NULL DEFAULT 0,
+    CreatedBy      INT NULL,
+    CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy      INT NULL,
+    UpdatedDate    DATETIME2 NULL
+);
+CREATE INDEX IX_TreatmentPrices_TreatmentId_EffectiveFrom ON dbo.TreatmentPrices(TreatmentId, EffectiveFrom DESC);
+-- One price per treatment per effective date -- filtered so a soft-deleted (corrected) entry never
+-- blocks re-scheduling the same date.
+CREATE UNIQUE INDEX UQ_TreatmentPrices_Treatment_EffectiveFrom ON dbo.TreatmentPrices(TreatmentId, EffectiveFrom) WHERE IsDelete = 0;
 
 -- ChainId/LocationId/UserId mirror the scope of whichever dbo.Users row currently links to this
 -- profile (see AdminStaffEndpoints -- kept in sync on staff create/update, not user-editable
@@ -298,6 +320,10 @@ CREATE TABLE dbo.BookingTreatments (
     SequenceOrder  SMALLINT NOT NULL,
     SlotCount      SMALLINT NOT NULL,
     Price          DECIMAL(10,2) NOT NULL,
+    -- Which TreatmentPrices row Price was captured from -- NULL for rows created before this column
+    -- existed. Lets sp_Catalog_UpdateTreatmentPrice check "has any booking used this exact price
+    -- row" directly instead of inferring it from dates.
+    TreatmentPriceId INT NULL REFERENCES dbo.TreatmentPrices(Id),
     IsDelete       BIT NOT NULL DEFAULT 0,
     IsActive       BIT NOT NULL DEFAULT 1,
     CreatedBy      INT NULL REFERENCES dbo.Users(Id),

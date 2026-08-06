@@ -11,6 +11,7 @@ using SaloonApi.Modules.Booking.Endpoints;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Endpoints;
 using SaloonApi.Modules.Catalog.Infrastructure;
+using SaloonApi.Modules.Config.Endpoints;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
@@ -191,6 +192,7 @@ app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs 
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapConfigEndpoints();
 app.MapCatalogEndpoints();
 app.MapBookingEndpoints();
 app.MapPaymentEndpoints();

@@ -67,9 +67,18 @@ export interface Treatment {
   categoryId: number;
   categoryName?: string;
   name: string;
-  price: number;
+  // null only when the treatment's sole price is future-dated (not yet effective).
+  price: number | null;
   durationSlots: number;
+  // Go-live date: gates client-portal visibility/bookability independently of price.
+  effectiveFrom: string;
   isActive?: boolean;
+}
+
+export interface TreatmentPrice {
+  id: number;
+  price: number;
+  effectiveFrom: string;
 }
 
 export interface Therapist {

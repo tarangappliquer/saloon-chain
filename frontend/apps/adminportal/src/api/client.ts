@@ -7,6 +7,7 @@ import {
   AdminStaffApi,
   AuthApi,
   CatalogApi,
+  ConfigApi,
   Configuration,
   PaymentApi,
   ProfileApi,
@@ -15,8 +16,10 @@ import {
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
 // Where /customers redirects the browser to hand off an emulation token -- separate Vite app/port
-// (frontend/apps/clientportal), not reachable through API_BASE.
-export const CLIENT_PORTAL_URL: string = import.meta.env.VITE_CLIENT_PORTAL_URL ?? 'http://localhost:58569';
+// (frontend/apps/clientportal), not reachable through API_BASE. Fetched from GET /api/config so a
+// portal's deployed URL can change without a frontend rebuild; main.tsx awaits loadPortalConfig()
+// before the app renders, so this is populated by the time any page can read it.
+export let CLIENT_PORTAL_URL = 'http://localhost:58569';
 
 const TOKEN_KEY = 'saloon_admin_token';
 const REFRESH_KEY = 'saloon_admin_refresh_token';
@@ -140,7 +143,20 @@ export const adminCustomersApi = new AdminCustomersApi(configuration, API_BASE, 
 export const adminDashboardApi = new AdminDashboardApi(configuration, API_BASE, axiosInstance);
 export const adminStaffApi = new AdminStaffApi(configuration, API_BASE, axiosInstance);
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
+export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
+
+// Called once from main.tsx before the app renders -- fetches the cross-portal URL(s) this app
+// needs. Falls back to CLIENT_PORTAL_URL's hardcoded default on failure so a down/unreachable API
+// doesn't block the app from loading.
+export async function loadPortalConfig(): Promise<void> {
+  try {
+    const { data } = await configApi.apiConfigAdminportalGet();
+    CLIENT_PORTAL_URL = data.clientPortalUrl;
+  } catch {
+    // keep default
+  }
+}
 

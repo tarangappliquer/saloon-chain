@@ -42,10 +42,17 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatments
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots
+    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, cp.Price, t.DurationSlots
     FROM dbo.Treatments t
         JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
+        CROSS APPLY (
+            SELECT TOP 1 tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+        AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE)
         AND tc.IsDelete = 0 AND tc.IsActive = 1
         AND (@CategoryId IS NULL OR t.CategoryId = @CategoryId)
     ORDER BY tc.Name, t.Name;
@@ -72,10 +79,17 @@ BEGIN
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
     -- 2) requested treatments (duration/category/price) as offered at this location
-    SELECT t.Id, t.CategoryId, t.DurationSlots, t.Price
+    SELECT t.Id, t.CategoryId, t.DurationSlots, cp.Price
     FROM dbo.Treatments t
         JOIN @TreatmentIds ti ON ti.Id = t.Id
-    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
+        CROSS APPLY (
+            SELECT TOP 1 tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+        AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
 
     -- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
     WITH
@@ -233,11 +247,18 @@ BEGIN
     SET @BookingId = SCOPE_IDENTITY();
 
     INSERT INTO dbo.BookingTreatments
-        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
-    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, t.Price, @CreatedBy
+        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, TreatmentPriceId, CreatedBy)
+    SELECT @BookingId, t.Id, ROW_NUMBER() OVER (ORDER BY t.Id), t.DurationSlots, cp.Price, cp.Id, @CreatedBy
     FROM dbo.Treatments t
         JOIN @Treatments ti ON ti.Id = t.Id
-    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
+        CROSS APPLY (
+            SELECT TOP 1 tp.Id, tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+        AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
 
     COMMIT TRANSACTION;
 END
@@ -268,10 +289,17 @@ BEGIN
     WHERE BookingId = @BookingId;
 
     INSERT INTO dbo.BookingTreatments
-        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, CreatedBy)
-    SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, t.Price, @CreatedBy
+        (BookingId, TreatmentId, SequenceOrder, SlotCount, Price, TreatmentPriceId, CreatedBy)
+    SELECT @BookingId, t.Id, @NextSeq, t.DurationSlots, cp.Price, cp.Id, @CreatedBy
     FROM dbo.Treatments t
-    WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
+        CROSS APPLY (
+            SELECT TOP 1 tp.Id, tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
+    WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+        AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
 
     IF @@ROWCOUNT = 0
         THROW 50006, 'Treatment not available at this location.', 1;
@@ -939,9 +967,15 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetTreatments
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Price, t.DurationSlots, t.IsActive
+    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, cp.Price, t.DurationSlots, t.EffectiveFrom, t.IsActive
     FROM dbo.Treatments t
         JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
+        OUTER APPLY (
+            SELECT TOP 1 tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0
     ORDER BY tc.Name, t.Name;
 END
@@ -1102,22 +1136,36 @@ BEGIN
 END
 GO
 
+-- @EffectiveFrom is the treatment's own go-live date (client-portal visibility/bookability),
+-- independent of price. @Price seeds its required first TreatmentPrices row, always effective
+-- from today (the price's own effective date isn't backdated/postdated at creation -- schedule a
+-- future price change afterwards via sp_Catalog_AddTreatmentPrice).
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatment
     @LocationId    INT,
     @CategoryId    INT,
     @Name          NVARCHAR(200),
-    @Price         DECIMAL(10,2),
     @DurationSlots SMALLINT,
+    @EffectiveFrom DATE,
+    @Price         DECIMAL(10,2),
     @CreatedBy     INT,
     @Id            INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
     INSERT INTO dbo.Treatments
-        (LocationId, CategoryId, Name, Price, DurationSlots, CreatedBy)
+        (LocationId, CategoryId, Name, DurationSlots, EffectiveFrom, CreatedBy)
     VALUES
-        (@LocationId, @CategoryId, @Name, @Price, @DurationSlots, @CreatedBy);
+        (@LocationId, @CategoryId, @Name, @DurationSlots, @EffectiveFrom, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
+
+    INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom, CreatedBy)
+    VALUES (@Id, @Price, CAST(GETUTCDATE() AS DATE), @CreatedBy);
+
+    COMMIT TRANSACTION;
 END
 GO
 
@@ -1125,20 +1173,89 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateTreatment
     @Id            INT,
     @CategoryId    INT,
     @Name          NVARCHAR(200),
-    @Price         DECIMAL(10,2),
     @DurationSlots SMALLINT,
+    @EffectiveFrom DATE,
     @IsActive      BIT,
     @UpdatedBy     INT
 AS
 BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.Treatments
-    SET CategoryId = @CategoryId, Name = @Name, Price = @Price, DurationSlots = @DurationSlots,
+    SET CategoryId = @CategoryId, Name = @Name, DurationSlots = @DurationSlots, EffectiveFrom = @EffectiveFrom,
         IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
 
     IF @@ROWCOUNT = 0
         THROW 50023, 'Treatment not found.', 1;
+END
+GO
+
+-- Schedules a new price for a treatment, effective from a given date -- never overwrites an
+-- existing TreatmentPrices row, so past-dated prices stay intact for historical bookings. One
+-- price per (treatment, date) -- UQ_TreatmentPrices_Treatment_EffectiveFrom is the hard backstop,
+-- this check exists only to turn that into a clean 409 instead of a raw constraint-violation error.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AddTreatmentPrice
+    @TreatmentId   INT,
+    @Price         DECIMAL(10,2),
+    @EffectiveFrom DATE,
+    @CreatedBy     INT,
+    @Id            INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Treatments WHERE Id = @TreatmentId AND IsDelete = 0)
+        THROW 50023, 'Treatment not found.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.TreatmentPrices
+        WHERE TreatmentId = @TreatmentId AND EffectiveFrom = @EffectiveFrom AND IsDelete = 0
+    )
+        THROW 50026, 'A price is already scheduled for this date.', 1;
+
+    INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom, CreatedBy)
+    VALUES (@TreatmentId, @Price, @EffectiveFrom, @CreatedBy);
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+-- Corrects a price's amount in place -- only while no non-cancelled booking has been captured
+-- against this exact price row (BookingTreatments.TreatmentPriceId, set by
+-- sp_Booking_CreateDraft/AddTreatment when they resolve a treatment's current price).
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateTreatmentPrice
+    @Id        INT,
+    @Price     DECIMAL(10,2),
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.TreatmentPrices WHERE Id = @Id AND IsDelete = 0)
+        THROW 50023, 'Treatment not found.', 1;
+
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE bt.TreatmentPriceId = @Id AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+    )
+        THROW 50027, 'Cannot edit this price -- it has already been used by a booking.', 1;
+
+    UPDATE dbo.TreatmentPrices
+    SET Price = @Price, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatmentPrices
+    @TreatmentId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, Price, EffectiveFrom
+    FROM dbo.TreatmentPrices
+    WHERE TreatmentId = @TreatmentId AND IsDelete = 0
+    ORDER BY EffectiveFrom DESC;
 END
 GO
 
