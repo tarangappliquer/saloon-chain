@@ -82,15 +82,17 @@ export function SchedulingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const paramChainId = searchParams.get('chainId');
   const paramLocationId = searchParams.get('locationId');
+  const paramDate = searchParams.get('date');
+  const paramShiftType = searchParams.get('shiftType') as ShiftType | null;
 
   const [chainId, setChainId] = useState<number | null>(paramChainId ? Number(paramChainId) : null);
   const [chains, setChains] = useState<{ id: number; name: string }[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
-  const [date, setDate] = useState(today());
-  const [shiftType, setShiftType] = useState<ShiftType>('Morning');
-  const [startTime, setStartTime] = useState(SHIFT_TIME_DEFAULTS.Morning.startTime);
-  const [endTime, setEndTime] = useState(SHIFT_TIME_DEFAULTS.Morning.endTime);
+  const [date, setDate] = useState<string>(paramDate || today());
+  const [shiftType, setShiftType] = useState<ShiftType>(paramShiftType || 'Morning');
+  const [startTime, setStartTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].startTime);
+  const [endTime, setEndTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].endTime);
 
   const [therapists, setTherapists] = useState<{ id: number; name: string }[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -103,11 +105,48 @@ export function SchedulingPage() {
   const [loading, setLoading] = useState(false);
   const [submittingShift, setSubmittingShift] = useState(false);
 
+  const updateUrl = useCallback(
+    (cId: number | null, lId: number | null, d: string, st: ShiftType) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (cId !== null) next.set('chainId', cId.toString());
+          else next.delete('chainId');
+
+          if (lId !== null) next.set('locationId', lId.toString());
+          else next.delete('locationId');
+
+          if (d) next.set('date', d);
+          else next.delete('date');
+
+          if (st) next.set('shiftType', st);
+          else next.delete('shiftType');
+
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
   function handleShiftTypeChange(v: string) {
     const type = v as ShiftType;
     setShiftType(type);
     setStartTime(SHIFT_TIME_DEFAULTS[type].startTime);
     setEndTime(SHIFT_TIME_DEFAULTS[type].endTime);
+    updateUrl(chainId, locationId, date, type);
+  }
+
+  function handleDateChange(newDate: string) {
+    setDate(newDate);
+    updateUrl(chainId, locationId, newDate, shiftType);
+  }
+
+  function changeLocation(v: unknown) {
+    const locId = v ? Number(v) : null;
+    setLocationId(locId);
+    updateUrl(chainId, locId, date, shiftType);
   }
 
   useEffect(() => {
@@ -116,10 +155,16 @@ export function SchedulingPage() {
       .then(({ data }) => {
         const cs = data as unknown as { id: number; name: string }[];
         setChains(cs);
-        if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
+        if (cs.length > 0) {
+          const matched = paramChainId ? cs.find((c) => c.id === Number(paramChainId)) : null;
+          const chosenChainId = matched ? matched.id : (chainId ?? cs[0].id);
+          if (chainId !== chosenChainId) {
+            setChainId(chosenChainId);
+          }
+        }
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
-  }, [chainId]);
+  }, []);
 
   useEffect(() => {
     if (locationId === null) {
@@ -146,14 +191,26 @@ export function SchedulingPage() {
       .then(({ data }) => {
         const locs = data as unknown as Location[];
         setLocations(locs);
-        if (paramLocationId) {
-          setLocationId(Number(paramLocationId));
-        } else if (locs.length > 0 && locationId === null) {
-          setLocationId(locs[0].id);
+
+        let resolvedLocationId: number | null = null;
+        if (paramLocationId && locs.some((l) => l.id === Number(paramLocationId))) {
+          resolvedLocationId = Number(paramLocationId);
+        } else if (locationId && locs.some((l) => l.id === locationId)) {
+          resolvedLocationId = locationId;
+        } else if (locs.length > 0) {
+          resolvedLocationId = locs[0].id;
+        }
+
+        if (resolvedLocationId !== locationId) {
+          setLocationId(resolvedLocationId);
+        }
+
+        if (resolvedLocationId !== null) {
+          updateUrl(chainId, resolvedLocationId, date, shiftType);
         }
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
-  }, [chainId, locationId, paramLocationId]);
+  }, [chainId]);
 
   useEffect(() => {
     if (locationId === null) return;
@@ -213,6 +270,14 @@ export function SchedulingPage() {
     if (locationId === null || !therapistIdValue) return;
     setError(null);
     setShiftSubmitError(null);
+    if (startTime >= endTime) {
+      setError('Start time must be before end time');
+      return;
+    }
+    if ((workOpen && startTime < workOpen) || (workClose && endTime > workClose)) {
+      setError(`Shift time must be within location working hours (${workOpen}–${workClose})`);
+      return;
+    }
     setSubmittingShift(true);
     try {
       await schedulingApi.apiAdminSchedulingTherapistShiftsPost({
@@ -263,19 +328,22 @@ export function SchedulingPage() {
     }
   }
 
-  function changeLocation(v: unknown) {
-    const locId = Number(v);
-    setLocationId(locId);
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.set('locationId', locId.toString());
-      return p;
-    });
-  }
-
   const flatTreatments = extractFlatTreatments(bookings);
   const timeSlots = generateTimeSlots(startTime, endTime, 15);
   const selectedChain = chains.find((c) => c.id === chainId);
+  const selectedLocation = locations.find((l) => l.id === locationId);
+  const workOpen = selectedLocation?.openTime.slice(0, 5);
+  const workClose = selectedLocation?.closeTime.slice(0, 5);
+  const startTimeError = startTime >= endTime
+    ? 'Must be before end time'
+    : workOpen && startTime < workOpen
+      ? `Location opens at ${workOpen}`
+      : getFieldError(shiftSubmitError, 'startTime');
+  const endTimeError = startTime >= endTime
+    ? 'Must be after start time'
+    : workClose && endTime > workClose
+      ? `Location closes at ${workClose}`
+      : getFieldError(shiftSubmitError, 'endTime');
 
   return (
     <div className="space-y-6">
@@ -324,7 +392,7 @@ export function SchedulingPage() {
             <DateInput
               label="Date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="min-w-full"
             />
             <div className="flex flex-col gap-1">
@@ -342,15 +410,18 @@ export function SchedulingPage() {
               label="Start Time"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
+              error={startTimeError}
               className="w-full"
+              incrementMinutes={15}
             />
             <TimeInput
               required
               label="End Time"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              error={getFieldError(shiftSubmitError, 'endTime')}
+              error={endTimeError}
               className="w-full"
+              incrementMinutes={15}
             />
           </div>
         </CardContent>

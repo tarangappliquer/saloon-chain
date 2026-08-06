@@ -166,6 +166,24 @@ Client Portal                   SaloonApi                     Stripe API
 
 ### OpenAPI Generation Workflow:
 When updating backend minimal APIs or regenerating `@saloon/api-client`:
-1. Start backend service on a non-default port (`dotnet run --urls "http://localhost:5199"`).
-2. Run `npx @openapitools/openapi-generator-cli generate -i http://localhost:5199/openapi/v1.json -g typescript-axios -o ./packages/api-client/src` from `frontend/`.
-3. Immediately kill the background process (`taskkill /F /PID <pid>`) and release port `5199`.
+1. Start the backend service on a non-default port (e.g. `--urls "http://localhost:5199"` instead of default `5127`).
+2. Run `openapi-generator-cli generate` targeting that non-default port (e.g. `http://localhost:5199/openapi/v1.json`).
+3. Immediately kill the backend process and release the non-default port once generation completes.
+
+---
+
+## 10. Admin Scheduling Modification Safeguards (/scheduling)
+
+In `/scheduling?chainId=X&locationId=Y`, admin scheduling modifications are guarded by active booking checks to prevent invalidating customer appointments:
+
+1. **Room Closure Safeguard (`DELETE /api/admin/scheduling/room-openings/{id}`)**:
+   - Checks if any active bookings (`Confirmed` or active unexpired `Draft`) exist for that `RoomId` on `WorkDate` via `sp_Scheduling_HasRoomBookings`.
+   - If bookings exist, returns `400 Bad Request` ("Cannot close room; existing bookings exist for this room.").
+
+2. **Category Change Safeguard (`POST /api/admin/scheduling/room-openings`)**:
+   - When attempting to assign a different `TreatmentCategoryId` to an existing room opening, checks `sp_Scheduling_HasRoomBookings`.
+   - If bookings exist, returns `400 Bad Request` ("Cannot change category; existing bookings exist for this room.").
+
+3. **Therapist Removal Safeguard (`DELETE /api/admin/scheduling/therapist-shifts/{id}`)**:
+   - Checks if active bookings exist for that therapist or room on that date/shift via `sp_Scheduling_HasShiftBookings`.
+   - If bookings exist, returns `400 Bad Request` ("Cannot remove therapist; existing bookings exist for this shift.").

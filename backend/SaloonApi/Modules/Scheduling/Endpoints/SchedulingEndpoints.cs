@@ -49,20 +49,23 @@ internal static class SchedulingEndpoints
 
         group.MapDelete("/therapist-shifts/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
         {
-            var locId = await repo.GetShiftLocationIdAsync(id);
-            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && locId != currentUser.LocationId)
+            var shift = await repo.GetShiftDetailsAsync(id);
+            if (shift is null) return Results.NotFound();
+
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && shift.LocationId != currentUser.LocationId)
                 return Results.Problem("Not authorized for this shift.", statusCode: StatusCodes.Status403Forbidden);
 
+            if (await repo.HasShiftBookingsAsync(id))
+                return Results.Problem("Cannot remove therapist; existing bookings exist for this shift.", statusCode: StatusCodes.Status400BadRequest);
+
             await repo.RemoveTherapistShiftAsync(id);
-            if (locId.HasValue)
-            {
-                var now = DateOnly.FromDateTime(DateTime.UtcNow);
-                await cache.InvalidateAsync(locId.Value, now);
-                sse.Publish(locId.Value, now, "slot-changed");
-            }
+            var workDate = DateOnly.FromDateTime(shift.WorkDate);
+            await cache.InvalidateAsync(shift.LocationId, workDate);
+            sse.Publish(shift.LocationId, workDate, "slot-changed");
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Remove a therapist's shift assignment.");
 
         group.MapPost("/room-openings", async (OpenRoomRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
@@ -74,8 +77,15 @@ internal static class SchedulingEndpoints
                     return Results.Problem("Not authorized for this room.", statusCode: StatusCodes.Status403Forbidden);
             }
 
+            var existing = await repo.GetRoomOpeningByKeysAsync(req.RoomId, req.WorkDate, req.ShiftType);
+            if (existing is not null && existing.TreatmentCategoryId != req.TreatmentCategoryId && await repo.HasRoomBookingsAsync(req.RoomId, req.WorkDate))
+            {
+                return Results.Problem("Cannot change category; existing bookings exist for this room.", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var id = await repo.OpenRoomAsync(req.RoomId, req.TreatmentCategoryId, req.ShiftType, req.WorkDate);
-            var roomLocId = await repo.GetRoomOpeningLocationIdAsync(id) ?? currentUser.LocationId ?? 0;
+            var roomOpening = await repo.GetRoomOpeningDetailsAsync(id);
+            var roomLocId = roomOpening?.LocationId ?? currentUser.LocationId ?? 0;
             if (roomLocId > 0)
             {
                 await cache.InvalidateAsync(roomLocId, req.WorkDate);
@@ -85,24 +95,28 @@ internal static class SchedulingEndpoints
         }).WithValidation<OpenRoomRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Open a room for a treatment category during a shift/date.");
 
         group.MapDelete("/room-openings/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
         {
-            var locId = await repo.GetRoomOpeningLocationIdAsync(id);
-            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && locId != currentUser.LocationId)
+            var opening = await repo.GetRoomOpeningDetailsAsync(id);
+            if (opening is null) return Results.NotFound();
+
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && opening.LocationId != currentUser.LocationId)
                 return Results.Problem("Not authorized for this room opening.", statusCode: StatusCodes.Status403Forbidden);
 
+            var workDate = DateOnly.FromDateTime(opening.WorkDate);
+            if (await repo.HasRoomBookingsAsync(opening.RoomId, workDate))
+                return Results.Problem("Cannot close room; existing bookings exist for this room.", statusCode: StatusCodes.Status400BadRequest);
+
             await repo.CloseRoomAsync(id);
-            if (locId.HasValue)
-            {
-                var now = DateOnly.FromDateTime(DateTime.UtcNow);
-                await cache.InvalidateAsync(locId.Value, now);
-                sse.Publish(locId.Value, now, "slot-changed");
-            }
+            await cache.InvalidateAsync(opening.LocationId, workDate);
+            sse.Publish(opening.LocationId, workDate, "slot-changed");
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Close a room opening.");
     }
 }

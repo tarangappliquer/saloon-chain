@@ -1594,6 +1594,80 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetShiftDetails
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT LocationId, WorkDate, RoomId, TherapistId, ShiftType
+    FROM dbo.ShiftAssignments
+    WHERE Id = @Id AND IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasShiftBookings
+    @ShiftId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.ShiftAssignments sa
+        JOIN dbo.BookingTreatments bt ON (bt.RoomId = sa.RoomId OR bt.TherapistId = sa.TherapistId)
+            AND bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = sa.WorkDate
+            AND bt.IsDelete = 0
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE sa.Id = @ShiftId AND sa.IsDelete = 0
+            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasBookings;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetRoomOpeningDetails
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT rca.Id, r.LocationId, rca.RoomId, rca.WorkDate, rca.ShiftType, rca.TreatmentCategoryId
+    FROM dbo.RoomCategoryAssignments rca
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId
+    WHERE rca.Id = @Id AND rca.IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetRoomOpeningByKeys
+    @RoomId    INT,
+    @WorkDate  DATE,
+    @ShiftType VARCHAR(10)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT rca.Id, r.LocationId, rca.RoomId, rca.WorkDate, rca.ShiftType, rca.TreatmentCategoryId
+    FROM dbo.RoomCategoryAssignments rca
+        JOIN dbo.Rooms r ON r.Id = rca.RoomId
+    WHERE rca.RoomId = @RoomId AND rca.WorkDate = @WorkDate AND rca.ShiftType = @ShiftType AND rca.IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasRoomBookings
+    @RoomId   INT,
+    @WorkDate DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE bt.RoomId = @RoomId
+            AND bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
+            AND bt.IsDelete = 0
+            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasBookings;
+END
+GO
+
+
 -- Self-service profile management (any logged-in role) -- name/phone editing and a profile photo,
 -- backed by dbo.StaffProfiles/dbo.CustomerProfiles (see 01_tables.sql). Run after 01-09.
 

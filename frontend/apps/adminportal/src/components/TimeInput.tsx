@@ -8,9 +8,10 @@ interface TimeInputProps {
   error?: string;
   required?: boolean;
   className?: string;
+  incrementMinutes?: number | undefined
 }
 
-export function TimeInput({ label, value, onChange, error, required, className }: TimeInputProps) {
+export function TimeInput({ label, value, onChange, error, required, className, incrementMinutes }: TimeInputProps) {
   const { theme } = useTheme();
   const inputId = label ? label.toLowerCase().replace(/\s+/g, '-') : undefined;
 
@@ -25,7 +26,7 @@ export function TimeInput({ label, value, onChange, error, required, className }
         id={inputId}
         required={required}
         value={value}
-        options={{ clock: { type: '24h' }, ui: { theme: theme === 'dark' ? 'dark' : 'basic' } }}
+        options={{ clock: { type: '24h', incrementMinutes: incrementMinutes }, ui: { theme: theme === 'dark' ? 'dark' : 'basic' } }}
         onConfirm={({ hour, minutes }) => {
           if (hour && minutes) onChange({ target: { value: `${hour.padStart(2, '0')}:${minutes.padStart(2, '0')}` } });
         }}

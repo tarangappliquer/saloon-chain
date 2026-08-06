@@ -8,8 +8,12 @@ namespace SaloonApi.Modules.Scheduling.Infrastructure;
 internal sealed record TherapistShiftDto(
     int Id, int TherapistId, string TherapistName, int? RoomId, string ShiftType, TimeSpan StartTime, TimeSpan EndTime);
 
+internal sealed record ShiftDetailsDto(int LocationId, DateTime WorkDate, int? RoomId, int TherapistId, string ShiftType);
+
 internal sealed record RoomOpeningDto(
     int Id, int RoomId, string RoomName, int TreatmentCategoryId, string CategoryName, string ShiftType);
+
+internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, string ShiftType, int TreatmentCategoryId);
 
 internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings);
 
@@ -59,6 +63,18 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         return await db.QuerySingleSpAsync<int?>("dbo.sp_Scheduling_GetShiftLocationId", new { Id = id });
     }
 
+    public async Task<ShiftDetailsDto?> GetShiftDetailsAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<ShiftDetailsDto?>("dbo.sp_Scheduling_GetShiftDetails", new { Id = id });
+    }
+
+    public async Task<bool> HasShiftBookingsAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasShiftBookings", new { ShiftId = id });
+    }
+
     public async Task<int> OpenRoomAsync(int roomId, int treatmentCategoryId, string shiftType, DateOnly date)
     {
         using var db = factory.Create();
@@ -84,4 +100,32 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         using var db = factory.Create();
         return await db.QuerySingleSpAsync<int?>("dbo.sp_Scheduling_GetRoomOpeningLocationId", new { Id = id });
     }
+
+    public async Task<RoomOpeningDetailsDto?> GetRoomOpeningDetailsAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<RoomOpeningDetailsDto?>("dbo.sp_Scheduling_GetRoomOpeningDetails", new { Id = id });
+    }
+
+    public async Task<RoomOpeningDetailsDto?> GetRoomOpeningByKeysAsync(int roomId, DateOnly workDate, string shiftType)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<RoomOpeningDetailsDto?>("dbo.sp_Scheduling_GetRoomOpeningByKeys", new
+        {
+            RoomId = roomId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+            ShiftType = shiftType
+        });
+    }
+
+    public async Task<bool> HasRoomBookingsAsync(int roomId, DateOnly workDate)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasRoomBookings", new
+        {
+            RoomId = roomId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue)
+        });
+    }
 }
+
