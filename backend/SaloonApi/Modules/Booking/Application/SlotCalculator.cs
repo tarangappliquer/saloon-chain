@@ -6,7 +6,7 @@ internal sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int R
 
 // Pure function: the one non-trivial algorithm in the booking flow, kept out of T-SQL so it's
 // unit-testable. SQL Server only supplies the raw data (hours, eligible room/therapist pairs,
-// existing bookings); this walks 5-minute candidate start times and filters out conflicts.
+// existing bookings); this walks 15-minute candidate start times and filters out conflicts.
 // Internal, exercised directly from SaloonApi.Tests via [assembly: InternalsVisibleTo].
 internal static class SlotCalculator
 {
@@ -17,7 +17,7 @@ internal static class SlotCalculator
         int totalDurationSlots,
         IReadOnlyList<EligiblePair> eligiblePairs,
         IReadOnlyList<ExistingBooking> existingBookings,
-        int slotMinutes = 5)
+        int slotMinutes = 15)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
         if (date < today || totalDurationSlots <= 0) return [];

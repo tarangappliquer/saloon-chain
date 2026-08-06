@@ -412,7 +412,7 @@ export function TreatmentsPage() {
                     <td className="px-6 py-4 text-muted-foreground">{t.categoryName}</td>
                     <td className="px-6 py-4 font-semibold text-foreground">{t.name}</td>
                     <td className="px-6 py-4 font-mono font-semibold text-primary">${t.price.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{t.durationSlots * 5} mins</td>
+                    <td className="px-6 py-4 text-muted-foreground">{t.durationSlots * 15} mins</td>
                     <td className="px-6 py-4">
                       <Badge status={t.isActive === false ? 'Inactive' : 'Active'} />
                     </td>

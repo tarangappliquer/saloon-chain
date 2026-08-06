@@ -44,7 +44,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
             <div className="flex items-center justify-between">
               <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <span>{line.treatmentName}</span>
-                <span className="text-muted-foreground/70">· {line.slotCount * 5} mins</span>
+                <span className="text-muted-foreground/70">· {line.slotCount * 15} mins</span>
                 {held && line.startTime && (
                   <span className="ml-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                     Selected {fmtTime(line.startTime)}

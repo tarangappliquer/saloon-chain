@@ -43,7 +43,7 @@ export function TreatmentPicker({ treatments, selectedIds, onToggle, onNext, loa
                     {selected && <Badge variant="primary" showDot={false}>Selected</Badge>}
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{t.durationSlots * 5} mins</span>
+                    <span>{t.durationSlots * 15} mins</span>
                     <span className="font-mono font-semibold text-primary">${t.price.toFixed(2)}</span>
                   </div>
                 </button>

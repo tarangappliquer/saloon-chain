@@ -162,7 +162,7 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
                   <div className="space-y-1">
                     <span className="font-medium text-foreground">{t.treatmentName}</span>
                     <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                      <span>{t.slotCount * 5} mins</span>
+                      <span>{t.slotCount * 15} mins</span>
                       {t.startTime ? (
                         <span>
                           {new Date(t.startTime).toLocaleString(undefined, {
