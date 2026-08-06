@@ -107,6 +107,11 @@ export function ConfirmDialog({
         onClose();
       }
     });
+    return () => {
+      if (MySwal.isVisible()) {
+        MySwal.close();
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 

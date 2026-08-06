@@ -1,4 +1,4 @@
-import { Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
@@ -9,15 +9,16 @@ import { PaymentStep } from './features/booking/PaymentStep';
 import { ScheduleStep } from './features/booking/ScheduleStep';
 import { SummaryStep } from './features/booking/SummaryStep';
 import { TreatmentsStep } from './features/booking/TreatmentsStep';
-import { ExplorePage } from './pages/ExplorePage';
-import { VenueDetailPage } from './pages/VenueDetailPage';
-import { BookPage } from './pages/BookPage';
-import { EmulatePage } from './pages/EmulatePage';
-import { LoginPage } from './pages/LoginPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { MyBookingsPage } from './pages/MyBookingsPage';
-import { ProfilePage } from './pages/ProfilePage';
+
+const ExplorePage = lazy(() => import('./pages/ExplorePage').then((m) => ({ default: m.ExplorePage })));
+const VenueDetailPage = lazy(() => import('./pages/VenueDetailPage').then((m) => ({ default: m.VenueDetailPage })));
+const BookPage = lazy(() => import('./pages/BookPage').then((m) => ({ default: m.BookPage })));
+const EmulatePage = lazy(() => import('./pages/EmulatePage').then((m) => ({ default: m.EmulatePage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const MyBookingsPage = lazy(() => import('./pages/MyBookingsPage').then((m) => ({ default: m.MyBookingsPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -132,60 +133,62 @@ function AppRoutes() {
       <EmulationBanner />
       <Nav />
       <main className="flex-1">
-        <Routes>
-          <Route path="/" element={<Navigate to="/explore" replace />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/emulate" element={<EmulatePage />} />
-          <Route
-            path="/explore"
-            element={
-              <RequireAuth>
-                <ExplorePage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/venue/:locationId"
-            element={
-              <RequireAuth>
-                <VenueDetailPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/book"
-            element={
-              <RequireAuth>
-                <BookPage />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<TreatmentsStep />} />
-            <Route path="confirmed" element={<ConfirmedStep />} />
-            <Route path=":bookingId/schedule" element={<ScheduleStep />} />
-            <Route path=":bookingId/summary" element={<SummaryStep />} />
-            <Route path=":bookingId/payment" element={<PaymentStep />} />
-          </Route>
-          <Route
-            path="/my-bookings"
-            element={
-              <RequireAuth>
-                <MyBookingsPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <RequireAuth>
-                <ProfilePage />
-              </RequireAuth>
-            }
-          />
-          <Route path="*" element={<Navigate to="/explore" replace />} />
-        </Routes>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/explore" replace />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/emulate" element={<EmulatePage />} />
+            <Route
+              path="/explore"
+              element={
+                <RequireAuth>
+                  <ExplorePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/venue/:locationId"
+              element={
+                <RequireAuth>
+                  <VenueDetailPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/book"
+              element={
+                <RequireAuth>
+                  <BookPage />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<TreatmentsStep />} />
+              <Route path="confirmed" element={<ConfirmedStep />} />
+              <Route path=":bookingId/schedule" element={<ScheduleStep />} />
+              <Route path=":bookingId/summary" element={<SummaryStep />} />
+              <Route path=":bookingId/payment" element={<PaymentStep />} />
+            </Route>
+            <Route
+              path="/my-bookings"
+              element={
+                <RequireAuth>
+                  <MyBookingsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <RequireAuth>
+                  <ProfilePage />
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/explore" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

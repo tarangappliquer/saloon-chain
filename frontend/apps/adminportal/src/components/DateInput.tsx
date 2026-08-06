@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import './DateInput.css';
@@ -29,8 +30,9 @@ function formatDateValue(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-export function DateInput({ label, value, onChange, error, helperText, required, className, minDate, maxDate, excludeDates, filterDate }: DateInputProps) {
+function DateInputBase({ label, value, onChange, error, helperText, required, className, minDate, maxDate, excludeDates, filterDate }: DateInputProps) {
   const inputId = label ? label.toLowerCase().replace(/\s+/g, '-') : undefined;
+  const parsedDate = parseDateValue(value);
 
   return (
     <div className="w-full space-y-1.5">
@@ -41,7 +43,7 @@ export function DateInput({ label, value, onChange, error, helperText, required,
       )}
       <DatePicker
         id={inputId}
-        selected={parseDateValue(value)}
+        selected={parsedDate}
         onChange={(date: Date | null) => {
           if (date) onChange({ target: { value: formatDateValue(date) } });
         }}
@@ -58,3 +60,5 @@ export function DateInput({ label, value, onChange, error, helperText, required,
     </div>
   );
 }
+
+export const DateInput = memo(DateInputBase);

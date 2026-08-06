@@ -33,28 +33,39 @@ export function ScheduleStep() {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   useEffect(() => {
     if (!locationId) return;
-    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data as unknown as Treatment[]));
+    let isMounted = true;
+    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => {
+      if (isMounted) setTreatments(data as unknown as Treatment[]);
+    });
+    return () => {
+      isMounted = false;
+    };
   }, [locationId]);
 
   const [locationMeta, setLocationMeta] = useState<{ saloonName: string; locationName: string } | null>(null);
 
   useEffect(() => {
     if (!locationId) return;
+    let isMounted = true;
     catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
       const chains = data as unknown as Chain[];
       for (const c of chains) {
+        if (!isMounted) return;
         const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
         const locs = locsRes.data as unknown as Location[];
         const targetLoc = locs.find((l) => l.id === locationId);
         if (targetLoc) {
-          setLocationMeta({ saloonName: c.name, locationName: targetLoc.name });
+          if (isMounted) setLocationMeta({ saloonName: c.name, locationName: targetLoc.name });
           return;
         }
       }
-      if (booking?.locationName) {
+      if (isMounted && booking?.locationName) {
         setLocationMeta({ saloonName: 'Saloon', locationName: booking.locationName });
       }
     });
+    return () => {
+      isMounted = false;
+    };
   }, [locationId, booking?.locationName]);
 
   const [date, setDate] = useState<string | null>(null);

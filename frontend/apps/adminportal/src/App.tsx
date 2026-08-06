@@ -1,29 +1,30 @@
-import { Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import type { UserRole } from './api/types';
-import { LoginPage } from './pages/LoginPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { SaloonsPage } from './pages/catalog/SaloonsPage';
-import { SaloonUsersPage } from './pages/catalog/SaloonUsersPage';
-import { LocationsPage } from './pages/catalog/LocationsPage';
-import { MyLocationPage } from './pages/catalog/MyLocationPage';
-import { LocationUsersPage } from './pages/catalog/LocationUsersPage';
-import { TreatmentCategoriesPage } from './pages/catalog/TreatmentCategoriesPage';
-import { TreatmentsPage } from './pages/catalog/TreatmentsPage';
-import { TreatmentPricesPage } from './pages/catalog/TreatmentPricesPage';
-import { StaffPage } from './pages/staff/StaffPage';
-import { TherapistsPage } from './pages/staff/TherapistsPage';
-import { RoomsPage } from './pages/staff/RoomsPage';
-import { BookingsPage } from './pages/bookings/BookingsPage';
-import { CustomersPage } from './pages/customers/CustomersPage';
-import { SchedulingPage } from './pages/scheduling/SchedulingPage';
-import { ProfilePage } from './pages/ProfilePage';
+
+const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const SaloonsPage = lazy(() => import('./pages/catalog/SaloonsPage').then((m) => ({ default: m.SaloonsPage })));
+const SaloonUsersPage = lazy(() => import('./pages/catalog/SaloonUsersPage').then((m) => ({ default: m.SaloonUsersPage })));
+const LocationsPage = lazy(() => import('./pages/catalog/LocationsPage').then((m) => ({ default: m.LocationsPage })));
+const MyLocationPage = lazy(() => import('./pages/catalog/MyLocationPage').then((m) => ({ default: m.MyLocationPage })));
+const LocationUsersPage = lazy(() => import('./pages/catalog/LocationUsersPage').then((m) => ({ default: m.LocationUsersPage })));
+const TreatmentCategoriesPage = lazy(() => import('./pages/catalog/TreatmentCategoriesPage').then((m) => ({ default: m.TreatmentCategoriesPage })));
+const TreatmentsPage = lazy(() => import('./pages/catalog/TreatmentsPage').then((m) => ({ default: m.TreatmentsPage })));
+const TreatmentPricesPage = lazy(() => import('./pages/catalog/TreatmentPricesPage').then((m) => ({ default: m.TreatmentPricesPage })));
+const StaffPage = lazy(() => import('./pages/staff/StaffPage').then((m) => ({ default: m.StaffPage })));
+const TherapistsPage = lazy(() => import('./pages/staff/TherapistsPage').then((m) => ({ default: m.TherapistsPage })));
+const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ default: m.RoomsPage })));
+const BookingsPage = lazy(() => import('./pages/bookings/BookingsPage').then((m) => ({ default: m.BookingsPage })));
+const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })));
+const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 const ROOT_SUPER_ADMIN_ONLY: UserRole[] = ['RootSuperAdmin'];
 const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'];
@@ -110,140 +111,142 @@ function AppRoutes() {
       <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
       <Nav />
       <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <DashboardPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/catalog/saloons"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <SaloonsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/saloons/users"
-            element={
-              <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
-                <SaloonUsersPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/locations"
-            element={
-              <RequireRole roles={LOCATION_MANAGEMENT}>
-                <LocationsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/locations/users"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <LocationUsersPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/my-location"
-            element={
-              <RequireRole roles={MANAGER_ONLY}>
-                <MyLocationPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/treatment-categories"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <TreatmentCategoriesPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/treatments"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <TreatmentsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/catalog/treatment-prices"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <TreatmentPricesPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/staff/users"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <StaffPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/staff/therapists"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <TherapistsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/staff/rooms"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <RoomsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/scheduling"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <SchedulingPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/bookings"
-            element={
-              <RequireRole roles={STAFF_ACCESS}>
-                <BookingsPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/customers"
-            element={
-              <RequireRole roles={ADMIN_ACCESS}>
-                <CustomersPage />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <RequireAuth>
-                <ProfilePage />
-              </RequireAuth>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <DashboardPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/catalog/saloons"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <SaloonsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/saloons/users"
+              element={
+                <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
+                  <SaloonUsersPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/locations"
+              element={
+                <RequireRole roles={LOCATION_MANAGEMENT}>
+                  <LocationsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/locations/users"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <LocationUsersPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/my-location"
+              element={
+                <RequireRole roles={MANAGER_ONLY}>
+                  <MyLocationPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/treatment-categories"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <TreatmentCategoriesPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/treatments"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <TreatmentsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/catalog/treatment-prices"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <TreatmentPricesPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/staff/users"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <StaffPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/staff/therapists"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <TherapistsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/staff/rooms"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <RoomsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/scheduling"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <SchedulingPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/bookings"
+              element={
+                <RequireRole roles={STAFF_ACCESS}>
+                  <BookingsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/customers"
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <CustomersPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <RequireAuth>
+                  <ProfilePage />
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     </>
   );

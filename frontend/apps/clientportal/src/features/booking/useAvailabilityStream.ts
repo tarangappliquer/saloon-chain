@@ -19,6 +19,9 @@ export function useAvailabilityStream(locationId: number | null, date: string | 
     const source = new EventSource(url);
     const handler = () => onChangeRef.current();
     source.addEventListener('slot-changed', handler);
-    return () => source.close();
+    return () => {
+      source.removeEventListener('slot-changed', handler);
+      source.close();
+    };
   }, [locationId, date]);
 }

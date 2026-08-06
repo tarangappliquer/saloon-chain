@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import type { AuthResponse, UserRole } from '../../api/types';
 
@@ -26,10 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   });
 
-  async function login(email: string, password: string) {
-    // portal: 'Admin' has the API itself reject Receptionist/Therapist/Other/Customer credentials
-    // (403, even though they're valid) -- adminportal has no UI for those roles (every route needs
-    // at least Manager, see App.tsx's ADMIN_ACCESS).
+  const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.apiAuthLoginPost({ email, password, portal: 'Admin' });
     const res = data as unknown as AuthResponse;
 
@@ -44,12 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
     setUser(authUser);
-  }
+  }, []);
 
-  function logout() {
-    // Best-effort, fire-and-forget: revokes the refresh token server-side so a copy left behind
-    // (e.g. in browser storage on a shared machine) can't still redeem /api/auth/refresh after
-    // sign-out. Local state clears immediately either way -- this must never block logout.
+  const logout = useCallback(() => {
     const token = getRefreshToken();
     if (token) authApi.apiAuthLogoutPost({ refreshToken: token }).catch(() => {});
 
@@ -57,26 +51,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRefreshToken(null);
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
-  }
+  }, []);
 
-  // Called after a successful ProfilePage save so the "name · role" in the nav bar reflects the
-  // edit immediately, without waiting for the next login.
-  function updateName(name: string) {
+  const updateName = useCallback((name: string) => {
     setUser((u) => {
       if (!u) return u;
       const updated = { ...u, name };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
-  }
+  }, []);
 
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [logout]);
 
-  return <AuthContext.Provider value={{ user, login, logout, updateName }}>{children}</AuthContext.Provider>;
+  const value = useMemo(
+    () => ({ user, login, logout, updateName }),
+    [user, login, logout, updateName]
+  );
+
+  return <AuthContext value={value}>{children}</AuthContext>;
 }
 
 // oxlint-disable-next-line react/only-export-components

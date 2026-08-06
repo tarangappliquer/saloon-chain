@@ -252,15 +252,17 @@ export function SchedulingPage() {
     const url = `${API_BASE}/api/booking/stream?locationId=${locationId}&date=${date}`;
     const es = new EventSource(url);
 
-    es.addEventListener('slot-changed', () => {
+    const slotHandler = () => {
       loadRosterAndBookings(true);
-    });
+    };
+    es.addEventListener('slot-changed', slotHandler);
 
     const timer = setInterval(() => {
       loadRosterAndBookings(true);
     }, 15000);
 
     return () => {
+      es.removeEventListener('slot-changed', slotHandler);
       es.close();
       clearInterval(timer);
     };

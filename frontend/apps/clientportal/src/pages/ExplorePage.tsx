@@ -115,15 +115,19 @@ export function ExplorePage() {
         ]);
         setAvailableCategories(['All', 'Hair & Styling', 'Barbershop', 'Nails & Manicure', 'Skincare & Facials']);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
+    let isMounted = true;
     const timer = setTimeout(() => {
       loadVenues();
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [searchQuery]);
 
   const filteredVenues = venues.filter((venue) => {
@@ -230,6 +234,8 @@ export function ExplorePage() {
                   <img
                     src={venue.imageUrl}
                     alt={venue.name}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <div className="absolute top-3 right-3 rounded-full bg-card/90 px-2.5 py-1 text-xs font-bold text-foreground backdrop-blur-md flex items-center gap-1 shadow-sm">

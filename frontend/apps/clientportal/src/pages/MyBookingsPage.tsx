@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, ConfirmDialog, LoadingFallback } from '@saloon/ui';
 import { ApiError, bookingApi } from '../api/client';
@@ -37,6 +37,14 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
   const isWithin48h = startMs !== Infinity && startMs - Date.now() <= FORTY_EIGHT_HOURS_MS;
   const canCancel = b.status === 'Confirmed' && !isWithin48h;
 
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
   async function handleConfirmCancel() {
     setCancelling(true);
     setActionError(null);
@@ -45,7 +53,7 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
       await bookingApi.apiBookingIdDelete(b.id);
       setActionSuccess('Booking cancelled. Full refund issued to original payment method.');
       setShowConfirmModal(false);
-      setTimeout(() => onReload(), 1500);
+      timerRef.current = setTimeout(() => onReload(), 1500);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Bookings cannot be cancelled within 48 hours of appointment.');
     } finally {

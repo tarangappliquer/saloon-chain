@@ -9,9 +9,16 @@ export function useCountdown(expiresAt: string | null) {
   const [secondsLeft, setSecondsLeft] = useState(() => remaining(expiresAt));
 
   useEffect(() => {
-    setSecondsLeft(remaining(expiresAt));
-    if (!expiresAt) return;
-    const id = setInterval(() => setSecondsLeft(remaining(expiresAt)), 1000);
+    const initialRem = remaining(expiresAt);
+    setSecondsLeft(initialRem);
+    if (!expiresAt || initialRem <= 0) return;
+    const id = setInterval(() => {
+      const rem = remaining(expiresAt);
+      setSecondsLeft(rem);
+      if (rem <= 0) {
+        clearInterval(id);
+      }
+    }, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
 

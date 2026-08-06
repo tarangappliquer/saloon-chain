@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const POLL_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -52,21 +52,20 @@ export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; o
     };
   }, []);
 
+  const onServerUpRef = useRef(onServerUp);
+  onServerUpRef.current = onServerUp;
+
   useEffect(() => {
     if (!online) return;
     const controller = new AbortController();
-    // Skips the network call while the tab is backgrounded -- one client polling every 30s is
-    // already cheap for the server, but most tabs sit hidden most of the time, so this cuts total
-    // request volume a lot for free. Page Visibility API also gives us an immediate re-check the
-    // moment a tab comes back to the front, so returning users aren't stuck on a stale banner.
     const check = async () => {
       if (document.hidden) return;
       const up = await pingServer(apiBase, controller.signal);
       if (controller.signal.aborted) return;
-      // Fires only on the down -> up transition, not every healthy poll -- callers (e.g.
-      // PortalConfigProvider) use this to retry whatever failed while the server was unreachable.
       setServerUp((prev) => {
-        if (up && !prev) onServerUp?.();
+        if (up && !prev) {
+          setTimeout(() => onServerUpRef.current?.(), 0);
+        }
         return up;
       });
     };

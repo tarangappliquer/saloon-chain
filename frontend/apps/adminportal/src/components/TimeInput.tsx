@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { Timepicker } from 'timepicker-ui-react';
 import { useTheme } from '@saloon/ui';
 
@@ -8,12 +9,20 @@ interface TimeInputProps {
   error?: string;
   required?: boolean;
   className?: string;
-  incrementMinutes?: number | undefined
+  incrementMinutes?: number | undefined;
 }
 
-export function TimeInput({ label, value, onChange, error, required, className, incrementMinutes }: TimeInputProps) {
+function TimeInputBase({ label, value, onChange, error, required, className, incrementMinutes }: TimeInputProps) {
   const { theme } = useTheme();
   const inputId = label ? label.toLowerCase().replace(/\s+/g, '-') : undefined;
+
+  const options = useMemo(
+    () => ({
+      clock: { type: '24h' as const, incrementMinutes },
+      ui: { theme: theme === 'dark' ? ('dark' as const) : ('basic' as const) },
+    }),
+    [incrementMinutes, theme]
+  );
 
   return (
     <div className="w-full space-y-1.5">
@@ -26,7 +35,7 @@ export function TimeInput({ label, value, onChange, error, required, className, 
         id={inputId}
         required={required}
         value={value}
-        options={{ clock: { type: '24h', incrementMinutes: incrementMinutes }, ui: { theme: theme === 'dark' ? 'dark' : 'basic' } }}
+        options={options}
         onConfirm={({ hour, minutes }) => {
           if (hour && minutes) onChange({ target: { value: `${hour.padStart(2, '0')}:${minutes.padStart(2, '0')}` } });
         }}
@@ -36,3 +45,5 @@ export function TimeInput({ label, value, onChange, error, required, className, 
     </div>
   );
 }
+
+export const TimeInput = memo(TimeInputBase);

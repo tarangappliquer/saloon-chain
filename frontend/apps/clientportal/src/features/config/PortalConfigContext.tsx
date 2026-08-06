@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { configApi } from '../../api/client';
 
 interface PortalConfigContextValue {
@@ -32,7 +32,9 @@ export function PortalConfigProvider({ children }: { children: ReactNode }) {
 
   const refetch = useCallback(() => fetchConfig(), [fetchConfig]);
 
-  return <PortalConfigContext.Provider value={{ adminPortalUrl, refetch }}>{children}</PortalConfigContext.Provider>;
+  const value = useMemo(() => ({ adminPortalUrl, refetch }), [adminPortalUrl, refetch]);
+
+  return <PortalConfigContext value={value}>{children}</PortalConfigContext>;
 }
 
 // oxlint-disable-next-line react/only-export-components
