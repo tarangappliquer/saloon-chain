@@ -99,6 +99,8 @@ export function VenueDetailPage() {
           <img
             src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80"
             alt="Venue Cover"
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover opacity-80"
           />
           <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-slate-950/40 to-transparent" />
@@ -207,7 +209,7 @@ export function VenueDetailPage() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           {specialists.map((s) => (
             <div key={s.id} className="flex flex-col items-center text-center rounded-2xl border border-border bg-card p-6 space-y-3">
-              <img src={s.avatarUrl} alt={s.name} className="h-20 w-20 rounded-full object-cover shadow-md" />
+              <img src={s.avatarUrl} alt={s.name} loading="lazy" decoding="async" className="h-20 w-20 rounded-full object-cover shadow-md" />
               <div>
                 <h3 className="font-bold text-foreground">{s.name}</h3>
                 <p className="text-xs text-muted-foreground">{s.role}</p>

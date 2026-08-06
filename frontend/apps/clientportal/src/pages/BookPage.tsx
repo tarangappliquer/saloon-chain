@@ -50,7 +50,7 @@ export function BookPage() {
         setChainId(cs[0].id);
       }
     });
-  }, [isEditingBooking, searchLocId]);
+  }, [chainId, isEditingBooking, searchLocId]);
 
   useEffect(() => {
     if (!isEditingBooking || !bookingId) return;

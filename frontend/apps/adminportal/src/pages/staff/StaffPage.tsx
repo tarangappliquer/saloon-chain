@@ -53,10 +53,10 @@ export function StaffPage() {
   const effectiveRoleOptions: UserRole[] = paramLocationId
     ? roleOptions.filter((r) => r !== 'SuperAdmin' && r !== 'Admin')
     : paramChainId
-    ? roleOptions.filter((r) => r === 'SuperAdmin' || r === 'Admin' || r === 'Manager' || r === 'Receptionist')
-    : form.locationId
-    ? roleOptions.filter((r) => r !== 'SuperAdmin' && r !== 'Admin')
-    : roleOptions;
+      ? roleOptions.filter((r) => r === 'SuperAdmin' || r === 'Admin' || r === 'Manager' || r === 'Receptionist')
+      : form.locationId
+        ? roleOptions.filter((r) => r !== 'SuperAdmin' && r !== 'Admin')
+        : roleOptions;
 
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -99,11 +99,11 @@ export function StaffPage() {
           setForm((f) => ({ ...f, chainId: String(cs[0].id) }));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     adminCatalogApi
       .apiAdminCatalogTherapistsGet()
       .then(({ data }) => setTherapists(data as unknown as Therapist[]))
-      .catch(() => {});
+      .catch(() => { });
   }, [loadStaff, paramChainId, paramLocationId]);
 
   useEffect(() => {
@@ -221,14 +221,14 @@ export function StaffPage() {
   const pageTitle = isLocationMode
     ? `Location User Management — ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
     : isSaloonMode
-    ? `Saloon User Management — ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
-    : 'Staff & User Accounts';
+      ? `Saloon User Management — ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+      : 'Staff & User Accounts';
 
   const pageDesc = isLocationMode
     ? `Create and manage location staff (Manager, Receptionist, Therapist, Other) for ${selectedLocation?.name ?? 'this location'}.`
     : isSaloonMode
-    ? `Create and manage saloon chain administrators (SuperAdmin, Admin) for ${selectedChain?.name ?? 'this saloon chain'}.`
-    : 'Manage staff accounts, user roles, location scoping, and access permissions.';
+      ? `Create and manage saloon chain administrators (SuperAdmin, Admin) for ${selectedChain?.name ?? 'this saloon chain'}.`
+      : 'Manage staff accounts, user roles, location scoping, and access permissions.';
 
   return (
     <div className="space-y-6">
@@ -265,10 +265,10 @@ export function StaffPage() {
               {editingUser
                 ? `Edit User: ${editingUser.name}`
                 : isLocationMode
-                ? `Add User for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
-                : isSaloonMode
-                ? `Add User for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
-                : 'Create User Account'}
+                  ? `Add User for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
+                  : isSaloonMode
+                    ? `Add User for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+                    : 'Create User Account'}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
@@ -418,8 +418,8 @@ export function StaffPage() {
             {isLocationMode
               ? `Users for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
               : isSaloonMode
-              ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
-              : 'User Members'}{' '}
+                ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+                : 'User Members'}{' '}
             ({staff.length})
           </CardTitle>
         </CardHeader>
@@ -462,7 +462,7 @@ export function StaffPage() {
                     <td className="px-6 py-4">
                       {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
                         <span className="text-muted-foreground">n/a</span>
-                      ) : Boolean(currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role)) ? (
+                      ) : currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role) ? (
                         <Button
                           variant="outline"
                           size="sm"

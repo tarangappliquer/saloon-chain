@@ -21,6 +21,10 @@ const REFRESH_KEY = 'saloon_admin_refresh_token';
 let authToken: string | null = localStorage.getItem(TOKEN_KEY);
 let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
 
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
 export function setAuthToken(token: string | null) {
   authToken = token;
   if (token) localStorage.setItem(TOKEN_KEY, token);

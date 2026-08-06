@@ -118,7 +118,11 @@ builder.Services.AddCors(options =>
 {
     var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
         ?? ["http://localhost:5173"];
-    options.AddDefaultPolicy(policy => policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod());
+    options.AddDefaultPolicy(policy => policy
+        .WithOrigins(origins)
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .WithExposedHeaders("Tus-Resumable", "Upload-Offset", "Upload-Length", "Upload-Metadata", "Location"));
 });
 
 builder.Services.AddTransient<CorrelationIdMiddleware>();
@@ -172,6 +176,7 @@ builder.Services.AddHostedService<HoldExpirySweepService>();
 builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
 builder.Services.AddHealthChecks();
+builder.Services.AddAntiforgery();
 
 var app = builder.Build();
 
@@ -207,6 +212,8 @@ app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs context.User's claims populated
 app.UseAuthorization();
+app.UseAntiforgery();
+app.UseTusEndpoints();
 
 // Polled by both frontends' ConnectivityBanner to distinguish "server is down" from "you're offline"
 // -- no auth, no tags, just a 200 so a plain fetch (no generated client) can hit it from any origin.

@@ -34,6 +34,7 @@
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Stripe.net" />
     <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="tusdotnet" />
   </ItemGroup>
 
   <ItemGroup>

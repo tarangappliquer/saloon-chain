@@ -7,19 +7,6 @@ namespace SaloonApi.Modules.Profile.Endpoints;
 
 internal static class ProfileEndpoints
 {
-    // Only these three (extension, declared content-type) combinations are accepted -- rejects
-    // anything else outright rather than trying to sniff real file contents, which is enough for a
-    // profile photo (not a security boundary the way an executable-upload path would be).
-    private static readonly Dictionary<string, string> AllowedImageTypes = new()
-    {
-        [".JPG"] = "image/jpeg",
-        [".JPEG"] = "image/jpeg",
-        [".PNG"] = "image/png",
-        [".WEBP"] = "image/webp",
-    };
-
-    private const long MaxPhotoBytes = 5 * 1024 * 1024;
-
     public static void MapProfileEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/profile").RequireAuthorization().WithTags("Profile")
@@ -50,36 +37,6 @@ internal static class ProfileEndpoints
           .Produces<ProfileResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update the caller's own name/phone.");
-
-        group.MapPost("/photo", async (IFormFile file, ICurrentUser currentUser, ProfileRepository repo, SaloonApi.Shared.Storage.IStorageService storageService) =>
-        {
-            if (currentUser.EmulatedByUserId is not null)
-                return Results.Problem("Profile photo updates are not allowed during an emulation session.", statusCode: StatusCodes.Status403Forbidden);
-
-            if (file.Length == 0)
-                return Results.Problem("File is empty.", statusCode: StatusCodes.Status400BadRequest);
-            if (file.Length > MaxPhotoBytes)
-                return Results.Problem("File exceeds the 5 MB limit.", statusCode: StatusCodes.Status400BadRequest);
-
-            var ext = Path.GetExtension(file.FileName).ToUpperInvariant();
-            if (!AllowedImageTypes.TryGetValue(ext, out var expectedContentType) || file.ContentType != expectedContentType)
-                return Results.Problem("Only JPG, PNG, or WEBP images are allowed.", statusCode: StatusCodes.Status400BadRequest);
-
-            var userId = currentUser.RequireUserId();
-
-            // Clear any previous photo first so switching image formats on re-upload doesn't leave an orphaned file
-            await storageService.DeleteFilesAsync("profile-photos", userId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-            var fileName = $"{userId}{ext}";
-            await using var stream = file.OpenReadStream();
-            var photoPath = await storageService.SaveFileAsync(stream, "profile-photos", fileName, expectedContentType);
-
-            await repo.SetPhotoPathAsync(userId, currentUser.Role!.Value, photoPath);
-            return Results.Ok(new PhotoResponse(photoPath));
-        }).Produces<PhotoResponse>()
-          .ProducesProblem(StatusCodes.Status400BadRequest)
-          .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("Upload/replace the caller's own profile photo (JPG/PNG/WEBP, max 5 MB).");
     }
 
     private static ProfileResponse ToResponse(ProfileDto p) =>
@@ -88,7 +45,6 @@ internal static class ProfileEndpoints
 
 internal sealed record UpdateProfileRequest(string Name, string? Phone);
 internal sealed record ProfileResponse(int UserId, string Name, string Email, string? Phone, string Role, string? PhotoPath);
-internal sealed record PhotoResponse(string PhotoPath);
 
 internal sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProfileRequest>
 {

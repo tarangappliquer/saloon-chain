@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Badge, Button, Card, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { API_BASE, ApiError, getFieldError, profileApi } from '../api/client';
+import { Badge, Button, Card, Input, LoadingFallback, PageHeader, uploadWithTus } from '@saloon/ui';
+import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import type { Profile } from '../api/types';
 
@@ -16,6 +16,8 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [cacheBuster, setCacheBuster] = useState(Date.now());
 
   async function load() {
     setLoading(true);
@@ -64,11 +66,20 @@ export function ProfilePage() {
     setSuccess(null);
     setUploading(true);
     try {
-      const { data: res } = await profileApi.apiProfilePhotoPost(file);
-      setProfile((p) => (p ? { ...p, photoPath: res.photoPath } : p));
+      const token = getAuthToken() || undefined;
+      await uploadWithTus({
+        endpoint: `${API_BASE}/api/files/tus`,
+        file,
+        category: 'profile-photos',
+        token,
+      });
+      const { data: res } = await profileApi.apiProfileGet();
+      const updated = res as unknown as Profile;
+      setProfile(updated);
+      setCacheBuster(Date.now());
       setSuccess('Profile photo updated.');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to upload photo');
+      setError(err instanceof Error ? err.message : 'Failed to upload photo');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -90,7 +101,7 @@ export function ProfilePage() {
         <div className="mb-6 flex items-center gap-6">
           <div className="h-20 w-20 overflow-hidden rounded-2xl border border-border bg-muted shadow-2xs">
             {profile.photoPath ? (
-              <img src={`${API_BASE}${profile.photoPath}`} alt="Profile" className="h-full w-full object-cover" />
+              <img src={`${API_BASE}${profile.photoPath}?v=${cacheBuster}`} alt="Profile" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center font-display text-2xl font-bold text-muted-foreground">
                 {profile.name.substring(0, 2).toUpperCase()}

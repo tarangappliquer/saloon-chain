@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore, useEffectEvent } from 'react';
 
 const POLL_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -26,34 +26,35 @@ async function pingServer(apiBase: string, signal: AbortSignal): Promise<boolean
 // wifi. Polls GET {apiBase}/health (ASP.NET's built-in health-check middleware, see Program.cs)
 // with a plain fetch rather than the generated api-client, since this lives in the shared @saloon/ui
 // package and has no per-app axios instance to reuse.
+function subscribeOnlineStatus(callback: () => void) {
+  window.addEventListener('online', callback);
+  window.addEventListener('offline', callback);
+  return () => {
+    window.removeEventListener('online', callback);
+    window.removeEventListener('offline', callback);
+  };
+}
+
+function getOnlineStatusSnapshot() {
+  return navigator.onLine;
+}
+
 export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; onServerUp?: () => void }) {
-  const [online, setOnline] = useState(navigator.onLine);
+  const online = useSyncExternalStore(subscribeOnlineStatus, getOnlineStatusSnapshot);
   const [serverUp, setServerUp] = useState(true);
   const isDown = !online || !serverUp;
   const message = online
     ? "We're having trouble connecting to our servers. Hang tight, we're on it."
     : "You're offline. Please check your internet connection.";
 
-  // Keeps showing the last message while collapsing so the banner doesn't go blank mid-animation --
-  // isDown flips to false a render before the height/opacity transition finishes.
   const [shownMessage, setShownMessage] = useState(message);
   useEffect(() => {
     if (isDown) setShownMessage(message);
   }, [isDown, message]);
 
-  useEffect(() => {
-    const goOnline = () => setOnline(true);
-    const goOffline = () => setOnline(false);
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
-    return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
-    };
-  }, []);
-
-  const onServerUpRef = useRef(onServerUp);
-  onServerUpRef.current = onServerUp;
+  const handleServerUpEvent = useEffectEvent(() => {
+    onServerUp?.();
+  });
 
   useEffect(() => {
     if (!online) return;
@@ -64,7 +65,7 @@ export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; o
       if (controller.signal.aborted) return;
       setServerUp((prev) => {
         if (up && !prev) {
-          setTimeout(() => onServerUpRef.current?.(), 0);
+          handleServerUpEvent();
         }
         return up;
       });
@@ -77,7 +78,7 @@ export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; o
       clearInterval(id);
       document.removeEventListener('visibilitychange', check);
     };
-  }, [apiBase, online]);
+  }, [apiBase, online, handleServerUpEvent]);
 
   // Always mounted (never `return null`) so hiding animates instead of popping -- a CSS grid track
   // collapsing 1fr -> 0fr transitions smoothly, unlike height:auto, and needs no JS unmount timer.
@@ -88,9 +89,8 @@ export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; o
     >
       <div className="overflow-hidden">
         <div
-          className={`flex items-center justify-center gap-2 border-b border-red-900/30 bg-red-800 px-4 py-2 text-center text-xs font-semibold text-red-50 shadow-sm transition-all duration-300 dark:bg-red-900 ${
-            isDown ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'
-          }`}
+          className={`flex items-center justify-center gap-2 border-b border-red-900/30 bg-red-800 px-4 py-2 text-center text-xs font-semibold text-red-50 shadow-sm transition-all duration-300 dark:bg-red-900 ${isDown ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'
+            }`}
         >
           <span className="flex h-2 w-2 shrink-0 rounded-full bg-red-300 animate-pulse" />
           {shownMessage}

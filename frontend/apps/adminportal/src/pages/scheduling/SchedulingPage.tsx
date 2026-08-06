@@ -164,7 +164,7 @@ export function SchedulingPage() {
         }
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load chains'));
-  }, []);
+  }, [chainId, paramChainId]);
 
   useEffect(() => {
     if (locationId === null) {
@@ -210,7 +210,7 @@ export function SchedulingPage() {
         }
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load locations'));
-  }, [chainId]);
+  }, [chainId, date, locationId, paramLocationId, shiftType, updateUrl]);
 
   useEffect(() => {
     if (locationId === null) return;
