@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
+import { PortalConfigProvider } from './features/config/PortalConfigContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -252,8 +253,10 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
-            <AppRoutes />
+          <Suspense fallback={<LoadingFallback maxW="max-w-4xl" message="Connecting to server…" />}>
+            <PortalConfigProvider>
+              <AppRoutes />
+            </PortalConfigProvider>
           </Suspense>
         </AuthProvider>
       </ThemeProvider>

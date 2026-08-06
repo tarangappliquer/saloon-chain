@@ -15,11 +15,6 @@ import {
 } from '@saloon/api-client';
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
-// Where /customers redirects the browser to hand off an emulation token -- separate Vite app/port
-// (frontend/apps/clientportal), not reachable through API_BASE. Fetched from GET /api/config so a
-// portal's deployed URL can change without a frontend rebuild; main.tsx awaits loadPortalConfig()
-// before the app renders, so this is populated by the time any page can read it.
-export let CLIENT_PORTAL_URL = 'http://localhost:58569';
 
 const TOKEN_KEY = 'saloon_admin_token';
 const REFRESH_KEY = 'saloon_admin_refresh_token';
@@ -148,15 +143,9 @@ export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance)
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
 
-// Called once from main.tsx before the app renders -- fetches the cross-portal URL(s) this app
-// needs. Falls back to CLIENT_PORTAL_URL's hardcoded default on failure so a down/unreachable API
-// doesn't block the app from loading.
-export async function loadPortalConfig(): Promise<void> {
-  try {
-    const { data } = await configApi.apiConfigAdminportalGet();
-    CLIENT_PORTAL_URL = data.clientPortalUrl;
-  } catch {
-    // keep default
-  }
-}
+// Fired once, as soon as this module loads -- not awaited here. PortalConfigProvider (see
+// features/config/PortalConfigContext.tsx) reads it with React's use(), which suspends the tree
+// until it resolves and re-throws a failed request during render so the nearest ErrorBoundary
+// handles it, instead of the app silently running with no clientportal URL to link to.
+export const portalConfigRequest = configApi.apiConfigAdminportalGet().then((res) => res.data);
 

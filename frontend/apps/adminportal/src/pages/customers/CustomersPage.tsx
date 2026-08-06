@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminCustomersApi, authApi, ApiError, CLIENT_PORTAL_URL, getFieldError } from '../../api/client';
+import { adminCustomersApi, authApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
+import { usePortalConfig } from '../../features/config/PortalConfigContext';
 import type { AdminCustomer, AuthResponse } from '../../api/types';
 
 function emptyForm() {
@@ -10,6 +11,7 @@ function emptyForm() {
 
 export function CustomersPage() {
   const { user: currentUser } = useAuth();
+  const { clientPortalUrl } = usePortalConfig();
   const canCreate = currentUser?.role === 'RootSuperAdmin' || currentUser?.role === 'SuperAdmin' || currentUser?.role === 'Admin';
 
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
@@ -133,7 +135,7 @@ export function CustomersPage() {
     try {
       const { data } = await authApi.apiAuthEmulateCustomerIdPost(c.id);
       const res = data as unknown as AuthResponse;
-      const targetUrl = `${CLIENT_PORTAL_URL}/emulate?token=${encodeURIComponent(res.token)}`;
+      const targetUrl = `${clientPortalUrl}/emulate?token=${encodeURIComponent(res.token)}`;
       if (win) {
         win.location.href = targetUrl;
       } else {

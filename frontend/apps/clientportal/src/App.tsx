@@ -1,8 +1,9 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
-import { ADMIN_PORTAL_URL, API_BASE } from './api/client';
+import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
+import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
 import { PaymentStep } from './features/booking/PaymentStep';
 import { ScheduleStep } from './features/booking/ScheduleStep';
@@ -25,6 +26,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function EmulationBanner() {
   const { user, logout } = useAuth();
+  const { adminPortalUrl } = usePortalConfig();
   if (!user?.isEmulated) return null;
 
   function exit() {
@@ -32,7 +34,7 @@ function EmulationBanner() {
     window.close();
     setTimeout(() => {
       if (!window.closed) {
-        window.location.href = ADMIN_PORTAL_URL;
+        window.location.href = adminPortalUrl;
       }
     }, 100);
   }
@@ -193,8 +195,10 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <Suspense fallback={<LoadingFallback />}>
-            <AppRoutes />
+          <Suspense fallback={<LoadingFallback message="Connecting to server…" />}>
+            <PortalConfigProvider>
+              <AppRoutes />
+            </PortalConfigProvider>
           </Suspense>
         </AuthProvider>
       </ThemeProvider>
