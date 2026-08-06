@@ -125,9 +125,10 @@ function Nav() {
 }
 
 function AppRoutes() {
+  const { refetch } = usePortalConfig();
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
-      <ConnectivityBanner apiBase={API_BASE} />
+      <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
       <EmulationBanner />
       <Nav />
       <main className="flex-1">
@@ -195,7 +196,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <Suspense fallback={<LoadingFallback message="Connecting to server…" />}>
+          <Suspense fallback={<LoadingFallback />}>
             <PortalConfigProvider>
               <AppRoutes />
             </PortalConfigProvider>

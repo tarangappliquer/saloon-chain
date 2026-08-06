@@ -1,23 +1,42 @@
-import { createContext, use, useContext, type ReactNode } from 'react';
-import { portalConfigRequest } from '../../api/client';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { configApi } from '../../api/client';
 
 interface PortalConfigContextValue {
   readonly clientPortalUrl: string;
+  readonly refetch: () => void;
 }
 
-const PortalConfigContext = createContext<PortalConfigContextValue | null>(null);
+// Cross-portal links (e.g. CustomersPage's "emulate as customer" link) are the only thing this
+// powers -- nothing core to the app depends on it, so a failed fetch must not block the app. Defaults
+// to '' and stays that way on error; ConnectivityBanner (rendered unconditionally in App.tsx) is what
+// tells the user the server is unreachable, and calls refetch() once its health check confirms
+// recovery.
+const PortalConfigContext = createContext<PortalConfigContextValue>({ clientPortalUrl: '', refetch: () => {} });
 
-// Must render inside the Suspense boundary in App.tsx -- use() suspends on portalConfigRequest
-// until GET /api/config/adminportal resolves, and re-throws a failed request during render so the
-// ErrorBoundary above Suspense catches it instead of the app running with no clientportal URL.
 export function PortalConfigProvider({ children }: { children: ReactNode }) {
-  const config = use(portalConfigRequest);
-  return <PortalConfigContext.Provider value={{ clientPortalUrl: config.clientPortalUrl }}>{children}</PortalConfigContext.Provider>;
+  const [clientPortalUrl, setClientPortalUrl] = useState('');
+
+  const fetchConfig = useCallback((signal?: AbortSignal) => {
+    configApi
+      .apiConfigAdminportalGet({ signal })
+      .then((res) => setClientPortalUrl(res.data.clientPortalUrl))
+      .catch(() => {});
+  }, []);
+
+  // AbortController tied to mount -- StrictMode's dev-only mount/cleanup/remount cycle would
+  // otherwise fire this GET twice; aborting on cleanup collapses it back to one real request.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchConfig(controller.signal);
+    return () => controller.abort();
+  }, [fetchConfig]);
+
+  const refetch = useCallback(() => fetchConfig(), [fetchConfig]);
+
+  return <PortalConfigContext.Provider value={{ clientPortalUrl, refetch }}>{children}</PortalConfigContext.Provider>;
 }
 
 // oxlint-disable-next-line react/only-export-components
 export function usePortalConfig() {
-  const ctx = useContext(PortalConfigContext);
-  if (!ctx) throw new Error('usePortalConfig must be used within PortalConfigProvider');
-  return ctx;
+  return useContext(PortalConfigContext);
 }

@@ -143,9 +143,3 @@ export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance)
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
 
-// Fired once, as soon as this module loads -- not awaited here. PortalConfigProvider (see
-// features/config/PortalConfigContext.tsx) reads it with React's use(), which suspends the tree
-// until it resolves and re-throws a failed request during render so the nearest ErrorBoundary
-// handles it, instead of the app silently running with no clientportal URL to link to.
-export const portalConfigRequest = configApi.apiConfigAdminportalGet().then((res) => res.data);
-

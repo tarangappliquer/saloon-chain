@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
-import { PortalConfigProvider } from './features/config/PortalConfigContext';
+import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -104,9 +104,10 @@ function Nav() {
 }
 
 function AppRoutes() {
+  const { refetch } = usePortalConfig();
   return (
     <>
-      <ConnectivityBanner apiBase={API_BASE} />
+      <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
       <Nav />
       <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
         <Routes>
@@ -253,7 +254,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <Suspense fallback={<LoadingFallback maxW="max-w-4xl" message="Connecting to server…" />}>
+          <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
             <PortalConfigProvider>
               <AppRoutes />
             </PortalConfigProvider>

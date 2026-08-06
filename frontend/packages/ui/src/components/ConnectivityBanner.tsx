@@ -3,9 +3,13 @@ import { useEffect, useState } from 'react';
 const POLL_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
 
-async function pingServer(apiBase: string): Promise<boolean> {
+// `signal` lets a caller cancel early (e.g. StrictMode's dev-only mount/cleanup/remount cycle) --
+// merged with our own timeout so either one can abort the fetch.
+async function pingServer(apiBase: string, signal: AbortSignal): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal.addEventListener('abort', onAbort);
   try {
     const res = await fetch(`${apiBase}/health`, { signal: controller.signal });
     return res.ok;
@@ -13,6 +17,7 @@ async function pingServer(apiBase: string): Promise<boolean> {
     return false;
   } finally {
     clearTimeout(timeout);
+    signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -21,7 +26,7 @@ async function pingServer(apiBase: string): Promise<boolean> {
 // wifi. Polls GET {apiBase}/health (ASP.NET's built-in health-check middleware, see Program.cs)
 // with a plain fetch rather than the generated api-client, since this lives in the shared @saloon/ui
 // package and has no per-app axios instance to reuse.
-export function ConnectivityBanner({ apiBase }: { apiBase: string }) {
+export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; onServerUp?: () => void }) {
   const [online, setOnline] = useState(navigator.onLine);
   const [serverUp, setServerUp] = useState(true);
   const isDown = !online || !serverUp;
@@ -49,21 +54,27 @@ export function ConnectivityBanner({ apiBase }: { apiBase: string }) {
 
   useEffect(() => {
     if (!online) return;
-    let cancelled = false;
+    const controller = new AbortController();
     // Skips the network call while the tab is backgrounded -- one client polling every 30s is
     // already cheap for the server, but most tabs sit hidden most of the time, so this cuts total
     // request volume a lot for free. Page Visibility API also gives us an immediate re-check the
     // moment a tab comes back to the front, so returning users aren't stuck on a stale banner.
     const check = async () => {
       if (document.hidden) return;
-      const up = await pingServer(apiBase);
-      if (!cancelled) setServerUp(up);
+      const up = await pingServer(apiBase, controller.signal);
+      if (controller.signal.aborted) return;
+      // Fires only on the down -> up transition, not every healthy poll -- callers (e.g.
+      // PortalConfigProvider) use this to retry whatever failed while the server was unreachable.
+      setServerUp((prev) => {
+        if (up && !prev) onServerUp?.();
+        return up;
+      });
     };
     check();
     const id = setInterval(check, POLL_INTERVAL_MS);
     document.addEventListener('visibilitychange', check);
     return () => {
-      cancelled = true;
+      controller.abort();
       clearInterval(id);
       document.removeEventListener('visibilitychange', check);
     };
