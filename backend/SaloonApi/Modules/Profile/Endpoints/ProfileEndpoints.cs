@@ -51,7 +51,7 @@ internal static class ProfileEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update the caller's own name/phone.");
 
-        group.MapPost("/photo", async (IFormFile file, ICurrentUser currentUser, ProfileRepository repo, IWebHostEnvironment env) =>
+        group.MapPost("/photo", async (IFormFile file, ICurrentUser currentUser, ProfileRepository repo, SaloonApi.Shared.Storage.IStorageService storageService) =>
         {
             if (currentUser.EmulatedByUserId is not null)
                 return Results.Problem("Profile photo updates are not allowed during an emulation session.", statusCode: StatusCodes.Status403Forbidden);
@@ -66,20 +66,14 @@ internal static class ProfileEndpoints
                 return Results.Problem("Only JPG, PNG, or WEBP images are allowed.", statusCode: StatusCodes.Status400BadRequest);
 
             var userId = currentUser.RequireUserId();
-            var uploadsDir = Path.Combine(env.ContentRootPath, "uploads", "profile-photos");
-            Directory.CreateDirectory(uploadsDir);
 
-            // Named by user id, not the original filename -- avoids path-traversal/collision entirely
-            // and doubles as the upsert key. Clear any previous photo first so switching image
-            // formats on re-upload doesn't leave an orphaned file behind.
-            foreach (var existing in Directory.GetFiles(uploadsDir, $"{userId}.*"))
-                File.Delete(existing);
+            // Clear any previous photo first so switching image formats on re-upload doesn't leave an orphaned file
+            await storageService.DeleteFilesAsync("profile-photos", userId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
             var fileName = $"{userId}{ext}";
-            await using (var stream = File.Create(Path.Combine(uploadsDir, fileName)))
-                await file.CopyToAsync(stream);
+            await using var stream = file.OpenReadStream();
+            var photoPath = await storageService.SaveFileAsync(stream, "profile-photos", fileName, expectedContentType);
 
-            var photoPath = $"/uploads/profile-photos/{fileName}";
             await repo.SetPhotoPathAsync(userId, currentUser.Role!.Value, photoPath);
             return Results.Ok(new PhotoResponse(photoPath));
         }).Produces<PhotoResponse>()

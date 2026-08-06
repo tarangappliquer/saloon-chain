@@ -2,12 +2,14 @@ using System.Threading.Channels;
 
 namespace SaloonApi.Shared.Email;
 
-// Unbounded: email volume here is one per booking confirmation, nowhere near enough to need
-// backpressure -- an unbounded channel keeps Enqueue non-blocking, which matters since it's called
-// from the booking-confirm request path.
 internal sealed class BackgroundEmailQueue : IBackgroundEmailQueue
 {
-    private readonly Channel<EmailMessage> _channel = Channel.CreateUnbounded<EmailMessage>();
+    private readonly Channel<EmailMessage> _channel = Channel.CreateBounded<EmailMessage>(new BoundedChannelOptions(1000)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleWriter = false,
+        SingleReader = false
+    });
 
     public void Enqueue(EmailMessage message) => _channel.Writer.TryWrite(message);
 

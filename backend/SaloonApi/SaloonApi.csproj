@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <UserSecretsId>da049b34-e0c9-4983-a71e-0def7f1aec69</UserSecretsId>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +33,7 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Stripe.net" />
+    <PackageReference Include="AWSSDK.S3" />
   </ItemGroup>
 
   <ItemGroup>

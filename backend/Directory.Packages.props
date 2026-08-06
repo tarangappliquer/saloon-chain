@@ -31,6 +31,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="3.1.0" />
     <PackageVersion Include="Stripe.net" Version="48.1.0" />
+    <PackageVersion Include="AWSSDK.S3" Version="3.7.412.3" />
   </ItemGroup>
   <ItemGroup Label="SaloonApi Tests">
     <!-- SaloonApi.Tests -->

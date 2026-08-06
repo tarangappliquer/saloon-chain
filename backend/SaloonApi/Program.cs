@@ -31,6 +31,7 @@ using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.OpenApi;
 using SaloonApi.Shared.Realtime;
+using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -152,6 +153,20 @@ builder.Services.AddScoped<StripeCustomerService>();
 builder.Services.AddScoped<PaymentService>();
 
 builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
+
+builder.Services.AddSingleton<IStorageService>(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
+    if (string.Equals(opts.Provider, "S3", StringComparison.OrdinalIgnoreCase))
+    {
+        return new S3StorageService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>());
+    }
+    return new LocalStorageService(
+        sp.GetRequiredService<IWebHostEnvironment>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>()
+    );
+});
 
 builder.Services.AddHostedService<HoldExpirySweepService>();
 builder.Services.AddHostedService<EmailQueueBackgroundService>();
