@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Badge, Button, Card, Input, LoadingFallback, PageHeader, TusUploadControl, UppyPhotoUploadModal, useTusResumableUpload } from '@saloon/ui';
+import { Badge, Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
 import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import { Camera } from 'lucide-react';
@@ -67,25 +67,6 @@ export function ProfilePage() {
     }
   }
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const tusUpload = useTusResumableUpload({
-    endpoint: `${API_BASE}/api/files/tus`,
-    category: 'profile-photos',
-    token: getAuthToken() || undefined,
-    onSuccess: async () => {
-      const { data: res } = await profileApi.apiProfileGet();
-      const updated = res as unknown as Profile;
-      setProfile(updated);
-      setCacheBuster(Date.now());
-      setSuccess('Profile photo updated.');
-      setSelectedFile(null);
-    },
-    onError: (err) => {
-      setError(err.message || 'Failed to upload photo');
-    },
-  });
-
   if (loading) return <LoadingFallback />;
   if (!profile) return null;
 
@@ -146,20 +127,6 @@ export function ProfilePage() {
           token={getAuthToken() || undefined}
           category="profile-photos"
           onSuccess={refreshProfilePhoto}
-        />
-
-        <TusUploadControl
-          fileName={selectedFile?.name}
-          isUploading={tusUpload.isUploading}
-          isPaused={tusUpload.isPaused}
-          isSuccess={tusUpload.isSuccess}
-          error={tusUpload.error}
-          progress={tusUpload.progress}
-          bytesUploaded={tusUpload.bytesUploaded}
-          bytesTotal={tusUpload.bytesTotal}
-          onPause={tusUpload.pauseUpload}
-          onResume={tusUpload.resumeUpload}
-          onCancel={tusUpload.cancelUpload}
         />
 
         <form onSubmit={handleSave} className="space-y-4">
