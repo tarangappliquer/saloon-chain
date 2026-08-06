@@ -8,7 +8,10 @@ public class PaymentGatewayFactoryTests
     [Fact]
     public void ResolvesCorrectGatewayForStripeProvider()
     {
-        var stripeGateway = new StripePaymentGateway(Microsoft.Extensions.Options.Options.Create(new SaloonApi.Modules.Payment.Infrastructure.StripeOptions()));
+        var stripeGateway = new StripePaymentGateway(
+            Microsoft.Extensions.Options.Options.Create(new SaloonApi.Modules.Payment.Infrastructure.StripeOptions()),
+            Microsoft.Extensions.Options.Options.Create(new SaloonApi.Shared.Auth.PortalUrlOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<StripePaymentGateway>.Instance);
         var cashGateway = new CashPaymentGateway();
         var inHouseGateway = new InHousePaymentGateway();
 

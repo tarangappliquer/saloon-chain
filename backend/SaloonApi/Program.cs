@@ -125,9 +125,22 @@ builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
 
 builder.Services.AddSingleton<SqlConnectionFactory>();
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
-builder.Services.AddSingleton<IAvailabilityCache, RedisAvailabilityCache>();
+
+string? redisConnStr = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnStr) && !redisConnStr.Equals("none", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    {
+        var configOptions = ConfigurationOptions.Parse(redisConnStr);
+        configOptions.AbortOnConnectFail = false;
+        return ConnectionMultiplexer.Connect(configOptions);
+    });
+    builder.Services.AddScoped<IAvailabilityCache, RedisAvailabilityCache>();
+}
+else
+{
+    builder.Services.AddScoped<IAvailabilityCache, NullAvailabilityCache>();
+}
 builder.Services.AddSingleton<SseBroadcaster>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
