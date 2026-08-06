@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Badge, BrandMark, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
+import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
+import { API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import type { UserRole } from './api/types';
 import { LoginPage } from './pages/LoginPage';
@@ -104,6 +105,7 @@ function Nav() {
 function AppRoutes() {
   return (
     <>
+      <ConnectivityBanner apiBase={API_BASE} />
       <Nav />
       <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
         <Routes>

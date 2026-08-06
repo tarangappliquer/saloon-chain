@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { BrandMark, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
-import { ADMIN_PORTAL_URL } from './api/client';
+import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
+import { ADMIN_PORTAL_URL, API_BASE } from './api/client';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
 import { PaymentStep } from './features/booking/PaymentStep';
@@ -125,6 +125,7 @@ function Nav() {
 function AppRoutes() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+      <ConnectivityBanner apiBase={API_BASE} />
       <EmulationBanner />
       <Nav />
       <main className="flex-1">

@@ -12,3 +12,4 @@ export * from './components/ThemeProvider';
 export * from './components/ThemeToggle';
 export * from './components/KpiTile';
 export * from './components/BrandMark';
+export * from './components/ConnectivityBanner';

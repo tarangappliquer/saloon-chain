@@ -156,6 +156,8 @@ builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stri
 builder.Services.AddHostedService<HoldExpirySweepService>();
 builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 
@@ -190,6 +192,10 @@ app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs context.User's claims populated
 app.UseAuthorization();
+
+// Polled by both frontends' ConnectivityBanner to distinguish "server is down" from "you're offline"
+// -- no auth, no tags, just a 200 so a plain fetch (no generated client) can hit it from any origin.
+app.MapHealthChecks("/health");
 
 app.MapAuthEndpoints();
 app.MapConfigEndpoints();
