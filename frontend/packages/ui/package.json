@@ -17,7 +17,10 @@
     "sweetalert2-react-content": "^5.1.0",
     "tailwind-merge": "^3.0.1",
     "tus-js-client": "^4.3.1",
-    "use-tus": "^0.6.1"
+    "@uppy/core": "^4.4.1",
+    "@uppy/react": "^4.2.1",
+    "@uppy/tus": "^4.1.2",
+    "@uppy/image-editor": "^4.1.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

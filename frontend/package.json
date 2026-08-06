@@ -31,7 +31,6 @@
   "devDependencies": {
     "axios": "^1.19.0",
     "@openapitools/openapi-generator-cli": "^2.40.1",
-    "tus-js-client": "^4.3.1",
-    "use-tus": "^0.6.1"
+    "tus-js-client": "^4.3.1"
   }
 }

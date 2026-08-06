@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Button, Card, Input, LoadingFallback, PageHeader, uploadWithTus } from '@saloon/ui';
+import { Button, Card, Input, LoadingFallback, PageHeader, TusUploadControl, useTusResumableUpload } from '@saloon/ui';
 import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import type { Profile } from '../api/types';
@@ -15,7 +15,6 @@ export function ProfilePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [cacheBuster, setCacheBuster] = useState(Date.now());
@@ -61,32 +60,34 @@ export function ProfilePage() {
     }
   }
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const tusUpload = useTusResumableUpload({
+    endpoint: `${API_BASE}/api/files/tus`,
+    category: 'profile-photos',
+    token: getAuthToken() || undefined,
+    onSuccess: async () => {
+      const { data: res } = await profileApi.apiProfileGet();
+      const updated = res as unknown as Profile;
+      setProfile(updated);
+      setCacheBuster(Date.now());
+      setSuccess('Profile photo updated.');
+      setSelectedFile(null);
+    },
+    onError: (err) => {
+      setError(err.message || 'Failed to upload photo');
+    },
+  });
+
   async function handlePhotoSelected() {
     if (isEmulated) return;
     const file = fileInputRef.current?.files?.[0];
     if (!file) return;
     setError(null);
     setSuccess(null);
-    setUploading(true);
-    try {
-      const token = getAuthToken() || undefined;
-      await uploadWithTus({
-        endpoint: `${API_BASE}/api/files/tus`,
-        file,
-        category: 'profile-photos',
-        token,
-      });
-      const { data: res } = await profileApi.apiProfileGet();
-      const updated = res as unknown as Profile;
-      setProfile(updated);
-      setCacheBuster(Date.now());
-      setSuccess('Profile photo updated.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload photo');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    setSelectedFile(file);
+    tusUpload.startUpload(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   if (loading) return <LoadingFallback />;
@@ -119,12 +120,26 @@ export function ProfilePage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               onChange={handlePhotoSelected}
-              disabled={uploading || isEmulated}
+              disabled={tusUpload.isUploading || isEmulated}
               className="text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
             />
             <p className="text-xs text-muted-foreground">JPG, PNG, or WEBP (Max 5 MB)</p>
           </div>
         </div>
+
+        <TusUploadControl
+          fileName={selectedFile?.name}
+          isUploading={tusUpload.isUploading}
+          isPaused={tusUpload.isPaused}
+          isSuccess={tusUpload.isSuccess}
+          error={tusUpload.error}
+          progress={tusUpload.progress}
+          bytesUploaded={tusUpload.bytesUploaded}
+          bytesTotal={tusUpload.bytesTotal}
+          onPause={tusUpload.pauseUpload}
+          onResume={tusUpload.resumeUpload}
+          onCancel={tusUpload.cancelUpload}
+        />
 
         <form onSubmit={handleSave} className="space-y-4">
           <Input required disabled={isEmulated} label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
