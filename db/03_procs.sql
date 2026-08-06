@@ -398,6 +398,30 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_Delete
+    @BookingId   INT,
+    @CustomerId  INT = NULL,
+    @UpdatedBy   INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
+    -- Delete child treatment entries for the booking (cascade delete target)
+    DELETE FROM dbo.BookingTreatments WHERE BookingId = @BookingId;
+
+    -- Delete child payment entries if any
+    DELETE FROM dbo.Payments WHERE BookingId = @BookingId;
+
+    -- Delete the main booking entry
+    DELETE FROM dbo.Bookings WHERE Id = @BookingId AND (@CustomerId IS NULL OR CustomerId = @CustomerId);
+
+    COMMIT TRANSACTION;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Confirm
     @BookingId  INT,
     @CustomerId INT = NULL,

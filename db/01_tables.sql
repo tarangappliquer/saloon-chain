@@ -288,7 +288,7 @@ CREATE INDEX IX_Bookings_CustomerId ON dbo.Bookings(CustomerId);
 -- own 5-minute hold clock, so picking/expiring/re-picking one treatment never touches another's.
 CREATE TABLE dbo.BookingTreatments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
-    BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id),
+    BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id) ON DELETE CASCADE,
     TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
     RoomId         INT NULL REFERENCES dbo.Rooms(Id),
     TherapistId    INT NULL REFERENCES dbo.TherapistProfile(Id),
@@ -333,7 +333,7 @@ CREATE TABLE dbo.CustomerProfiles (
 
 CREATE TABLE dbo.Payments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
-    BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id),
+    BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id) ON DELETE CASCADE,
     Amount         DECIMAL(10,2) NOT NULL,
     Currency       VARCHAR(10) NOT NULL DEFAULT 'USD',
     Provider       VARCHAR(30) NOT NULL CHECK (Provider IN ('Stripe', 'Cash', 'InHouse')),
