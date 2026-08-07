@@ -130,6 +130,8 @@ internal sealed class AuthService(
         var (passwordHash, passwordSalt) = PasswordHasher.Hash(newPassword);
         await repo.UpdatePasswordAsync(stored.UserId, passwordHash, passwordSalt);
         await resetTokens.ConsumeAsync(stored.Id);
+        await refreshTokens.RevokeAllForUserAsync(stored.UserId);
+        sse.Publish(SseBroadcaster.UserGroup(stored.UserId), "user-logged-out");
         return true;
     }
 

@@ -89,7 +89,10 @@ internal static class ProfileEndpoints
             {
                 await foreach (var message in reader.ReadAllAsync(ct))
                 {
-                    await ctx.Response.WriteAsync($"event: email-verified\ndata: {message}\n\n", ct);
+                    var eventName = string.Equals(message, "user-logged-out", StringComparison.OrdinalIgnoreCase)
+                        ? "user-logged-out"
+                        : "email-verified";
+                    await ctx.Response.WriteAsync($"event: {eventName}\ndata: {message}\n\n", ct);
                     await ctx.Response.Body.FlushAsync(ct);
                 }
             }

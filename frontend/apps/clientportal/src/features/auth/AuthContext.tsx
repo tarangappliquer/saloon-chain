@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
+import { profileStreamUrl, subscribeToStream } from '../../api/sseClient';
 import type { AuthResponse } from '../../api/types';
 
 interface AuthUser {
@@ -107,6 +108,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
   }, [logout]);
+
+  const customerId = user?.customerId;
+  useEffect(() => {
+    if (!customerId) return;
+    return subscribeToStream(profileStreamUrl(customerId), 'user-logged-out', logout);
+  }, [customerId, logout]);
 
   const value = useMemo(
     () => ({ user, login, register, loginWithToken, logout, updateName, refreshUser }),

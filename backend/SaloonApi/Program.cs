@@ -38,6 +38,8 @@ using SaloonApi.Shared.Security;
 using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
+using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 StaticLogger.Initialize();

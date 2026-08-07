@@ -1,6 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
-import { API_BASE, ApiError, getAuthToken, getFieldError, profileApi } from '../api/client';
+import { API_BASE, ApiError, authApi, getAuthToken, getFieldError, profileApi } from '../api/client';
+import { profileStreamUrl, subscribeToStream } from '../api/sseClient';
 import { useAuth } from '../features/auth/AuthContext';
 import { Camera } from 'lucide-react';
 import type { Profile } from '../api/types';
@@ -26,6 +27,10 @@ export function ProfilePage() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSubmitError, setEmailSubmitError] = useState<unknown>(null);
   const [emailChangeSent, setEmailChangeSent] = useState<string | null>(null);
+
+  const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false);
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
+  const [passwordResetSent, setPasswordResetSent] = useState(false);
 
   const refreshProfilePhoto = async () => {
     const { data: res } = await profileApi.apiProfileGet();
@@ -65,16 +70,10 @@ export function ProfilePage() {
   const profileIsEmailVerified = profile?.isEmailVerified;
   useEffect(() => {
     if (!profileUserId || profileIsEmailVerified) return;
-    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${profileUserId}`);
-    const handler = () => {
+    return subscribeToStream(profileStreamUrl(profileUserId), 'email-verified', () => {
       load();
       setSuccess('Email address verified.');
-    };
-    source.addEventListener('email-verified', handler);
-    return () => {
-      source.removeEventListener('email-verified', handler);
-      source.close();
-    };
+    });
   }, [profileUserId, profileIsEmailVerified]);
 
   async function handleSave(e: SyntheticEvent) {
@@ -114,6 +113,21 @@ export function ProfilePage() {
       setEmailError(err instanceof ApiError ? err.message : 'Failed to request email change');
     } finally {
       setEmailSubmitting(false);
+    }
+  }
+
+  async function handlePasswordResetRequest() {
+    if (isEmulated || !profile) return;
+    setPasswordResetError(null);
+    setPasswordResetSent(false);
+    setPasswordResetSubmitting(true);
+    try {
+      await authApi.apiAuthForgotPasswordPost({ email: profile.email });
+      setPasswordResetSent(true);
+    } catch (err) {
+      setPasswordResetError(err instanceof ApiError ? err.message : 'Failed to send password reset link');
+    } finally {
+      setPasswordResetSubmitting(false);
     }
   }
 
@@ -262,6 +276,39 @@ export function ProfilePage() {
           {emailChangeSent && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
               Confirmation link sent to {emailChangeSent}. Check your inbox to finish the change.
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3 border-t border-border pt-6">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Security & Password</label>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-border p-4 bg-muted/30">
+            <div>
+              <p className="text-xs font-medium">Password Reset</p>
+              <p className="text-xs text-muted-foreground">Send a password reset link to your email address ({profile.email}).</p>
+            </div>
+            {!isEmulated && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={passwordResetSubmitting}
+                onClick={handlePasswordResetRequest}
+                className="shrink-0"
+              >
+                {passwordResetSubmitting ? 'Sending...' : 'Change Password'}
+              </Button>
+            )}
+          </div>
+
+          {passwordResetError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">
+              {passwordResetError}
+            </div>
+          )}
+          {passwordResetSent && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Password reset link sent to {profile.email}. Check your inbox to reset your password.
             </div>
           )}
         </div>
