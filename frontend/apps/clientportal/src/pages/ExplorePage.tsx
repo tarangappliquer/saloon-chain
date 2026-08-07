@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
@@ -28,6 +28,7 @@ export function ExplorePage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     async function loadVenues() {
@@ -35,44 +36,43 @@ export function ExplorePage() {
       try {
         const searchRes = await catalogApi.apiCatalogSearchGet(searchQuery.trim() || undefined);
         const searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
-        const venueList: VenueCardData[] = [];
         const allCatsSet = new Set<string>();
 
-        for (let idx = 0; idx < searchResults.length; idx++) {
-          const loc = searchResults[idx];
-          let locationCategories: string[] = [];
-          let treatmentNames: string[] = [];
-          let startingPrice = 25;
+        const venueList: VenueCardData[] = await Promise.all(
+          searchResults.map(async (loc, idx) => {
+            let locationCategories: string[] = [];
+            let treatmentNames: string[] = [];
+            let startingPrice = 25;
 
-          try {
-            const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
-            const treats = treatsRes.data as unknown as Treatment[];
-            if (treats && treats.length > 0) {
-              locationCategories = Array.from(new Set(treats.map((t) => t.categoryName).filter(Boolean)));
-              treatmentNames = treats.map((t) => t.name).filter(Boolean);
-              locationCategories.forEach((cat) => allCatsSet.add(cat));
-              startingPrice = Math.min(...treats.map((t) => t.price));
+            try {
+              const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
+              const treats = treatsRes.data as unknown as Treatment[];
+              if (treats && treats.length > 0) {
+                locationCategories = Array.from(new Set(treats.map((t) => t.categoryName).filter(Boolean)));
+                treatmentNames = treats.map((t) => t.name).filter(Boolean);
+                startingPrice = Math.min(...treats.map((t) => t.price));
+              }
+            } catch {
+              // Ignore treatment fetch error for specific location
             }
-          } catch {
-            // Ignore treatment fetch error for specific location
-          }
 
-          if (locationCategories.length === 0) {
-            locationCategories = ['Hair & Styling', 'Barbershop', 'Nails & Manicure'];
+            if (locationCategories.length === 0) {
+              locationCategories = ['Hair & Styling', 'Barbershop', 'Nails & Manicure'];
+            }
             locationCategories.forEach((cat) => allCatsSet.add(cat));
-          }
 
-          venueList.push({
-            ...loc,
-            chainName: loc.chainName || 'Shoppey Saloon Chain',
-            rating: 4.8 + (idx % 3) * 0.1,
-            reviewCount: 45 + (loc.id * 19) % 150,
-            imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
-            categories: locationCategories,
-            treatmentNames: treatmentNames,
-            startingPrice: startingPrice,
-          });
-        }
+            return {
+              ...loc,
+              chainName: loc.chainName || 'Shoppey Saloon Chain',
+              rating: 4.8 + (idx % 3) * 0.1,
+              reviewCount: 45 + (loc.id * 19) % 150,
+              imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
+              categories: locationCategories,
+              treatmentNames: treatmentNames,
+              startingPrice: startingPrice,
+            };
+          }),
+        );
 
         setAvailableCategories(['All', ...Array.from(allCatsSet)]);
         setVenues(venueList);
@@ -121,9 +121,11 @@ export function ExplorePage() {
     }
 
     let isMounted = true;
+    const delay = isFirstLoad.current ? 0 : 300;
+    isFirstLoad.current = false;
     const timer = setTimeout(() => {
       loadVenues();
-    }, 300);
+    }, delay);
 
     return () => {
       isMounted = false;

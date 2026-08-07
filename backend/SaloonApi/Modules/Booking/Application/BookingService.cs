@@ -27,7 +27,7 @@ internal sealed class BookingService(
         var hasRoomOpenings = await repo.HasLocationRoomOpeningsAsync(locationId);
         var openDates = hasRoomOpenings ? await repo.GetLocationOpenDatesAsync(locationId, from, to) : null;
 
-        var dates = new List<DateOnly>();
+        var candidates = new List<DateOnly>();
         for (var d = from; d <= to; d = d.AddDays(1))
         {
             var bit = ((int)d.DayOfWeek + 6) % 7; // Mon=bit0 .. Sun=bit6
@@ -37,24 +37,48 @@ internal sealed class BookingService(
             if ((!isDayMaskAllowed && !isExplicitlyOpened) || holidays.Contains(d)) continue;
             if (openDates != null && !openDates.Contains(d)) continue;
 
-            if (treatmentIds != null && treatmentIds.Count > 0)
-            {
-                var allTreatmentsAvailable = true;
-                foreach (var tid in treatmentIds)
-                {
-                    var slots = await GetAvailableSlotsAsync(locationId, [tid], d, excludeBookingId);
-                    if (slots.Count == 0)
-                    {
-                        allTreatmentsAvailable = false;
-                        break;
-                    }
-                }
-                if (!allTreatmentsAvailable) continue;
-            }
-
-            dates.Add(d);
+            candidates.Add(d);
         }
-        return dates;
+
+        if (treatmentIds is not { Count: > 0 } || candidates.Count == 0) return candidates;
+
+        // A date only counts as available if EVERY requested treatment, checked separately, has its
+        // own open slot that day (matches GetAvailableSlotsAsync being called once per treatment id --
+        // see useBookingFlow.ts's loadSlots -- not once for the combined duration of all of them).
+        // One range query per treatment covers every candidate day in a single round trip, instead of
+        // one round trip per (day, treatment) pair -- a 90-day range x 2 treatments used to mean up to
+        // 180 sequential DB calls; now it's 2, each spanning the whole range via
+        // sp_Booking_GetAvailabilityDataRange.
+        var rangeFrom = candidates[0];
+        var rangeTo = candidates[^1];
+        var perTreatmentAvailableDates = await Task.WhenAll(treatmentIds.Select(async tid =>
+        {
+            var data = await repo.GetAvailabilityDataRangeAsync(locationId, [tid], rangeFrom, rangeTo, excludeBookingId);
+            var treatment = data.Treatments.FirstOrDefault(t => t.Id == tid);
+            if (data.Location is null || treatment is null) return [];
+
+            var pairsByDate = data.EligiblePairs
+                .GroupBy(p => p.WorkDate)
+                .ToDictionary(g => g.Key, IReadOnlyList<EligiblePair> (g) =>
+                    [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd))]);
+            var bookingsByDate = data.ExistingBookings
+                .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
+                .ToDictionary(g => g.Key, IReadOnlyList<ExistingBooking> (g) =>
+                    [.. g.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft"))]);
+
+            var openDatesForTreatment = new HashSet<DateOnly>();
+            foreach (var d in candidates)
+            {
+                var pairs = pairsByDate.GetValueOrDefault(d, []);
+                var bookings = bookingsByDate.GetValueOrDefault(d, []);
+                var slots = SlotCalculator.ComputeAvailableSlots(
+                    d, data.Location.OpenTime, data.Location.CloseTime, treatment.DurationSlots, pairs, bookings);
+                if (slots.Count > 0) openDatesForTreatment.Add(d);
+            }
+            return openDatesForTreatment;
+        }));
+
+        return candidates.Where(d => perTreatmentAvailableDates.All(set => set.Contains(d))).ToList();
     }
 
     public async Task<IReadOnlyList<AvailableSlot>> GetAvailableSlotsAsync(int locationId, IReadOnlyList<int> treatmentIds, DateOnly date, int? excludeBookingId = null)

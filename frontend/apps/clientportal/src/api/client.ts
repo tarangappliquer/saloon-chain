@@ -97,8 +97,14 @@ async function tryRefresh(): Promise<boolean> {
 // auth/refresh-token interceptors into those classes' constructors.
 const axiosInstance = axios.create({ baseURL: API_BASE });
 
+// Public, no-auth endpoints -- attaching a Bearer token here would still work (the backend ignores
+// it), but it turns a same-origin-safe GET into one needing a CORS preflight (Authorization is a
+// non-simple header) and makes the server validate a token nobody asked for, on every single call.
+const NO_AUTH_HEADER_PATHS = ['/api/config/adminportal', '/api/config/clientportal', '/health'];
+
 axiosInstance.interceptors.request.use((config) => {
-  if (authToken) config.headers.set('Authorization', `Bearer ${authToken}`);
+  const isPublicPath = NO_AUTH_HEADER_PATHS.some((p) => config.url?.endsWith(p));
+  if (authToken && !isPublicPath) config.headers.set('Authorization', `Bearer ${authToken}`);
   return config;
 });
 

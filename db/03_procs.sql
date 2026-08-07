@@ -1,3 +1,12 @@
+-- QUOTED_IDENTIFIER/ANSI_NULLS are baked into each object's metadata at CREATE time, not read from
+-- the caller's session at execution time -- any tool whose default differs from ON (sqlcmd defaults
+-- to OFF) silently miscompiles every proc in this file, breaking ones that touch tables with
+-- filtered indexes/computed columns (e.g. dbo.Payments) with error 1934. Must stay the first
+-- statement in this file.
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetChains
 AS
 BEGIN
@@ -163,11 +172,135 @@ BEGIN
         ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
             AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
 
-    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location.
+    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location. NOLOCK:
+    -- measured this read genuinely blocking (~2.5s) behind a concurrent sp_Booking_ScheduleTreatment
+    -- UPDATE on this same table under default locking (RCSI is off on this DB) -- this is a
+    -- read-mostly availability list, not the correctness gate (that's ScheduleTreatment's applock +
+    -- its own re-check inside the write transaction), so a dirty read here is an acceptable trade.
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
-    FROM dbo.BookingTreatments bt
-        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
     WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
+        AND bt.IsDelete = 0 AND b.IsDelete = 0
+        AND (@ExcludeBookingId IS NULL OR b.Id <> @ExcludeBookingId)
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
+END
+GO
+
+-- Range-aware sibling of sp_Booking_GetAvailabilityData: same eligibility rules (room/therapist
+-- shift assignments, existing bookings), evaluated for every date in [@FromDate, @ToDate] via a
+-- generated date spine instead of one @WorkDate. Used by BookingService.GetAvailableDatesAsync to
+-- resolve a whole date range's per-day availability in one round trip instead of one per candidate
+-- day. sp_Booking_GetAvailabilityData itself is unchanged and still backs the single-date
+-- /api/booking/available-slots lookup.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetAvailabilityDataRange
+    @LocationId        INT,
+    @TreatmentIds      dbo.IntIdList READONLY,
+    @FromDate          DATE,
+    @ToDate            DATE,
+    @ExcludeBookingId  INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- 1) location hours -- date-independent, so no per-date holiday flag here (callers already
+    -- resolve holiday dates for the whole range separately -- see CatalogRepository.GetHolidayDatesAsync).
+    SELECT l.OpenTime, l.CloseTime, l.WorkingDaysMask
+    FROM dbo.Locations l
+    WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
+
+    -- 2) requested treatments (duration/category/price) -- same for every date in the range
+    SELECT t.Id, t.CategoryId, t.DurationSlots, cp.Price
+    FROM dbo.Treatments t
+        JOIN @TreatmentIds ti ON ti.Id = t.Id
+        CROSS APPLY (
+            SELECT TOP 1 tp.Price
+            FROM dbo.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
+            ORDER BY tp.EffectiveFrom DESC
+        ) cp
+    WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+        AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
+
+    -- 3) eligible room/therapist pairs for every date in range -- same rules as the single-date
+    -- version, just joined against a generated date spine instead of one @WorkDate.
+    ;WITH Dates AS (
+        SELECT @FromDate AS WorkDate
+        UNION ALL
+        SELECT DATEADD(DAY, 1, WorkDate) FROM Dates WHERE WorkDate < @ToDate
+    ),
+    Loc AS (
+        SELECT OpenTime, CloseTime
+        FROM dbo.Locations
+        WHERE Id = @LocationId AND IsDelete = 0 AND IsActive = 1
+    ),
+    TargetCategories AS (
+        SELECT DISTINCT t.CategoryId
+        FROM dbo.Treatments t
+            JOIN @TreatmentIds ti ON ti.Id = t.Id
+        WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
+    ),
+    ActiveRooms AS (
+        SELECT r.Id AS RoomId
+        FROM dbo.Rooms r
+        WHERE r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
+    ),
+    EligibleRooms AS (
+                        SELECT d.WorkDate, r.RoomId, rca.ShiftType
+            FROM Dates d
+                CROSS JOIN ActiveRooms r
+                JOIN dbo.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = d.WorkDate AND rca.IsDelete = 0 AND rca.IsActive = 1
+            WHERE rca.TreatmentCategoryId IN (SELECT CategoryId
+            FROM TargetCategories)
+
+        UNION ALL
+
+            SELECT d.WorkDate, r.RoomId, 'FullDay' AS ShiftType
+            FROM Dates d
+                CROSS JOIN ActiveRooms r
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM dbo.RoomCategoryAssignments rca2
+                    JOIN dbo.Rooms r2 ON r2.Id = rca2.RoomId
+                WHERE r2.LocationId = @LocationId AND rca2.IsDelete = 0 AND rca2.IsActive = 1
+            )
+    ),
+    EligibleShifts AS (
+                        SELECT sa.WorkDate, sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+            FROM dbo.ShiftAssignments sa
+            WHERE sa.LocationId = @LocationId AND sa.WorkDate BETWEEN @FromDate AND @ToDate AND sa.IsDelete = 0 AND sa.IsActive = 1
+
+        UNION ALL
+
+            SELECT d.WorkDate, CAST(NULL AS INT) AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, l.OpenTime AS ShiftStart, l.CloseTime AS ShiftEnd
+            FROM Dates d
+                CROSS JOIN dbo.TherapistProfile tp
+                CROSS JOIN Loc l
+            WHERE tp.IsDelete = 0 AND tp.IsActive = 1
+                AND (tp.LocationId = @LocationId OR tp.LocationId IS NULL)
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.ShiftAssignments sa2
+                    WHERE sa2.TherapistId = tp.Id AND sa2.WorkDate = d.WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
+                )
+    )
+    -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift explicitly
+    -- assigned to a room (the normal case now) only pairs with that same room.
+    SELECT DISTINCT er.WorkDate, er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
+    FROM EligibleRooms er
+        JOIN EligibleShifts es
+        ON es.WorkDate = er.WorkDate
+            AND (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+            AND (es.RoomId IS NULL OR es.RoomId = er.RoomId)
+    OPTION (MAXRECURSION 366);
+
+    -- 4) scheduled treatment lines across the whole range, anywhere -- NOT scoped to this location.
+    -- NOLOCK: see the matching comment in sp_Booking_GetAvailabilityData -- same table, same
+    -- measured blocking behind a concurrent ScheduleTreatment write, same reasoning.
+    SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+    WHERE bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) BETWEEN @FromDate AND @ToDate
         AND bt.IsDelete = 0 AND b.IsDelete = 0
         AND (@ExcludeBookingId IS NULL OR b.Id <> @ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
@@ -635,16 +768,18 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- NOLOCK: pure read outside any write transaction, powers refresh-restore -- same
+    -- Bookings/BookingTreatments contention as the availability reads (see sp_Booking_GetAvailabilityData).
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
-    FROM dbo.Bookings b
-        JOIN dbo.Locations l ON l.Id = b.LocationId
+    FROM dbo.Bookings b WITH (NOLOCK)
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
     WHERE b.Id = @BookingId AND b.CustomerId = @CustomerId AND b.IsDelete = 0;
 
     SELECT bt.Id, bt.TreatmentId, t.Name AS TreatmentName, bt.RoomId, bt.TherapistId,
         th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
-    FROM dbo.BookingTreatments bt
-        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        LEFT JOIN dbo.TherapistProfile th WITH (NOLOCK) ON th.Id = bt.TherapistId
     WHERE bt.BookingId = @BookingId AND bt.IsDelete = 0
     ORDER BY bt.SequenceOrder;
 END
@@ -657,14 +792,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- NOLOCK: pure read, same reasoning as sp_Booking_GetById above.
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status, b.CreatedDate,
         p.Provider AS PaymentProvider, p.Status AS PaymentStatus
-    FROM dbo.Bookings b
-        JOIN dbo.Locations l ON l.Id = b.LocationId
+    FROM dbo.Bookings b WITH (NOLOCK)
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
         LEFT JOIN (
             SELECT BookingId, Provider, Status,
             ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
-        FROM dbo.Payments
+        FROM dbo.Payments WITH (NOLOCK)
         ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
@@ -674,11 +810,11 @@ BEGIN
 
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
         th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.SequenceOrder, bt.SlotCount, bt.Price
-    FROM dbo.BookingTreatments bt
-        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-        JOIN dbo.Bookings b ON b.Id = bt.BookingId
-        JOIN dbo.Locations l ON l.Id = b.LocationId
-        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
+        LEFT JOIN dbo.TherapistProfile th WITH (NOLOCK) ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
         AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
@@ -1470,16 +1606,18 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- NOLOCK: scheduling-page read, same Bookings/BookingTreatments contention risk as the
+    -- customer-facing reads above -- polled/refreshed often, not part of any write's correctness check.
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName,
         c.Email AS CustomerEmail, b.Status
-    FROM dbo.Bookings b
-        JOIN dbo.Locations l ON l.Id = b.LocationId
-        JOIN dbo.Users c ON c.Id = b.CustomerId
+    FROM dbo.Bookings b WITH (NOLOCK)
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
+        JOIN dbo.Users c WITH (NOLOCK) ON c.Id = b.CustomerId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0
         AND b.Status <> 'Cancelled'
         AND EXISTS (
           SELECT 1
-        FROM dbo.BookingTreatments bt
+        FROM dbo.BookingTreatments bt WITH (NOLOCK)
         WHERE bt.BookingId = b.Id AND bt.IsDelete = 0 AND CAST(bt.StartTime AS DATE) = @WorkDate
       )
     ORDER BY b.Id;
@@ -1487,11 +1625,11 @@ BEGIN
     SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Id AS RoomId, r.Name AS RoomName,
         bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
         bt.SequenceOrder, bt.SlotCount, bt.Price
-    FROM dbo.BookingTreatments bt
-        JOIN dbo.Treatments t ON t.Id = bt.TreatmentId
-        JOIN dbo.Bookings b ON b.Id = bt.BookingId
-        LEFT JOIN dbo.Rooms r ON r.Id = bt.RoomId
-        LEFT JOIN dbo.TherapistProfile th ON th.Id = bt.TherapistId
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        LEFT JOIN dbo.Rooms r WITH (NOLOCK) ON r.Id = bt.RoomId
+        LEFT JOIN dbo.TherapistProfile th WITH (NOLOCK) ON th.Id = bt.TherapistId
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND bt.IsDelete = 0
         AND b.Status <> 'Cancelled'
         AND CAST(bt.StartTime AS DATE) = @WorkDate
@@ -1507,8 +1645,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetLocationId
 AS
 BEGIN
     SET NOCOUNT ON;
+    -- NOLOCK: single-row lookup of an immutable column (LocationId never changes after creation).
     SELECT LocationId
-    FROM dbo.Bookings
+    FROM dbo.Bookings WITH (NOLOCK)
     WHERE Id = @BookingId AND IsDelete = 0;
 END
 GO

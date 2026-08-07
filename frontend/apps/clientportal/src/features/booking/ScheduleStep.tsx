@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@saloon/ui';
 import { AlertTriangle, Info, MapPin, Store } from 'lucide-react';
 import { bookingApi, catalogApi } from '../../api/client';
-import type { Chain, Location, Treatment } from '../../api/types';
+import type { Treatment } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
+import { useBookingContext } from '../../pages/BookPage';
 import { routes } from '../../routes';
 import { DatePicker } from './DatePicker';
 import { SlotPicker } from './SlotPicker';
@@ -31,6 +32,11 @@ export function ScheduleStep() {
   const { booking } = state;
   const locationId = booking?.locationId ?? null;
 
+  // Scoped to the booking's own location, not BookPage context's `treatments` -- see SummaryStep
+  // for why (BookPage's selector tracks the ambient "start a new booking" location, not this
+  // booking's fixed one). saloonName/locationName are cosmetic display text with a fallback to
+  // booking.locationName below, so reusing BookPage's resolution for those is safe.
+  const { saloonName, locationName: ctxLocationName } = useBookingContext();
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   useEffect(() => {
     if (!locationId) return;
@@ -42,32 +48,6 @@ export function ScheduleStep() {
       isMounted = false;
     };
   }, [locationId]);
-
-  const [locationMeta, setLocationMeta] = useState<{ saloonName: string; locationName: string } | null>(null);
-
-  useEffect(() => {
-    if (!locationId) return;
-    let isMounted = true;
-    catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
-      const chains = data as unknown as Chain[];
-      for (const c of chains) {
-        if (!isMounted) return;
-        const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
-        const locs = locsRes.data as unknown as Location[];
-        const targetLoc = locs.find((l) => l.id === locationId);
-        if (targetLoc) {
-          if (isMounted) setLocationMeta({ saloonName: c.name, locationName: targetLoc.name });
-          return;
-        }
-      }
-      if (isMounted && booking?.locationName) {
-        setLocationMeta({ saloonName: 'Saloon', locationName: booking.locationName });
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [locationId, booking?.locationName]);
 
   const [date, setDate] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -240,7 +220,7 @@ export function ScheduleStep() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">
-                {locationMeta?.saloonName || 'Saloon'}
+                {saloonName || 'Saloon'}
               </span>
               <span className="text-muted-foreground/40">•</span>
               <span className="text-[11px] font-semibold text-muted-foreground">
@@ -248,14 +228,14 @@ export function ScheduleStep() {
               </span>
             </div>
             <h2 className="font-display text-base font-extrabold text-foreground">
-              {locationMeta?.locationName || booking.locationName}
+              {ctxLocationName || booking.locationName}
             </h2>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground bg-card/80 border border-border/80 px-3 py-1.5 rounded-xl shadow-2xs">
           <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-          <span>{locationMeta?.locationName || booking.locationName}</span>
+          <span>{ctxLocationName || booking.locationName}</span>
         </div>
       </div>
 

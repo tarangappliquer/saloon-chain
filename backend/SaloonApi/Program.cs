@@ -35,7 +35,6 @@ using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Formatting.Json;
-using StackExchange.Redis;
 using System.Globalization;
 using System.Text;
 
@@ -50,10 +49,12 @@ builder.Host.UseSerilog((_, cfg) =>
        .Enrich.WithEnvironmentName()
        .Enrich.WithThreadId()
        .MinimumLevel.Information()
+       .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+       .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
 #if DEBUG
        .WriteTo.Console(json)
 #endif
-       .WriteTo.File(json, "Logs/log-.json", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
+       .WriteTo.File(json, "Logs/log-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
 });
 
 builder.Services.AddOpenApi(options =>

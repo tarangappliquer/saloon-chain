@@ -4,12 +4,15 @@ import Select, { type SingleValue } from 'react-select';
 import { Button, ConfirmDialog, PageHeader } from '@saloon/ui';
 import { ApiError, bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
+import { findChainForLocation } from '../api/findChainForLocation';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 import { routes } from '../routes';
 
 export interface BookingContext {
   treatments: Treatment[];
   locationId: number | null;
+  saloonName: string | null;
+  locationName: string | null;
 }
 
 // oxlint-disable-next-line react/only-export-components
@@ -56,24 +59,22 @@ export function BookPage() {
   }
 
   useEffect(() => {
+    if (isEditingBooking) return;
     catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
       const cs = data as unknown as Chain[];
       setChains(cs);
 
-      if (searchLocId && !isEditingBooking) {
-        for (const c of cs) {
-          const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
-          const locs = locsRes.data as unknown as Location[];
-          if (locs.some((l) => l.id === searchLocId)) {
-            setChainId(c.id);
-            setLocations(locs);
-            setLocationId(searchLocId);
-            return;
-          }
+      if (searchLocId) {
+        const match = await findChainForLocation(cs, searchLocId);
+        if (match) {
+          setChainId(match.chain.id);
+          setLocations(match.locations);
+          setLocationId(searchLocId);
+          return;
         }
       }
 
-      if (!isEditingBooking && cs.length > 0 && !chainId) {
+      if (cs.length > 0 && !chainId) {
         setChainId(cs[0].id);
       }
     });
@@ -90,15 +91,12 @@ export function BookPage() {
       const chainsRes = await catalogApi.apiCatalogChainsGet();
       const allChains = chainsRes.data as unknown as Chain[];
 
-      for (const c of allChains) {
-        const locsRes = await catalogApi.apiCatalogLocationsGet(c.id);
-        const locs = locsRes.data as unknown as Location[];
-        if (locs.some((l) => l.id === targetLocId)) {
-          setChainId(c.id);
-          setLocations(locs);
-          setLocationId(targetLocId);
-          break;
-        }
+      const match = await findChainForLocation(allChains, targetLocId);
+      if (match) {
+        setChains(allChains);
+        setChainId(match.chain.id);
+        setLocations(match.locations);
+        setLocationId(targetLocId);
       }
     });
   }, [bookingId, isEditingBooking]);
@@ -118,6 +116,9 @@ export function BookPage() {
       .apiCatalogTreatmentsGet(locationId)
       .then(({ data }) => setTreatments(data as unknown as Treatment[]));
   }, [locationId]);
+
+  const saloonName = chains.find((c) => c.id === chainId)?.name ?? null;
+  const locationName = locations.find((l) => l.id === locationId)?.name ?? null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -178,7 +179,7 @@ export function BookPage() {
         </div>
       )}
 
-      <Outlet key={locationId} context={{ treatments, locationId } satisfies BookingContext} />
+      <Outlet key={locationId} context={{ treatments, locationId, saloonName, locationName } satisfies BookingContext} />
     </div>
   );
 }

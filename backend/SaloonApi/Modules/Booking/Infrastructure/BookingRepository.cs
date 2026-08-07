@@ -16,6 +16,18 @@ internal sealed record AvailabilityData(
     IReadOnlyList<EligiblePairRow> EligiblePairs,
     IReadOnlyList<ExistingBookingRow> ExistingBookings);
 
+// Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
+// (callers resolve holiday dates for the whole range separately, see CatalogRepository), and
+// EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
+internal sealed record LocationHoursRangeRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask);
+internal sealed record EligiblePairRangeRow(DateOnly WorkDate, int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
+
+internal sealed record AvailabilityRangeData(
+    LocationHoursRangeRow? Location,
+    IReadOnlyList<TreatmentRow> Treatments,
+    IReadOnlyList<EligiblePairRangeRow> EligiblePairs,
+    IReadOnlyList<ExistingBookingRow> ExistingBookings);
+
 // (LocationId, RoomId, WorkDate) tuple identifying one affected slot -- Confirm/Cancel/ExpireStaleHolds
 // each return one of these per treatment line they touched, since a booking can span several
 // independently-scheduled lines (possibly different rooms/dates) that all need cache/SSE invalidation.
@@ -87,6 +99,30 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
 
         return new AvailabilityData(location, treatments, eligible, existing);
+    }
+
+    // Same eligibility rules as GetAvailabilityDataAsync, but for a whole [from, to] range in one
+    // round trip instead of one per date -- see BookingService.GetAvailableDatesAsync, which used to
+    // call GetAvailabilityDataAsync once per candidate day.
+    public async Task<AvailabilityRangeData> GetAvailabilityDataRangeAsync(
+        int locationId, IEnumerable<int> treatmentIds, DateOnly from, DateOnly to, int? excludeBookingId = null)
+    {
+        using var db = factory.Create();
+        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetAvailabilityDataRange", new
+        {
+            LocationId = locationId,
+            TreatmentIds = treatmentIds.AsIntIdList(),
+            FromDate = from.ToDateTime(TimeOnly.MinValue),
+            ToDate = to.ToDateTime(TimeOnly.MinValue),
+            ExcludeBookingId = excludeBookingId
+        });
+
+        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRangeRow>();
+        var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
+        var eligible = (await multi.ReadAsync<EligiblePairRangeRow>()).ToList();
+        var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
+
+        return new AvailabilityRangeData(location, treatments, eligible, existing);
     }
 
     public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)
