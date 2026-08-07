@@ -1,12 +1,13 @@
-import { lazy, memo, Suspense, type ReactNode } from 'react';
-import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
+import { lazy, Suspense, type ReactNode } from 'react';
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider } from '@saloon/ui';
 import { API_BASE } from './api/client';
-import { appConfig } from './config';
 import { routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
+import { Nav } from './components/Nav';
+import { ADMIN_ACCESS, LOCATION_MANAGEMENT, MANAGER_ONLY, ROOT_SUPER_ADMIN_ONLY, STAFF_ACCESS } from './constants';
 import type { UserRole } from './api/types';
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
@@ -30,12 +31,6 @@ const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then(
 const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
-const ROOT_SUPER_ADMIN_ONLY: UserRole[] = ['RootSuperAdmin'];
-const ADMIN_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager'];
-const STAFF_ACCESS: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
-const LOCATION_MANAGEMENT: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
-const MANAGER_ONLY: UserRole[] = ['Manager'];
-
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -51,97 +46,33 @@ function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNo
   return roles.includes(user.role) ? <>{children}</> : <Navigate to={routes.root} replace />;
 }
 
-const NavLink = memo(function NavLink({ to, children }: { to: string; children: ReactNode }) {
-  const location = useLocation();
-  const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
+// Header only ever renders around routes that require a signed-in user -- login/forgot-password/
+// reset-password/verify-email stay outside this layout so they never get a nav bar, even if the
+// visitor happens to already hold a session (e.g. a verify-email link opened while logged in).
+function AuthedLayout() {
   return (
-    <Link
-      to={to}
-      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
-        active
-          ? 'bg-primary/10 text-primary shadow-2xs'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-      }`}
-    >
-      {children}
-    </Link>
+    <>
+      <Nav />
+      <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
+        <Outlet />
+      </main>
+    </>
   );
-});
-
-const Nav = memo(function Nav() {
-  const { user, logout } = useAuth();
-  if (!user) return null;
-
-  const initials = user.name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .substring(0, 2)
-    .toUpperCase();
-
-  return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
-      <nav aria-label="Admin Navigation" className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2.5">
-        <div className="flex items-center gap-6 overflow-x-auto py-1 no-scrollbar">
-          <Link to={routes.root} className="flex items-center gap-2 shrink-0">
-            <BrandMark label="Saloon Admin" />
-          </Link>
-          <div className="flex items-center gap-1 shrink-0">
-            <NavLink to={routes.root}>Dashboard</NavLink>
-            {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to={routes.catalog.saloons}>Saloons</NavLink>}
-            {user.role === 'Manager' && <NavLink to={routes.myLocation}>My Location</NavLink>}
-            <NavLink to={routes.bookings}>Bookings</NavLink>
-            {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.customers}>Customers</NavLink>}
-          </div>
-        </div>
-        <div className="flex items-center gap-3 shrink-0 ml-4">
-          {appConfig.enableThemeToggle && <ThemeToggle />}
-          <Link
-            to={routes.profile}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
-          >
-            {user.photoPath ? (
-              <img
-                src={`${API_BASE}${user.photoPath}?v=${user.photoVersion}`}
-                alt={user.name}
-                loading="lazy"
-                decoding="async"
-                className="h-6 w-6 rounded-full object-cover"
-              />
-            ) : (
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
-                {initials}
-              </span>
-            )}
-            <span className="font-semibold">{user.name}</span>
-            <Badge status={user.role} />
-          </Link>
-          <button
-            type="button"
-            onClick={logout}
-            className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition"
-          >
-            Sign out
-          </button>
-        </div>
-      </nav>
-    </header>
-  );
-});
+}
 
 function AppRoutes() {
   const { refetch } = usePortalConfig();
   return (
     <>
       <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
-      <Nav />
-      <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
-        <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
-          <Routes>
-            <Route path={routes.login} element={<LoginPage />} />
-            <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
-            <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
-            <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+      <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
+        <Routes>
+          <Route path={routes.login} element={<LoginPage />} />
+          <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
+          <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+          <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+
+          <Route element={<AuthedLayout />}>
             <Route
               path={routes.root}
               element={
@@ -271,9 +202,9 @@ function AppRoutes() {
               }
             />
             <Route path="*" element={<Navigate to={routes.root} replace />} />
-          </Routes>
-        </Suspense>
-      </main>
+          </Route>
+        </Routes>
+      </Suspense>
     </>
   );
 }
