@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { Outlet, useMatch, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Button, ConfirmDialog, PageHeader } from '@saloon/ui';
 import { ApiError, bookingApi, catalogApi } from '../api/client';
@@ -22,6 +22,12 @@ export function BookPage() {
   const [searchParams] = useSearchParams();
   const searchLocId = searchParams.get('locationId') ? Number(searchParams.get('locationId')) : null;
   const isEditingBooking = Boolean(bookingId);
+  // The confirmation screen has no bookingId (it doesn't belong to one specific booking's edit
+  // flow) but still shouldn't let the customer switch saloon/location after the fact. Matched
+  // against the route itself (not a raw pathname string check) so it stays correct if this page
+  // ever moves under a different parent path.
+  const isConfirmedPage = Boolean(useMatch('/book/confirmed'));
+  const canSwitchLocation = !isEditingBooking && !isConfirmedPage;
 
   const [chains, setChains] = useState<Chain[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -138,7 +144,8 @@ export function BookPage() {
             <div className="flex flex-wrap items-center gap-2">
               {chains.length > 1 && (
                 <Select
-                  isClearable
+                  isClearable={canSwitchLocation}
+                  isDisabled={!canSwitchLocation}
                   value={chains.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(chainId ?? '')) ?? null}
                   onChange={(picked: SingleValue<SelectOption>) => setChainId(Number(picked?.value ?? ''))}
                   options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
@@ -150,6 +157,7 @@ export function BookPage() {
               {locations.length > 0 && (
                 <Select
                   isClearable={false}
+                  isDisabled={!canSwitchLocation}
                   value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
                   onChange={(picked: SingleValue<SelectOption>) => setLocationId(Number(picked?.value ?? ''))}
                   options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
