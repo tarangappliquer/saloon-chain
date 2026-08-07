@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_BASE } from '../../api/client';
+import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 
 // Anonymous, unauthenticated: the event carries no data beyond "refetch this location+date".
 export function useAvailabilityStream(locationId: number | null, date: string | null | undefined, onChange: () => void) {
@@ -13,15 +13,6 @@ export function useAvailabilityStream(locationId: number | null, date: string | 
 
   useEffect(() => {
     if (!locationId) return;
-    const url = date
-      ? `${API_BASE}/api/booking/stream?locationId=${locationId}&date=${date}`
-      : `${API_BASE}/api/booking/stream?locationId=${locationId}`;
-    const source = new EventSource(url);
-    const handler = () => onChangeRef.current();
-    source.addEventListener('slot-changed', handler);
-    return () => {
-      source.removeEventListener('slot-changed', handler);
-      source.close();
-    };
+    return subscribeToStream(bookingStreamUrl(locationId, date), 'slot-changed', () => onChangeRef.current());
   }, [locationId, date]);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BrandMark, Button, Card } from '@saloon/ui';
-import { API_BASE, ApiError, profileApi } from '../api/client';
+import { ApiError, profileApi } from '../api/client';
+import { profileStreamUrl, subscribeToStream } from '../api/sseClient';
 import { useAuth } from '../features/auth/AuthContext';
 
 // Blocks access to the rest of the portal until the caller's email is verified (login itself is
@@ -15,13 +16,7 @@ export function VerifyEmailGate() {
 
   useEffect(() => {
     if (!user?.userId) return;
-    const source = new EventSource(`${API_BASE}/api/profile/stream?userId=${user.userId}`);
-    const handler = () => refreshUser();
-    source.addEventListener('email-verified', handler);
-    return () => {
-      source.removeEventListener('email-verified', handler);
-      source.close();
-    };
+    return subscribeToStream(profileStreamUrl(user.userId), 'email-verified', refreshUser);
   }, [user?.userId, refreshUser]);
 
   async function handleSend() {

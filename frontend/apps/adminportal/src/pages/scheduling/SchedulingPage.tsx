@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader } from '@saloon/ui';
-import { API_BASE, adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
+import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
+import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
@@ -250,21 +251,16 @@ export function SchedulingPage() {
   // Real-time EventSource SSE subscription + 15s fallback heartbeat polling (silent refetch)
   useEffect(() => {
     if (locationId === null) return;
-    const url = `${API_BASE}/api/booking/stream?locationId=${locationId}&date=${date}`;
-    const es = new EventSource(url);
-
-    const slotHandler = () => {
+    const unsubscribe = subscribeToStream(bookingStreamUrl(locationId, date), 'slot-changed', () => {
       loadRosterAndBookings(true);
-    };
-    es.addEventListener('slot-changed', slotHandler);
+    });
 
     const timer = setInterval(() => {
       loadRosterAndBookings(true);
     }, 15000);
 
     return () => {
-      es.removeEventListener('slot-changed', slotHandler);
-      es.close();
+      unsubscribe();
       clearInterval(timer);
     };
   }, [locationId, date, loadRosterAndBookings]);
