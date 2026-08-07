@@ -21,6 +21,8 @@ internal static class StaticLogger
     public static Serilog.LoggerConfiguration GetLoggerConfiguration(this LoggerConfiguration loggerConfiguration, string logType)
     {
         return loggerConfiguration
+            .Destructure.With<RedactSensitivePropertiesPolicy>()
+            .Enrich.With<RedactSensitivePropertiesEnricher>()
             .Enrich.FromLogContext()
             .Enrich.WithMachineName()
             .Enrich.WithEnvironmentName()

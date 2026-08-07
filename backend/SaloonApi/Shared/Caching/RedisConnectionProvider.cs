@@ -46,7 +46,7 @@ internal sealed class RedisConnectionProvider(IConfiguration configuration, ILog
                 return _multiplexer;
             }
 
-            logger.LogInformation("Redis configuration active ('{ConnectionString}'). Initializing/reconnecting multiplexer.", connStr);
+            logger.LogInformation("Redis configuration active. Initializing/reconnecting multiplexer.");
             _multiplexer?.Dispose();
             _multiplexer = null;
             _currentConnectionString = connStr;
@@ -61,7 +61,7 @@ internal sealed class RedisConnectionProvider(IConfiguration configuration, ILog
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to parse/connect Redis configuration '{ConnectionString}'. Cache disabled.", connStr);
+                logger.LogWarning(ex, "Failed to parse/connect Redis configuration. Cache disabled.");
                 return null;
             }
 #pragma warning restore CA1031
