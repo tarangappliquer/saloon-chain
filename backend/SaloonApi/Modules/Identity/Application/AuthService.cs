@@ -12,8 +12,8 @@ namespace SaloonApi.Modules.Identity.Application;
 internal sealed class AuthService(
     UserRepository repo, RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
     EmailChangeTokenRepository emailChangeTokens, TokenService tokens, IBackgroundEmailQueue emailQueue,
-    StripeCustomerService stripeCustomerService, IOptions<PortalUrlOptions> portalUrls, SseBroadcaster sse,
-    IOptions<AuthOptions> authOptions)
+    StripeCustomerService stripeCustomerService, IOptionsMonitor<PortalUrlOptions> portalUrls, SseBroadcaster sse,
+    IOptionsMonitor<AuthOptions> authOptions)
 {
     // "Set your password" (new account, less urgent) gets a longer window than "forgot password"
     // (an active account-recovery request) -- both intentionally short compared to RefreshTokenExpiryDays.
@@ -25,7 +25,7 @@ internal sealed class AuthService(
     {
         var (hash, salt) = PasswordHasher.Hash(password);
         // Self-registration is always Customer role. Staff accounts are created via admin portal.
-        bool isEmailVerified = !authOptions.Value.RequireEmailVerification;
+        bool isEmailVerified = !authOptions.CurrentValue.RequireEmailVerification;
         var id = await repo.CreateAsync(name, email, hash, salt, phone, isEmailVerified: isEmailVerified);
         await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
         var (accessToken, refreshToken) = await IssueTokensAsync(id, email, UserRole.Customer);
@@ -41,7 +41,7 @@ internal sealed class AuthService(
         var (accessToken, refreshToken) = await IssueTokensAsync(
             user.Id, user.Email, user.Role, user.ChainId, user.LocationId, user.TherapistId);
         bool canEmulate = user.Role == UserRole.RootSuperAdmin || user.IsEmulator;
-        bool isEmailVerified = !authOptions.Value.RequireEmailVerification || user.IsEmailVerified;
+        bool isEmailVerified = !authOptions.CurrentValue.RequireEmailVerification || user.IsEmailVerified;
         return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken, user.PhotoPath, isEmailVerified);
     }
 
@@ -56,7 +56,7 @@ internal sealed class AuthService(
         var (accessToken, newRefreshToken) = await IssueTokensAsync(
             stored.UserId, stored.Email, stored.Role, stored.ChainId, stored.LocationId, stored.TherapistId);
         bool canEmulate = stored.Role == UserRole.RootSuperAdmin || stored.IsEmulator;
-        bool isEmailVerified = !authOptions.Value.RequireEmailVerification || stored.IsEmailVerified;
+        bool isEmailVerified = !authOptions.CurrentValue.RequireEmailVerification || stored.IsEmailVerified;
         return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken, isEmailVerified);
     }
 
@@ -83,7 +83,7 @@ internal sealed class AuthService(
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
         var id = await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId, isEmulator);
         await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email);
-        await SendSetPasswordEmailAsync(id, name, email, portalUrls.Value.AdminPortalUrl);
+        await SendSetPasswordEmailAsync(id, name, email, portalUrls.CurrentValue.AdminPortalUrl);
         return id;
     }
 
@@ -92,7 +92,7 @@ internal sealed class AuthService(
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
         var id = await repo.CreateAsync(name, email, hash, salt, phone, UserRole.Customer);
         await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
-        await SendSetPasswordEmailAsync(id, name, email, portalUrls.Value.ClientPortalUrl);
+        await SendSetPasswordEmailAsync(id, name, email, portalUrls.CurrentValue.ClientPortalUrl);
         return id;
     }
 
@@ -118,7 +118,7 @@ internal sealed class AuthService(
         var token = TokenService.GenerateRefreshToken();
         await resetTokens.CreateAsync(user.Id, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(ForgotPasswordExpiryHours));
 
-        var portalUrl = user.Role == UserRole.Customer ? portalUrls.Value.ClientPortalUrl : portalUrls.Value.AdminPortalUrl;
+        var portalUrl = user.Role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
         emailQueue.Enqueue(BuildPasswordEmail(
             user.Name, user.Email, portalUrl, token,
             subject: "Reset your password",
@@ -147,7 +147,7 @@ internal sealed class AuthService(
         var token = TokenService.GenerateRefreshToken();
         await emailChangeTokens.CreateAsync(userId, newEmail, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(EmailChangeExpiryHours));
 
-        var portalUrl = role == UserRole.Customer ? portalUrls.Value.ClientPortalUrl : portalUrls.Value.AdminPortalUrl;
+        var portalUrl = role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
         emailQueue.Enqueue(BuildEmailChangeEmail(name, newEmail, portalUrl, token));
     }
 

@@ -10,8 +10,8 @@ public class PaymentWebhookTests
     [Fact]
     public async Task ProcessWebhookAsyncParsesPaymentIntentSucceededPayload()
     {
-        var options = Microsoft.Extensions.Options.Options.Create(new StripeOptions { WebhookSecret = "" });
-        var portalOptions = Microsoft.Extensions.Options.Options.Create(new SaloonApi.Shared.Auth.PortalUrlOptions());
+        var options = TestOptionsMonitor.Create(new StripeOptions { WebhookSecret = "" });
+        var portalOptions = TestOptionsMonitor.Create(new SaloonApi.Shared.Auth.PortalUrlOptions());
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<StripePaymentGateway>.Instance;
         var gateway = new StripePaymentGateway(options, portalOptions, logger);
 
@@ -52,8 +52,8 @@ public class PaymentWebhookTests
     [Fact]
     public async Task ProcessWebhookAsyncParsesPaymentIntentFailedPayload()
     {
-        var options = Microsoft.Extensions.Options.Options.Create(new StripeOptions { WebhookSecret = "" });
-        var portalOptions = Microsoft.Extensions.Options.Options.Create(new SaloonApi.Shared.Auth.PortalUrlOptions());
+        var options = TestOptionsMonitor.Create(new StripeOptions { WebhookSecret = "" });
+        var portalOptions = TestOptionsMonitor.Create(new SaloonApi.Shared.Auth.PortalUrlOptions());
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<StripePaymentGateway>.Instance;
         var gateway = new StripePaymentGateway(options, portalOptions, logger);
 

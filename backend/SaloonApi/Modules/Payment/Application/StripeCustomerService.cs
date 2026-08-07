@@ -8,9 +8,9 @@ namespace SaloonApi.Modules.Payment.Application;
 
 internal sealed class StripeCustomerService(
     UserRepository userRepo,
-    IOptions<StripeOptions> stripeOptions)
+    IOptionsMonitor<StripeOptions> stripeOptions)
 {
-    private readonly StripeOptions _options = stripeOptions.Value;
+    private StripeOptions _options => stripeOptions.CurrentValue;
 
 #pragma warning disable CA1031 // Best-effort DB persistence fallback
     public async Task<string> GetOrCreateCustomerAsync(

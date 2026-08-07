@@ -12,7 +12,7 @@ internal sealed class PaymentService(
     BookingService bookingService,
     UserRepository userRepo,
     StripeCustomerService stripeCustomerService,
-    IOptions<StripeOptions> stripeOptions)
+    IOptionsMonitor<StripeOptions> stripeOptions)
 {
     public async Task<CreatePaymentResponse> CreatePaymentIntentAsync(
         int bookingId, int customerId, PaymentProvider provider, string paymentMethod = "card", string currency = "USD", CancellationToken ct = default)
@@ -56,7 +56,7 @@ internal sealed class PaymentService(
             Status: result.Status,
             ClientSecret: result.TransactionId != null ? $"{result.TransactionId}_secret" : null,
             TransactionId: result.TransactionId,
-            PublishableKey: provider == PaymentProvider.Stripe ? stripeOptions.Value.PublishableKey : null,
+            PublishableKey: provider == PaymentProvider.Stripe ? stripeOptions.CurrentValue.PublishableKey : null,
             CheckoutUrl: result.CheckoutUrl
         );
     }
@@ -130,8 +130,8 @@ internal sealed class PaymentService(
             throw new ArgumentException("Session ID is required", nameof(sessionId));
         }
 
-        StripeConfiguration.ApiKey = stripeOptions.Value.SecretKey;
-        if (string.IsNullOrEmpty(stripeOptions.Value.SecretKey))
+        StripeConfiguration.ApiKey = stripeOptions.CurrentValue.SecretKey;
+        if (string.IsNullOrEmpty(stripeOptions.CurrentValue.SecretKey))
         {
             // Dev mock fallback
             await bookingService.ConfirmAsync(bookingId, 0);

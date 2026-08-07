@@ -5,9 +5,9 @@ using MimeKit;
 
 namespace SaloonApi.Shared.Email;
 
-internal sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSender
+internal sealed class SmtpEmailSender(IOptionsMonitor<EmailOptions> options) : IEmailSender
 {
-    private readonly EmailOptions _options = options.Value;
+    private EmailOptions _options => options.CurrentValue;
 
     public async Task SendAsync(EmailMessage message, CancellationToken ct)
     {

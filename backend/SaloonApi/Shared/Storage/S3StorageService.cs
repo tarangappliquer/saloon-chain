@@ -8,25 +8,28 @@ namespace SaloonApi.Shared.Storage;
 internal sealed class S3StorageService : IStorageService, IDisposable
 {
     private readonly AmazonS3Client _s3Client;
-    private readonly S3Options _options;
+    private readonly IOptionsMonitor<StorageOptions> _optionsMonitor;
 
-    public S3StorageService(IOptions<StorageOptions> options)
+    public S3StorageService(IOptionsMonitor<StorageOptions> options)
     {
-        _options = options.Value.S3;
+        _optionsMonitor = options;
+        var opts = _optionsMonitor.CurrentValue.S3;
 
         var config = new AmazonS3Config();
-        if (!string.IsNullOrWhiteSpace(_options.ServiceUrl))
+        if (!string.IsNullOrWhiteSpace(opts.ServiceUrl))
         {
-            config.ServiceURL = _options.ServiceUrl;
+            config.ServiceURL = opts.ServiceUrl;
             config.ForcePathStyle = true;
         }
-        else if (!string.IsNullOrWhiteSpace(_options.Region))
+        else if (!string.IsNullOrWhiteSpace(opts.Region))
         {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(_options.Region);
+            config.RegionEndpoint = RegionEndpoint.GetBySystemName(opts.Region);
         }
 
-        _s3Client = new AmazonS3Client(_options.AccessKey, _options.SecretKey, config);
+        _s3Client = new AmazonS3Client(opts.AccessKey, opts.SecretKey, config);
     }
+
+    private S3Options _options => _optionsMonitor.CurrentValue.S3;
 
     public async Task<string> SaveFileAsync(Stream stream, string category, string fileName, string contentType, CancellationToken ct = default)
     {

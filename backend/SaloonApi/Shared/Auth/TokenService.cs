@@ -8,14 +8,14 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace SaloonApi.Shared.Auth;
 
-internal sealed class TokenService(IOptions<JwtOptions> options)
+internal sealed class TokenService(IOptionsMonitor<JwtOptions> options)
 {
     public const string ChainIdClaimType = "chainId";
     public const string LocationIdClaimType = "locationId";
     public const string TherapistIdClaimType = "therapistId";
     public const string EmulatedByClaimType = "emulatedBy";
 
-    private readonly JwtOptions _options = options.Value;
+    private JwtOptions _options => options.CurrentValue;
 
     public string CreateToken(
         int userId, string email, UserRole role, int? chainId = null, int? locationId = null,

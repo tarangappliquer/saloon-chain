@@ -7,10 +7,10 @@ using System.Globalization;
 
 namespace SaloonApi.Modules.Payment.Application;
 
-internal sealed class StripePaymentGateway(IOptions<StripeOptions> options, IOptions<PortalUrlOptions> portalOptions, ILogger<StripePaymentGateway> logger) : IPaymentGateway
+internal sealed class StripePaymentGateway(IOptionsMonitor<StripeOptions> options, IOptionsMonitor<PortalUrlOptions> portalOptions, ILogger<StripePaymentGateway> logger) : IPaymentGateway
 {
-    private readonly StripeOptions _options = options.Value;
-    private readonly PortalUrlOptions _portalOptions = portalOptions.Value;
+    private StripeOptions _options => options.CurrentValue;
+    private PortalUrlOptions _portalOptions => portalOptions.CurrentValue;
 
     public PaymentProvider Provider => PaymentProvider.Stripe;
 

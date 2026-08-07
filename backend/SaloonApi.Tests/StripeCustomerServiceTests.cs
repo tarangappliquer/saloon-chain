@@ -14,7 +14,7 @@ public class StripeCustomerServiceTests
     [Fact]
     public async Task GetOrCreateCustomerAsyncCreatesMockCustomerIdInDevMode()
     {
-        var options = Options.Create(new StripeOptions { SecretKey = "" });
+        var options = TestOptionsMonitor.Create(new StripeOptions { SecretKey = "" });
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { { "ConnectionStrings:SaloonDb", "Server=localhost;Database=TestDb;" } })
             .Build();

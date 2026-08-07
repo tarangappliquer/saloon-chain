@@ -13,13 +13,13 @@ internal static class ConfigEndpoints
         // adminportal links out to clientportal (customer emulation handoff), clientportal links
         // back to adminportal ("exit emulation" redirect). Public, no [Authorize]: needed before
         // login to build those cross-portal links, and neither value is sensitive.
-        group.MapGet("/adminportal", (IOptions<PortalUrlOptions> portalUrls) =>
-            Results.Ok(new AdminPortalConfigResponse(portalUrls.Value.ClientPortalUrl)))
+        group.MapGet("/adminportal", (IOptionsMonitor<PortalUrlOptions> portalUrls) =>
+            Results.Ok(new AdminPortalConfigResponse(portalUrls.CurrentValue.ClientPortalUrl)))
           .Produces<AdminPortalConfigResponse>()
           .WithDescription("Config the adminportal needs at startup (clientportal base URL).");
 
-        group.MapGet("/clientportal", (IOptions<PortalUrlOptions> portalUrls) =>
-            Results.Ok(new ClientPortalConfigResponse(portalUrls.Value.AdminPortalUrl)))
+        group.MapGet("/clientportal", (IOptionsMonitor<PortalUrlOptions> portalUrls) =>
+            Results.Ok(new ClientPortalConfigResponse(portalUrls.CurrentValue.AdminPortalUrl)))
           .Produces<ClientPortalConfigResponse>()
           .WithDescription("Config the clientportal needs at startup (adminportal base URL).");
     }

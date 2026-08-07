@@ -3,6 +3,7 @@ using MicroElements.AspNetCore.OpenApi.FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SaloonApi.Modules.Admin.Endpoints;
 using SaloonApi.Modules.Booking.Application;
@@ -25,12 +26,14 @@ using SaloonApi.Modules.Scheduling.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Bootstrap;
 using SaloonApi.Shared.Caching;
+using SaloonApi.Shared.Cors;
 using SaloonApi.Shared.Data;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.OpenApi;
 using SaloonApi.Shared.Realtime;
+using SaloonApi.Shared.Security;
 using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
@@ -40,6 +43,8 @@ using System.Text;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 builder.Host.UseSerilog((_, cfg) =>
 {
@@ -81,12 +86,12 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<PortalUrlOptions>(builder.Configuration.GetSection("Portals"));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
-var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
-    ?? throw new InvalidOperationException("Missing Jwt configuration");
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptionsMonitor<JwtOptions>>((options, jwtMonitor) =>
     {
+        var jwt = jwtMonitor.CurrentValue;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidIssuer = jwt.Issuer,
@@ -98,6 +103,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true
         };
     });
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
@@ -116,19 +125,37 @@ builder.Services.AddAuthorization(options =>
         nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
 });
 
-builder.Services.AddCors(options =>
-{
-    var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-        ?? ["http://localhost:5173"];
-    options.AddDefaultPolicy(policy => policy
-        .WithOrigins(origins)
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .WithExposedHeaders("Tus-Resumable", "Upload-Offset", "Upload-Length", "Upload-Metadata", "Location"));
-});
+builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
+
+builder.Services.AddCors();
+builder.Services.AddOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>()
+    .Configure<IOptionsMonitor<CorsOptions>, IOptionsMonitor<PortalUrlOptions>>((options, corsMonitor, portalMonitor) =>
+    {
+        var configuredOrigins = corsMonitor.CurrentValue.AllowedOrigins ?? [];
+        var clientUrl = portalMonitor.CurrentValue.ClientPortalUrl;
+        var adminUrl = portalMonitor.CurrentValue.AdminPortalUrl;
+
+        var allOrigins = configuredOrigins
+            .Concat([clientUrl, adminUrl])
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (allOrigins.Length == 0)
+        {
+            allOrigins = ["http://localhost:5173", "http://localhost:58569", "http://localhost:58562"];
+        }
+
+        options.AddDefaultPolicy(policy => policy
+            .WithOrigins(allOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .WithExposedHeaders("Tus-Resumable", "Upload-Offset", "Upload-Length", "Upload-Metadata", "Location"));
+    });
 
 builder.Services.AddTransient<CorrelationIdMiddleware>();
 builder.Services.AddTransient<CurrentUserMiddleware>();
+builder.Services.AddTransient<SecurityHeadersMiddleware>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
 
@@ -164,14 +191,14 @@ builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Sto
 
 builder.Services.AddSingleton<IStorageService>(sp =>
 {
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>().CurrentValue;
     if (string.Equals(opts.Provider, "S3", StringComparison.OrdinalIgnoreCase))
     {
-        return new S3StorageService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>());
+        return new S3StorageService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>());
     }
     return new LocalStorageService(
         sp.GetRequiredService<IWebHostEnvironment>(),
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>()
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>()
     );
 });
 
@@ -209,6 +236,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+
+app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseCors();
