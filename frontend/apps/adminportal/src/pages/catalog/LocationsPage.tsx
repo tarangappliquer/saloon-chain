@@ -6,6 +6,7 @@ import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 import { TimeInput } from '../../components/TimeInput';
+import { routes } from '../../routes';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -197,23 +198,19 @@ export function LocationsPage() {
   }
 
   function handleNavigateToTreatments(loc: Location) {
-    const cid = loc.chainId ?? chainId ?? '';
-    navigate(`/catalog/treatments?chainId=${cid}&locationId=${loc.id}`);
+    navigate(routes.catalog.treatments(loc.chainId ?? chainId, loc.id));
   }
 
   function handleNavigateToUsers(loc: Location) {
-    const cid = loc.chainId ?? chainId ?? '';
-    navigate(`/catalog/locations/users?chainId=${cid}&locationId=${loc.id}`);
+    navigate(routes.catalog.locationUsers(loc.chainId ?? chainId, loc.id));
   }
 
   function handleNavigateToRooms(loc: Location) {
-    const cid = loc.chainId ?? chainId ?? '';
-    navigate(`/staff/rooms?chainId=${cid}&locationId=${loc.id}`);
+    navigate(routes.staff.rooms(loc.chainId ?? chainId, loc.id));
   }
 
   function handleNavigateToSchedule(loc: Location) {
-    const cid = loc.chainId ?? chainId ?? '';
-    navigate(`/scheduling?chainId=${cid}&locationId=${loc.id}`);
+    navigate(routes.scheduling({ chainId: loc.chainId ?? chainId, locationId: loc.id }));
   }
 
   const activeChain = chains.find((c) => c.id === (formChainId ?? chainId));
@@ -236,7 +233,7 @@ export function LocationsPage() {
         title="Salon Locations"
         description="Manage physical salon locations, operating hours, and active status per saloon chain."
         action={
-          <Button variant="outline" size="sm" onClick={() => navigate('/catalog/saloons')}>
+          <Button variant="outline" size="sm" onClick={() => navigate(routes.catalog.saloons)}>
             ← Back to Saloons
           </Button>
         }

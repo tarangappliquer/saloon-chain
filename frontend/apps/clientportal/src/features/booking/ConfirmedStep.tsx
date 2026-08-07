@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, CardContent } from '@saloon/ui';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { bookingApi, paymentApi } from '../../api/client';
+import { routes } from '../../routes';
 
 export function ConfirmedStep() {
   const navigate = useNavigate();
@@ -60,10 +61,10 @@ export function ConfirmedStep() {
           <h1 className="font-display text-2xl font-bold text-foreground">Appointment Confirmed!</h1>
           <p className="text-xs text-muted-foreground">Your booking has been saved. You can manage or view it anytime under My Bookings.</p>
           <div className="pt-4 flex gap-3 w-full justify-center">
-            <Button variant="outline" onClick={() => navigate('/my-bookings')}>
+            <Button variant="outline" onClick={() => navigate(routes.myBookings)}>
               View My Bookings
             </Button>
-            <Button variant="primary" onClick={() => navigate('/book')}>
+            <Button variant="primary" onClick={() => navigate(routes.book.root)}>
               Book Another
             </Button>
           </div>

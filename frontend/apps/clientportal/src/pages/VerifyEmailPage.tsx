@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card } from '@saloon/ui';
 import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { authApi, ApiError } from '../api/client';
+import { routes } from '../routes';
 
 export function VerifyEmailPage() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ export function VerifyEmailPage() {
         {!token ? (
           <div className="space-y-4 text-center py-2">
             <p className="text-xs font-semibold text-destructive">This confirmation link is missing its token or has expired.</p>
-            <Link to="/profile" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+            <Link to={routes.profile} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
               Back to profile
             </Link>
           </div>
@@ -48,7 +49,7 @@ export function VerifyEmailPage() {
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <p className="text-xs text-foreground font-semibold">Your email address has been confirmed.</p>
-            <Button onClick={() => navigate('/profile')} size="lg" className="w-full">
+            <Button onClick={() => navigate(routes.profile)} size="lg" className="w-full">
               Go to profile
             </Button>
           </div>
@@ -73,7 +74,7 @@ export function VerifyEmailPage() {
             </Button>
 
             <div className="text-center pt-2">
-              <Link to="/profile" className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
+              <Link to={routes.profile} className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
                 <ArrowLeft className="h-3.5 w-3.5" /> Back to profile
               </Link>
             </div>

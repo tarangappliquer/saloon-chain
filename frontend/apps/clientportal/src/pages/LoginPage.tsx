@@ -4,6 +4,7 @@ import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { ApiError, getFieldError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
+import { routes } from '../routes';
 
 export function LoginPage() {
   const { user, login, register } = useAuth();
@@ -19,7 +20,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (user) {
-      navigate('/my-bookings', { replace: true });
+      navigate(routes.myBookings, { replace: true });
     }
   }, [user, navigate]);
 
@@ -33,7 +34,7 @@ export function LoginPage() {
     try {
       if (mode === 'login') await login(email, password);
       else await register(name, email, password);
-      navigate('/my-bookings');
+      navigate(routes.myBookings);
     } catch (err) {
       setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -157,7 +158,7 @@ export function LoginPage() {
           )}
 
           {mode === 'login' ? (
-            <Link to="/forgot-password" className="text-xs font-semibold text-muted-foreground hover:text-primary transition">
+            <Link to={routes.forgotPassword} className="text-xs font-semibold text-muted-foreground hover:text-primary transition">
               Forgot password?
             </Link>
           ) : (

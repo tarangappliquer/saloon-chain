@@ -8,6 +8,7 @@ import type { Chain, Location, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import type { UpdateStaffRequest } from '@saloon/api-client';
+import { routes } from '../../routes';
 
 function getLocationRolesForCaller(callerRole: UserRole | undefined): { value: UserRole; label: string; desc: string }[] {
   const allRoles: { value: UserRole; label: string; desc: string }[] = [
@@ -173,9 +174,7 @@ export function LocationUsersPage() {
             variant="outline"
             size="sm"
             onClick={() =>
-              navigate(
-                currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
-              )
+              navigate(routes.catalogBack(currentUser?.role === 'Manager', chainId))
             }
           >
             ← Back

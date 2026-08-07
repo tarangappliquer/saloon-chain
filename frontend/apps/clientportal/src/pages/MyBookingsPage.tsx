@@ -4,6 +4,7 @@ import { Badge, Button, Card, ConfirmDialog, LoadingFallback } from '@saloon/ui'
 import { ApiError, bookingApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
+import { routes } from '../routes';
 
 type Tab = 'upcoming' | 'past' | 'cancelled' | 'draft';
 
@@ -259,7 +260,7 @@ export function MyBookingsPage() {
             <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
           )}
         </div>
-        <Link to="/book">
+        <Link to={routes.book.root}>
           <Button variant="primary" size="md">
             Book new appointment
           </Button>

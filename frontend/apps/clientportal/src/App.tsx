@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { appConfig } from './config';
+import { routePatterns, routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
@@ -25,7 +26,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ defa
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to={routes.login} replace />;
   if (!user.isEmailVerified) return <VerifyEmailGate />;
   return <>{children}</>;
 }
@@ -95,20 +96,20 @@ const Nav = memo(function Nav() {
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
       <nav aria-label="Main Navigation" className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-6">
-          <Link to="/explore" className="flex items-center gap-2 shrink-0">
+          <Link to={routes.explore} className="flex items-center gap-2 shrink-0">
             <BrandMark label="Shoppey Saloon" />
           </Link>
           <div className="flex items-center gap-1">
-            <NavLink to="/explore">Explore</NavLink>
-            <NavLink to="/my-bookings">My Bookings</NavLink>
-            <NavLink to="/book">Book Now</NavLink>
+            <NavLink to={routes.explore}>Explore</NavLink>
+            <NavLink to={routes.myBookings}>My Bookings</NavLink>
+            <NavLink to={routes.book.root}>Book Now</NavLink>
           </div>
         </div>
 
         <div className="flex items-center gap-3 text-sm">
           {appConfig.enableThemeToggle && <ThemeToggle />}
           <Link
-            to="/profile"
+            to={routes.profile}
             className="flex items-center gap-2 rounded-lg border border-border bg-card p-1 pr-3 text-foreground hover:bg-accent transition"
             title="Profile"
           >
@@ -150,14 +151,14 @@ function AppRoutes() {
       <main className="flex-1">
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/explore" replace />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route path="/emulate" element={<EmulatePage />} />
+            <Route path="/" element={<Navigate to={routes.explore} replace />} />
+            <Route path={routes.login} element={<LoginPage />} />
+            <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
+            <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+            <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+            <Route path={routes.emulate} element={<EmulatePage />} />
             <Route
-              path="/explore"
+              path={routes.explore}
               element={
                 <RequireAuth>
                   <ExplorePage />
@@ -165,7 +166,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/venue/:locationId"
+              path={routePatterns.venue}
               element={
                 <RequireAuth>
                   <VenueDetailPage />
@@ -173,7 +174,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/book"
+              path={routes.book.root}
               element={
                 <RequireAuth>
                   <BookPage />
@@ -181,13 +182,13 @@ function AppRoutes() {
               }
             >
               <Route index element={<TreatmentsStep />} />
-              <Route path="confirmed" element={<ConfirmedStep />} />
-              <Route path=":bookingId/schedule" element={<ScheduleStep />} />
-              <Route path=":bookingId/summary" element={<SummaryStep />} />
-              <Route path=":bookingId/payment" element={<PaymentStep />} />
+              <Route path={routePatterns.book.confirmed} element={<ConfirmedStep />} />
+              <Route path={routePatterns.book.schedule} element={<ScheduleStep />} />
+              <Route path={routePatterns.book.summary} element={<SummaryStep />} />
+              <Route path={routePatterns.book.payment} element={<PaymentStep />} />
             </Route>
             <Route
-              path="/my-bookings"
+              path={routes.myBookings}
               element={
                 <RequireAuth>
                   <MyBookingsPage />
@@ -195,14 +196,14 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/profile"
+              path={routes.profile}
               element={
                 <RequireAuth>
                   <ProfilePage />
                 </RequireAuth>
               }
             />
-            <Route path="*" element={<Navigate to="/explore" replace />} />
+            <Route path="*" element={<Navigate to={routes.explore} replace />} />
           </Routes>
         </Suspense>
       </main>

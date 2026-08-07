@@ -5,6 +5,7 @@ import { AlertTriangle, Info, MapPin, Store } from 'lucide-react';
 import { bookingApi, catalogApi } from '../../api/client';
 import type { Chain, Location, Treatment } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
+import { routes } from '../../routes';
 import { DatePicker } from './DatePicker';
 import { SlotPicker } from './SlotPicker';
 import { TreatmentBar } from './TreatmentBar';
@@ -105,7 +106,7 @@ export function ScheduleStep() {
 
   useEffect(() => {
     if (state.restoring) return;
-    if (!booking) navigate('/book', { replace: true });
+    if (!booking) navigate(routes.book.root, { replace: true });
   }, [state.restoring, booking, navigate]);
 
   useEffect(() => {
@@ -303,7 +304,7 @@ export function ScheduleStep() {
       <Button
         type="button"
         disabled={!canContinue}
-        onClick={() => navigate(`/book/${bookingId}/summary`)}
+        onClick={() => navigate(routes.book.summary(bookingId!))}
         className="w-full h-11 text-base font-semibold cursor-pointer disabled:cursor-not-allowed"
       >
         Continue to Summary

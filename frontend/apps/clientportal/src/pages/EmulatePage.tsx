@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
+import { routes } from '../routes';
 
 // Landing spot for the redirect from adminportal's "Log in as customer" -- swaps the token in the
 // URL for a real session (via GET /api/auth/me) and drops straight into the booking flow.
@@ -23,7 +24,7 @@ export function EmulatePage() {
     }
 
     loginWithToken(token)
-      .then(() => navigate('/my-bookings', { replace: true }))
+      .then(() => navigate(routes.myBookings, { replace: true }))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to start emulation session'));
   }, [searchParams, loginWithToken, navigate]);
 
@@ -34,7 +35,7 @@ export function EmulatePage() {
           <p className="text-sm text-red-600">{error}</p>
           <button
             type="button"
-            onClick={() => navigate('/login', { replace: true })}
+            onClick={() => navigate(routes.login, { replace: true })}
             className="mt-4 text-sm text-primary hover:underline"
           >
             Go to sign in

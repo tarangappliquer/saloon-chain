@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
+import { routes } from '../routes';
 
 interface VenueCardData extends Location {
   chainName: string;
@@ -276,7 +277,7 @@ export function ExplorePage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => navigate(`/venue/${venue.id}`)}
+                      onClick={() => navigate(routes.venue(venue.id))}
                       className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-primary/90 transition"
                     >
                       Book Now

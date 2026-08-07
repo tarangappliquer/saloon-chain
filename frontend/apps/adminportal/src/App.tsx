@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { appConfig } from './config';
+import { routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
@@ -38,16 +39,16 @@ const MANAGER_ONLY: UserRole[] = ['Manager'];
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
-  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (!user) return <Navigate to={routes.login} replace state={{ from: location }} />;
   if (!user.isEmailVerified) return <VerifyEmailGate />;
   return <>{children}</>;
 }
 
 function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNode }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to={routes.login} replace />;
   if (!user.isEmailVerified) return <VerifyEmailGate />;
-  return roles.includes(user.role) ? <>{children}</> : <Navigate to="/" replace />;
+  return roles.includes(user.role) ? <>{children}</> : <Navigate to={routes.root} replace />;
 }
 
 const NavLink = memo(function NavLink({ to, children }: { to: string; children: ReactNode }) {
@@ -82,21 +83,21 @@ const Nav = memo(function Nav() {
     <header className="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
       <nav aria-label="Admin Navigation" className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2.5">
         <div className="flex items-center gap-6 overflow-x-auto py-1 no-scrollbar">
-          <Link to="/" className="flex items-center gap-2 shrink-0">
+          <Link to={routes.root} className="flex items-center gap-2 shrink-0">
             <BrandMark label="Saloon Admin" />
           </Link>
           <div className="flex items-center gap-1 shrink-0">
-            <NavLink to="/">Dashboard</NavLink>
-            {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to="/catalog/saloons">Saloons</NavLink>}
-            {user.role === 'Manager' && <NavLink to="/my-location">My Location</NavLink>}
-            <NavLink to="/bookings">Bookings</NavLink>
-            {ADMIN_ACCESS.includes(user.role) && <NavLink to="/customers">Customers</NavLink>}
+            <NavLink to={routes.root}>Dashboard</NavLink>
+            {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to={routes.catalog.saloons}>Saloons</NavLink>}
+            {user.role === 'Manager' && <NavLink to={routes.myLocation}>My Location</NavLink>}
+            <NavLink to={routes.bookings}>Bookings</NavLink>
+            {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.customers}>Customers</NavLink>}
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-4">
           {appConfig.enableThemeToggle && <ThemeToggle />}
           <Link
-            to="/profile"
+            to={routes.profile}
             className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-accent"
           >
             {user.photoPath ? (
@@ -137,12 +138,12 @@ function AppRoutes() {
       <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
         <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path={routes.login} element={<LoginPage />} />
+            <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
+            <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+            <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
             <Route
-              path="/"
+              path={routes.root}
               element={
                 <RequireAuth>
                   <DashboardPage />
@@ -150,7 +151,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/saloons"
+              path={routes.catalog.saloons}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <SaloonsPage />
@@ -158,7 +159,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/saloons/users"
+              path={routes.catalog.saloonUsers()}
               element={
                 <RequireRole roles={ROOT_SUPER_ADMIN_ONLY}>
                   <SaloonUsersPage />
@@ -166,7 +167,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/locations"
+              path={routes.catalog.locations()}
               element={
                 <RequireRole roles={LOCATION_MANAGEMENT}>
                   <LocationsPage />
@@ -174,7 +175,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/locations/users"
+              path={routes.catalog.locationUsers()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <LocationUsersPage />
@@ -182,7 +183,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/my-location"
+              path={routes.myLocation}
               element={
                 <RequireRole roles={MANAGER_ONLY}>
                   <MyLocationPage />
@@ -190,7 +191,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/treatment-categories"
+              path={routes.catalog.treatmentCategories}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <TreatmentCategoriesPage />
@@ -198,7 +199,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/treatments"
+              path={routes.catalog.treatments()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <TreatmentsPage />
@@ -206,7 +207,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/catalog/treatment-prices"
+              path={routes.catalog.treatmentPrices()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <TreatmentPricesPage />
@@ -214,7 +215,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/staff/users"
+              path={routes.staff.users}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <StaffPage />
@@ -222,7 +223,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/staff/therapists"
+              path={routes.staff.therapists}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <TherapistsPage />
@@ -230,7 +231,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/staff/rooms"
+              path={routes.staff.rooms()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <RoomsPage />
@@ -238,7 +239,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/scheduling"
+              path={routes.scheduling()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <SchedulingPage />
@@ -246,7 +247,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/bookings"
+              path={routes.bookings}
               element={
                 <RequireRole roles={STAFF_ACCESS}>
                   <BookingsPage />
@@ -254,7 +255,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/customers"
+              path={routes.customers}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <CustomersPage />
@@ -262,14 +263,14 @@ function AppRoutes() {
               }
             />
             <Route
-              path="/profile"
+              path={routes.profile}
               element={
                 <RequireAuth>
                   <ProfilePage />
                 </RequireAuth>
               }
             />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to={routes.root} replace />} />
           </Routes>
         </Suspense>
       </main>

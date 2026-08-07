@@ -7,6 +7,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, TreatmentCategory } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TreatmentCatalogTabs } from '../../components/TreatmentCatalogTabs';
+import { routes } from '../../routes';
 
 export function TreatmentCategoriesPage() {
   const navigate = useNavigate();
@@ -145,9 +146,7 @@ export function TreatmentCategoriesPage() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  navigate(
-                    currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
-                  )
+                  navigate(routes.catalogBack(currentUser?.role === 'Manager', chainId))
                 }
               >
                 ← Back

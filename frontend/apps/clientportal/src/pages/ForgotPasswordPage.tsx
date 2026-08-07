@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ArrowLeft, Loader2, MailCheck } from 'lucide-react';
 import { authApi, ApiError } from '../api/client';
+import { routes } from '../routes';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -40,7 +41,7 @@ export function ForgotPasswordPage() {
               If an account exists for <strong className="text-foreground">{email}</strong>, we've sent a link to reset your password.
             </p>
             <Link
-              to="/login"
+              to={routes.login}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline pt-2"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
@@ -77,7 +78,7 @@ export function ForgotPasswordPage() {
             </Button>
 
             <div className="text-center pt-2">
-              <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
+              <Link to={routes.login} className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
                 <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
               </Link>
             </div>

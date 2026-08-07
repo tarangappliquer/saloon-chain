@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
+import { routes } from '../routes';
 
 const TABS = [
-  { to: '/catalog/treatment-categories', label: 'Categories' },
-  { to: '/catalog/treatments', label: 'Treatments' },
-  { to: '/catalog/treatment-prices', label: 'Prices' },
+  { to: routes.catalog.treatmentCategories, label: 'Categories' },
+  { to: routes.catalog.treatments(), label: 'Treatments' },
+  { to: routes.catalog.treatmentPrices(), label: 'Prices' },
 ];
 
 export function TreatmentCatalogTabs({ chainId, locationId }: { chainId: number | null; locationId: number | null }) {

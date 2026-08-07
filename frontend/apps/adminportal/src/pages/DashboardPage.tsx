@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { adminDashboardApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import { DateInput } from '../components/DateInput';
+import { routes } from '../routes';
 import type { DashboardResponseDto } from '@saloon/api-client';
 
 function formatTimeSlot(timeStr?: string): string {
@@ -128,7 +129,7 @@ export function DashboardPage() {
                     <p className="text-xs text-muted-foreground">Manage appointment schedule and therapist room availability.</p>
                   </div>
                   <Link
-                    to="/scheduling?view=grid"
+                    to={routes.scheduling({ view: 'grid' })}
                     className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-primary/90 transition"
                   >
                     Open Schedule Grid →
@@ -236,28 +237,28 @@ export function DashboardPage() {
               <h3 className="font-display text-lg font-bold text-foreground">Partner Quick Tools</h3>
               <div className="space-y-2">
                 <Link
-                  to="/bookings"
+                  to={routes.bookings}
                   className="flex items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-semibold text-foreground hover:bg-accent transition"
                 >
                   <span>📋 All Bookings List</span>
                   <span>→</span>
                 </Link>
                 <Link
-                  to="/customers"
+                  to={routes.customers}
                   className="flex items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-semibold text-foreground hover:bg-accent transition"
                 >
                   <span>👤 Client Directory (CRM)</span>
                   <span>→</span>
                 </Link>
                 <Link
-                  to="/catalog/treatments"
+                  to={routes.catalog.treatments()}
                   className="flex items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-semibold text-foreground hover:bg-accent transition"
                 >
                   <span>✂️ Service Menu & Pricing</span>
                   <span>→</span>
                 </Link>
                 <Link
-                  to="/staff/therapists"
+                  to={routes.staff.therapists}
                   className="flex items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-semibold text-foreground hover:bg-accent transition"
                 >
                   <span>👥 Staff & Specialists</span>

@@ -2,6 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { authApi, ApiError } from '../api/client';
+import { routes } from '../routes';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -37,7 +38,7 @@ export function ForgotPasswordPage() {
             <p className="text-sm text-foreground">
               If an account exists for <strong>{email}</strong>, we've sent a link to reset the password.
             </p>
-            <Link to="/login" className="inline-block text-xs font-semibold text-primary hover:underline">
+            <Link to={routes.login} className="inline-block text-xs font-semibold text-primary hover:underline">
               Back to sign in
             </Link>
           </div>
@@ -66,7 +67,7 @@ export function ForgotPasswordPage() {
             </Button>
 
             <div className="text-center">
-              <Link to="/login" className="text-xs font-semibold text-primary hover:underline">
+              <Link to={routes.login} className="text-xs font-semibold text-primary hover:underline">
                 Back to sign in
               </Link>
             </div>

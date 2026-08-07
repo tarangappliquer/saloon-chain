@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ApiError, getFieldError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
+import { routes } from '../routes';
 
 export function LoginPage() {
   const { user, login } = useAuth();
@@ -15,7 +16,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (user) {
-      navigate('/', { replace: true });
+      navigate(routes.root, { replace: true });
     }
   }, [user, navigate]);
 
@@ -28,7 +29,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      navigate('/');
+      navigate(routes.root);
     } catch (err) {
       setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -77,7 +78,7 @@ export function LoginPage() {
         </form>
 
         <div className="mt-6 text-center">
-          <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
+          <Link to={routes.forgotPassword} className="text-xs font-semibold text-primary hover:underline">
             Forgot password?
           </Link>
         </div>

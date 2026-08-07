@@ -8,6 +8,7 @@ import type { AdminBooking, Location, Room, RoomOpening, Roster, ShiftType, Staf
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TimeInput } from '../../components/TimeInput';
 import { DateInput } from '../../components/DateInput';
+import { routes } from '../../routes';
 
 const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
 
@@ -358,9 +359,7 @@ export function SchedulingPage() {
               variant="outline"
               size="sm"
               onClick={() =>
-                navigate(
-                  currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
-                )
+                navigate(routes.catalogBack(currentUser?.role === 'Manager', chainId))
               }
             >
               ← Back

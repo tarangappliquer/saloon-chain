@@ -8,6 +8,7 @@ import type { Chain, Location, Treatment, TreatmentCategory } from '../../api/ty
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TreatmentCatalogTabs } from '../../components/TreatmentCatalogTabs';
 import { DateInput } from '../../components/DateInput';
+import { routes } from '../../routes';
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -182,9 +183,7 @@ export function TreatmentsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  navigate(
-                    currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
-                  )
+                  navigate(routes.catalogBack(currentUser?.role === 'Manager', chainId))
                 }
               >
                 ← Back

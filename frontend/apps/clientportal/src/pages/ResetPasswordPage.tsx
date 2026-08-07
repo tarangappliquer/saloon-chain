@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { authApi, ApiError, getFieldError } from '../api/client';
+import { routes } from '../routes';
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -49,7 +50,7 @@ export function ResetPasswordPage() {
         {!token ? (
           <div className="space-y-4 text-center py-2">
             <p className="text-xs font-semibold text-destructive">This reset link is missing its token or has expired.</p>
-            <Link to="/forgot-password" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+            <Link to={routes.forgotPassword} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
               Request a new link
             </Link>
           </div>
@@ -59,7 +60,7 @@ export function ResetPasswordPage() {
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <p className="text-xs text-foreground font-semibold">Your password has been successfully reset.</p>
-            <Button onClick={() => navigate('/login')} size="lg" className="w-full">
+            <Button onClick={() => navigate(routes.login)} size="lg" className="w-full">
               Sign in now
             </Button>
           </div>
@@ -102,7 +103,7 @@ export function ResetPasswordPage() {
             </Button>
 
             <div className="text-center pt-2">
-              <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
+              <Link to={routes.login} className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-primary transition">
                 <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
               </Link>
             </div>

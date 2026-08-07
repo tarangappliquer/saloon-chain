@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../../api/client';
 import type { Treatment } from '../../api/types';
+import { routes } from '../../routes';
 import { BookingSummary } from './BookingSummary';
 import { TreatmentBar } from './TreatmentBar';
 import { useBookingFlow } from './useBookingFlow';
@@ -24,11 +25,11 @@ export function SummaryStep() {
 
   useEffect(() => {
     if (state.restoring) return;
-    if (!allCovered) navigate(`/book/${bookingId}/schedule`, { replace: true });
+    if (!allCovered) navigate(routes.book.schedule(bookingId!), { replace: true });
   }, [state.restoring, allCovered, navigate, bookingId]);
 
   function handleProceedToPayment() {
-    navigate(`/book/${bookingId}/payment`);
+    navigate(routes.book.payment(bookingId!));
   }
 
   if (!booking || !allCovered) return null;
@@ -48,7 +49,7 @@ export function SummaryStep() {
       <BookingSummary
         lines={booking.treatments}
         onConfirm={handleProceedToPayment}
-        onEdit={() => navigate(`/book/${bookingId}/schedule`)}
+        onEdit={() => navigate(routes.book.schedule(bookingId!))}
         loading={state.loading}
       />
     </div>

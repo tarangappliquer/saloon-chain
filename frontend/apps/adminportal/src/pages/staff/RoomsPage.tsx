@@ -7,6 +7,7 @@ import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Room } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { routes } from '../../routes';
 
 export function RoomsPage() {
   const navigate = useNavigate();
@@ -153,7 +154,7 @@ export function RoomsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/scheduling?chainId=${chainId ?? ''}&locationId=${locationId}`)}
+                onClick={() => navigate(routes.scheduling({ chainId, locationId }))}
               >
                 <Calendar className="h-3.5 w-3.5 mr-1" />
                 Schedule Rooms
@@ -163,9 +164,7 @@ export function RoomsPage() {
               variant="outline"
               size="sm"
               onClick={() =>
-                navigate(
-                  currentUser?.role === 'Manager' ? '/my-location' : chainId ? `/catalog/locations?chainId=${chainId}` : '/catalog/saloons',
-                )
+                navigate(routes.catalogBack(currentUser?.role === 'Manager', chainId))
               }
             >
               ← Back

@@ -2,6 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { authApi, ApiError, getFieldError } from '../api/client';
+import { routes } from '../routes';
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -48,14 +49,14 @@ export function ResetPasswordPage() {
         {!token ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-destructive">This reset link is missing its token.</p>
-            <Link to="/forgot-password" className="inline-block text-xs font-semibold text-primary hover:underline">
+            <Link to={routes.forgotPassword} className="inline-block text-xs font-semibold text-primary hover:underline">
               Request a new link
             </Link>
           </div>
         ) : done ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-foreground">Your password has been reset.</p>
-            <Button onClick={() => navigate('/login')} size="lg" className="w-full">
+            <Button onClick={() => navigate(routes.login)} size="lg" className="w-full">
               Sign in
             </Button>
           </div>

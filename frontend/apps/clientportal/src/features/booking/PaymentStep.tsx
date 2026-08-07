@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { paymentApi } from '../../api/client';
+import { routes } from '../../routes';
 import { useAuth } from '../auth/AuthContext';
 import { BookingSummary } from './BookingSummary';
 import { useBookingFlow } from './useBookingFlow';
@@ -34,7 +35,7 @@ export function PaymentStep() {
 
   useEffect(() => {
     if (state.restoring) return;
-    if (!allCovered) navigate(`/book/${bookingId}/schedule`, { replace: true });
+    if (!allCovered) navigate(routes.book.schedule(bookingId!), { replace: true });
   }, [state.restoring, allCovered, navigate, bookingId]);
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export function PaymentStep() {
         return;
       }
 
-      navigate('/book/confirmed');
+      navigate(routes.book.confirmed);
     } catch (err: unknown) {
       const error = err as AxiosError<{ title?: string }>;
       setPaymentError(error.response?.data?.title ?? error.message ?? 'Payment failed. Please try again.');
@@ -240,7 +241,7 @@ export function PaymentStep() {
         <BookingSummary
           lines={booking.treatments}
           onConfirm={handlePaymentAndConfirm}
-          onEdit={() => navigate(`/book/${bookingId}/schedule`)}
+          onEdit={() => navigate(routes.book.schedule(bookingId!))}
           loading={state.loading || isProcessing}
         />
       </div>

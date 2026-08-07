@@ -5,6 +5,7 @@ import { Button, ConfirmDialog, PageHeader } from '@saloon/ui';
 import { ApiError, bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
+import { routes } from '../routes';
 
 export interface BookingContext {
   treatments: Treatment[];
@@ -26,7 +27,7 @@ export function BookPage() {
   // flow) but still shouldn't let the customer switch saloon/location after the fact. Matched
   // against the route itself (not a raw pathname string check) so it stays correct if this page
   // ever moves under a different parent path.
-  const isConfirmedPage = Boolean(useMatch('/book/confirmed'));
+  const isConfirmedPage = Boolean(useMatch(routes.book.confirmed));
   const canSwitchLocation = !isEditingBooking && !isConfirmedPage;
 
   const [chains, setChains] = useState<Chain[]>([]);
@@ -46,7 +47,7 @@ export function BookPage() {
     try {
       await bookingApi.apiBookingIdDelete(Number(bookingId));
       setShowCancelModal(false);
-      navigate('/my-bookings', { replace: true });
+      navigate(routes.myBookings, { replace: true });
     } catch (err) {
       setCancelError(err instanceof ApiError ? err.message : 'Failed to cancel booking.');
     } finally {

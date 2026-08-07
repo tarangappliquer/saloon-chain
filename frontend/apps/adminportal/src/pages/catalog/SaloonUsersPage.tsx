@@ -6,6 +6,7 @@ import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../a
 import type { Chain, StaffUser, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { routes } from '../../routes';
 
 const SALOON_USER_ROLES: { value: UserRole; label: string; desc: string }[] = [
   { value: 'SuperAdmin', label: 'SuperAdmin', desc: 'Full saloon chain management & configuration' },
@@ -141,7 +142,7 @@ export function SaloonUsersPage() {
         title={`Saloon User Management ${chain ? `— ${chain.name}` : ''}`}
         description="Create and manage saloon chain administrators (SuperAdmin, Admin)."
         action={
-          <Button variant="outline" size="sm" onClick={() => navigate('/catalog/saloons')}>
+          <Button variant="outline" size="sm" onClick={() => navigate(routes.catalog.saloons)}>
             ← Back to Saloons
           </Button>
         }

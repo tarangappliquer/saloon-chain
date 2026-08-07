@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ApiError, bookingApi } from '../../api/client';
 import type { DraftResponse } from '@saloon/api-client';
 import { useBookingContext } from '../../pages/BookPage';
+import { routes } from '../../routes';
 import { TreatmentPicker } from './TreatmentPicker';
 
 export function TreatmentsStep() {
@@ -23,7 +24,7 @@ export function TreatmentsStep() {
     try {
       const { data } = await bookingApi.apiBookingDraftPost({ locationId, treatmentIds: selectedIds });
       const { bookingId } = data as unknown as DraftResponse;
-      navigate(`/book/${bookingId}/schedule`);
+      navigate(routes.book.schedule(bookingId as unknown as string));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to start booking');
       setLoading(false);

@@ -5,6 +5,7 @@ import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Location } from '../../api/types';
 import { TimeInput } from '../../components/TimeInput';
+import { routes } from '../../routes';
 
 const DAY_BITS: { bit: number; label: string }[] = [
   { bit: 1, label: 'Mon' },
@@ -130,7 +131,7 @@ export function MyLocationPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/catalog/locations/users?chainId=${location.chainId}&locationId=${location.id}`)}
+                onClick={() => navigate(routes.catalog.locationUsers(location.chainId, location.id))}
               >
                 <UserPlus className="h-3.5 w-3.5 mr-1 text-primary" />
                 Add User
@@ -138,7 +139,7 @@ export function MyLocationPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/staff/rooms?chainId=${location.chainId}&locationId=${location.id}`)}
+                onClick={() => navigate(routes.staff.rooms(location.chainId, location.id))}
               >
                 <DoorClosed className="h-3.5 w-3.5 mr-1" />
                 Rooms
@@ -146,7 +147,7 @@ export function MyLocationPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(`/scheduling?chainId=${location.chainId}&locationId=${location.id}`)}
+                onClick={() => navigate(routes.scheduling({ chainId: location.chainId, locationId: location.id }))}
               >
                 <Calendar className="h-3.5 w-3.5 mr-1" />
                 Schedule
@@ -154,7 +155,7 @@ export function MyLocationPage() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => navigate(`/catalog/treatments?chainId=${location.chainId}&locationId=${location.id}`)}
+                onClick={() => navigate(routes.catalog.treatments(location.chainId, location.id))}
               >
                 <Sparkles className="h-3.5 w-3.5 mr-1" />
                 Treatments

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Chain, Location, Treatment } from '../api/types';
+import { routes } from '../routes';
 
 interface Specialist {
   id: number;
@@ -127,7 +128,7 @@ export function VenueDetailPage() {
 
             <button
               type="button"
-              onClick={() => navigate(`/book?locationId=${locationId}`)}
+              onClick={() => navigate(routes.book.new(locationId))}
               className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-lg shadow-primary/30 hover:bg-primary/90 transition cursor-pointer"
             >
               Book Appointment
@@ -190,7 +191,7 @@ export function VenueDetailPage() {
                       <div className="mt-4 flex items-center justify-end">
                         <button
                           type="button"
-                          onClick={() => navigate(`/book?locationId=${locationId}`)}
+                          onClick={() => navigate(routes.book.new(locationId))}
                           className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition cursor-pointer"
                         >
                           + Select Service

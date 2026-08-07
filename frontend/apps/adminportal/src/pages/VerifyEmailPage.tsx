@@ -2,6 +2,7 @@ import { useState, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card } from '@saloon/ui';
 import { authApi, ApiError } from '../api/client';
+import { routes } from '../routes';
 
 export function VerifyEmailPage() {
   const navigate = useNavigate();
@@ -37,14 +38,14 @@ export function VerifyEmailPage() {
         {!token ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-destructive">This confirmation link is missing its token.</p>
-            <Link to="/profile" className="inline-block text-xs font-semibold text-primary hover:underline">
+            <Link to={routes.profile} className="inline-block text-xs font-semibold text-primary hover:underline">
               Back to profile
             </Link>
           </div>
         ) : done ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-foreground">Your email address has been confirmed.</p>
-            <Button onClick={() => navigate('/profile')} size="lg" className="w-full">
+            <Button onClick={() => navigate(routes.profile)} size="lg" className="w-full">
               Go to profile
             </Button>
           </div>

@@ -7,6 +7,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { routes } from '../../routes';
 
 // IsEmulator only ever applies to RootSuperAdmin/SuperAdmin/Admin -- Manager/Receptionist/Therapist/
 // Other/Customer are always false (see AdminStaffEndpoints' matching clamp), so the checkbox/toggle
@@ -242,8 +243,8 @@ export function StaffPage() {
               size="sm"
               onClick={() =>
                 paramLocationId
-                  ? navigate(`/catalog/locations?chainId=${paramChainId}`)
-                  : navigate('/catalog/saloons')
+                  ? navigate(routes.catalog.locations(paramChainId))
+                  : navigate(routes.catalog.saloons)
               }
             >
               ← Back to {paramLocationId ? 'Locations' : 'Saloons'}

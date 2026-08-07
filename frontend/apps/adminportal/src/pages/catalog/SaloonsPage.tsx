@@ -5,6 +5,7 @@ import { Building2, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
+import { routes } from '../../routes';
 
 export function SaloonsPage() {
   const navigate = useNavigate();
@@ -127,11 +128,11 @@ export function SaloonsPage() {
   }
 
   function handleNavigateToLocations(chainId: number) {
-    navigate(`/catalog/locations?chainId=${chainId}`);
+    navigate(routes.catalog.locations(chainId));
   }
 
   function handleNavigateToUsers(chainId: number) {
-    navigate(`/catalog/saloons/users?chainId=${chainId}`);
+    navigate(routes.catalog.saloonUsers(chainId));
   }
 
   const totalCount = chains.length;
