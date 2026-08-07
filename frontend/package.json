@@ -14,22 +14,35 @@
     "build:admin": "pnpm --filter adminportal build",
     "lint:admin": "pnpm --filter adminportal lint",
     "preview:admin": "pnpm --filter adminportal preview",
-    "e2e:admin:": "pnpm --filter adminportal e2e",
-    "e2e:ui:admin": "pnpm --filter adminportal e2e:ui",
+    "e2e:admin": "pnpm --filter adminportal e2e",
+    "e2e:headed:admin": "pnpm --filter adminportal e2e:headed",
+    "e2e:open:admin": "pnpm --filter adminportal e2e:open",
+    "e2e:headless:admin": "pnpm --filter adminportal e2e:headless",
     "dev:client": "pnpm --filter clientportal dev",
     "build:client": "pnpm --filter clientportal build",
     "lint:client": "pnpm --filter clientportal lint",
     "preview:client": "pnpm --filter clientportal preview",
-    "e2e:client:": "pnpm --filter clientportal e2e",
-    "e2e:ui:client": "pnpm --filter clientportal e2e:ui",
+    "e2e:client": "pnpm --filter clientportal e2e",
+    "e2e:headed:client": "pnpm --filter clientportal e2e:headed",
+    "e2e:open:client": "pnpm --filter clientportal e2e:open",
+    "e2e:headless:client": "pnpm --filter clientportal e2e:headless",
     "api": "openapi-generator-cli generate -i http://localhost:5127/openapi/v1.json -g typescript-axios -o ./packages/api-client/src"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "@uppy/core"
+      ]
+    }
+  },
   "devDependencies": {
+    "@openapitools/openapi-generator-cli": "^2.40.1",
     "axios": "^1.19.0",
-    "@openapitools/openapi-generator-cli": "^2.40.1"
+    "cypress": "^15.20.0",
+    "start-server-and-test": "^3.0.12"
   }
 }

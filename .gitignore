@@ -502,3 +502,6 @@ backend/SaloonApi/uploads/
 
 /demo
 /frontend/[Pp]ackages/api-client/src/
+/frontend/**/cypress/snapshots/
+/frontend/**/cypress/screenshots/
+/frontend/**/cypress/videos/
