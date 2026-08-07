@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
+import CreatableSelect from 'react-select/creatable';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, MySwal, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
@@ -38,8 +39,6 @@ function generateTimeSlots(startStr: string, endStr: string, stepMinutes = 15): 
   }
   return slots;
 }
-
-const BLOCK_DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360];
 
 function addMinutesToTime(time: string, minutes: number): string {
   const [h, m] = time.split(':').map(Number);
@@ -402,29 +401,41 @@ export function SchedulingPage() {
       setError('No free time remains in this room to block from this slot.');
       return;
     }
-    const durationChoices = BLOCK_DURATION_OPTIONS.filter((mins) => mins <= maxMinutes);
-    if (durationChoices.length === 0) durationChoices.push(maxMinutes);
+    // react-select's own dark-theme styling (via selectClassNames, same as every other dropdown in
+    // this page) instead of a plain <select> whose OS-rendered popup kept fighting the theme. It's
+    // Creatable so typing a value not in the generated list still works, up to maxMinutes -- whatever
+    // that is. sweetalert2-react-content mounts `html` as a real React tree, so react-select works
+    // interactively here, but preConfirm can't read its value via getElementById like a plain input
+    // -- onChange below writes into this closure variable instead.
+    const durationOptions = Array.from({ length: Math.floor(maxMinutes / 15) }, (_, i) => {
+      const mins = (i + 1) * 15;
+      return { value: String(mins), label: `${mins} min` };
+    });
+    let selectedDuration = Math.min(15, maxMinutes);
 
     const { value } = await MySwal.fire({
       title: 'Block time slot',
       html: (
         <div className="space-y-3 text-left">
           <div>
-            <label htmlFor="swal-block-duration" className="mb-1 block text-xs font-semibold text-muted-foreground">
-              Duration <span className="font-normal normal-case text-muted-foreground/70">(up to {maxMinutes} min free)</span>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">
+              Duration (minutes) <span className="font-normal normal-case text-muted-foreground/70">— up to {maxMinutes} min free</span>
             </label>
-            <select
-              id="swal-block-duration"
-              className="swal2-select"
-              style={{ display: 'block', width: '100%', margin: 0, color: '#1f2937', colorScheme: 'light' }}
-              defaultValue={durationChoices[0]}
-            >
-              {durationChoices.map((mins) => (
-                <option key={mins} value={mins} style={{ color: '#1f2937' }}>
-                  {mins} min
-                </option>
-              ))}
-            </select>
+            <CreatableSelect
+              defaultValue={{ value: String(selectedDuration), label: `${selectedDuration} min` }}
+              options={durationOptions}
+              onChange={(picked) => {
+                const n = Number(picked?.value);
+                if (Number.isFinite(n)) selectedDuration = n;
+              }}
+              formatCreateLabel={(input) => `${input} min`}
+              isValidNewOption={(input) => /^\d+$/.test(input) && Number(input) >= 15 && Number(input) <= maxMinutes}
+              placeholder="Pick or type minutes..."
+              unstyled
+              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
+              menuPortalTarget={document.body}
+              styles={{ menuPortal: (base) => ({ ...base, zIndex: 9999 }) }}
+            />
           </div>
           <div>
             <label htmlFor="swal-block-reason" className="mb-1 block text-xs font-semibold text-muted-foreground">
@@ -444,14 +455,17 @@ export function SchedulingPage() {
       reverseButtons: true,
       focusConfirm: false,
       preConfirm: () => {
-        const durationEl = document.getElementById('swal-block-duration') as HTMLSelectElement | null;
         const reasonEl = document.getElementById('swal-block-reason') as HTMLInputElement | null;
         const reason = reasonEl?.value.trim();
         if (!reason) {
           MySwal.showValidationMessage('Reason is required');
           return false;
         }
-        return { duration: Number(durationEl?.value ?? durationChoices[0]), reason };
+        if (!Number.isFinite(selectedDuration) || selectedDuration < 15 || selectedDuration > maxMinutes) {
+          MySwal.showValidationMessage(`Duration must be between 15 and ${maxMinutes} minutes`);
+          return false;
+        }
+        return { duration: Math.round(selectedDuration / 15) * 15, reason };
       },
     });
     if (!value) return;
@@ -729,115 +743,132 @@ function ScheduleGridView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-border bg-accent/40">
-                  <th className="sticky left-0 z-20 w-24 border-r border-border bg-accent/60 p-3 font-semibold text-foreground">
-                    Time Slot
-                  </th>
-                  {rooms.map((room) => {
-                    const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
-                    const assignedShift = roster.therapistShifts.find((s) => s.roomId === room.id);
+            {/* CSS Grid instead of a <table> -- a table cell's height is famously unreliable to
+                stretch a child to fill (percentage heights on <td> children are inconsistent across
+                browsers when a sibling column's row is taller), which showed up as a visible gap
+                between consecutive rows of the same blocked-slot group. Grid items stretch to fill
+                their row track by default, no percentage-height special-casing needed. */}
+            <div
+              role="table"
+              className="grid text-left text-xs"
+              style={{ gridTemplateColumns: `6rem repeat(${rooms.length}, minmax(220px, 1fr))` }}
+            >
+              <div role="row" className="contents">
+                <div
+                  role="columnheader"
+                  className="sticky left-0 z-20 w-24 border-r border-b border-border bg-accent/60 p-3 font-semibold text-foreground"
+                >
+                  Time Slot
+                </div>
+                {rooms.map((room) => {
+                  const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
+                  const assignedShift = roster.therapistShifts.find((s) => s.roomId === room.id);
 
+                  const isOpen = !!opening;
+                  const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
+
+                  return (
+                    <div
+                      key={room.id}
+                      role="columnheader"
+                      className="border-r border-b border-border/60 bg-accent/40 p-3 font-semibold align-top"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isOpen}
+                            aria-label={`${room.name} open`}
+                            disabled={categories.length === 0}
+                            onClick={() => changeRoomStatus(room, opening, opening ? '' : String(categories[0]?.id ?? ''))}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-emerald-500 bg-emerald-500' : 'border-border-strong bg-muted'}`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                          </button>
+                          <span className="text-foreground text-sm font-bold">{room.name}</span>
+                        </div>
+                        {isOpen && (
+                          <Select
+                            isClearable
+                            isDisabled={hasBooking}
+                            value={categories.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(opening?.treatmentCategoryId ?? '')) ?? null}
+                            onChange={(picked: SingleValue<SelectOption>) => changeRoomStatus(room, opening, picked?.value ?? '')}
+                            placeholder="Category..."
+                            options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                            unstyled
+                            classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
+                          />
+                        )}
+                        {isOpen && hasBooking && (
+                          <p className="text-[10px] italic text-muted-foreground">Category locked (room has a booking today)</p>
+                        )}
+                        {isOpen && (
+                          <Select
+                            isClearable
+                            isDisabled={submittingShift}
+                            value={therapists.map((t) => ({ value: String(t.id), label: t.name })).find((o) => o.value === String(assignedShift?.therapistId ?? '')) ?? null}
+                            onChange={(picked: SingleValue<SelectOption>) => {
+                              const v = picked?.value ?? '';
+                              if (v) {
+                                handleAssignShift(v, room.id);
+                              } else if (assignedShift) {
+                                handleRemoveShift(assignedShift.id);
+                              }
+                            }}
+                            placeholder="Select..."
+                            options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
+                            unstyled
+                            classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {timeSlots.map((slot, slotIdx) => (
+                <div key={slot} role="row" className="contents">
+                  {/* Sticky Time Column -- display:contents on the row wrapper above means it has no
+                      box of its own, so :hover can't reliably hit-test on it (no rendered element to
+                      hover); each cell gets its own hover highlight instead of a synced whole-row one. */}
+                  <div className="sticky left-0 z-10 flex items-center border-r border-b border-border bg-card p-2.5 font-mono text-xs font-bold text-foreground hover:bg-accent/10 transition-colors">
+                    {slot}
+                  </div>
+
+                  {/* Room Columns */}
+                  {rooms.map((room) => {
+                    const blockCell = blockSpans.get(room.id)?.get(slotIdx);
+
+                    const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
                     const isOpen = !!opening;
-                    const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
+
+                    const nextSlot = slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
+
+                    // Find any treatment booking that covers this room and time slot
+                    const matchedTreatment = flatTreatments.find((t) => {
+                      const matchRoom = t.roomId ? t.roomId === room.id : t.roomName === room.name;
+                      return matchRoom && slot < t.endTimeStr && nextSlot > t.startTimeStr;
+                    });
+
+                    const isTempBooked = matchedTreatment?.status === 'Draft';
+
+                    const activeTherapists = (roster.therapistShifts || []).filter((s) => {
+                      if (s.roomId !== room.id) return false;
+                      const startStr = s.startTime.slice(0, 5);
+                      const endStr = s.endTime.slice(0, 5);
+                      return slot >= startStr && slot < endStr;
+                    });
+                    const isStaffed = isOpen && activeTherapists.length > 0;
 
                     return (
-                      <th key={room.id} className="min-w-[220px] border-r border-border/60 p-3 font-semibold align-top">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={isOpen}
-                              aria-label={`${room.name} open`}
-                              disabled={categories.length === 0}
-                              onClick={() => changeRoomStatus(room, opening, opening ? '' : String(categories[0]?.id ?? ''))}
-                              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-emerald-500 bg-emerald-500' : 'border-border-strong bg-muted'}`}
-                            >
-                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                            </button>
-                            <span className="text-foreground text-sm font-bold">{room.name}</span>
-                          </div>
-                          {isOpen && (
-                            <Select
-                              isClearable
-                              isDisabled={hasBooking}
-                              value={categories.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(opening?.treatmentCategoryId ?? '')) ?? null}
-                              onChange={(picked: SingleValue<SelectOption>) => changeRoomStatus(room, opening, picked?.value ?? '')}
-                              placeholder="Category..."
-                              options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-                              unstyled
-                              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
-                            />
-                          )}
-                          {isOpen && hasBooking && (
-                            <p className="text-[10px] italic text-muted-foreground">Category locked (room has a booking today)</p>
-                          )}
-                          {isOpen && (
-                            <Select
-                              isClearable
-                              isDisabled={submittingShift}
-                              value={therapists.map((t) => ({ value: String(t.id), label: t.name })).find((o) => o.value === String(assignedShift?.therapistId ?? '')) ?? null}
-                              onChange={(picked: SingleValue<SelectOption>) => {
-                                const v = picked?.value ?? '';
-                                if (v) {
-                                  handleAssignShift(v, room.id);
-                                } else if (assignedShift) {
-                                  handleRemoveShift(assignedShift.id);
-                                }
-                              }}
-                              placeholder="Select..."
-                              options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
-                              unstyled
-                              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
-                            />
-                          )}
-                        </div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {timeSlots.map((slot, slotIdx) => (
-                  <tr key={slot} className="hover:bg-accent/10 transition-colors">
-                    {/* Sticky Time Column */}
-                    <td className="sticky left-0 z-10 border-r border-border bg-card p-2.5 font-mono text-xs font-bold text-foreground">
-                      {slot}
-                    </td>
-
-                    {/* Room Columns */}
-                    {rooms.map((room) => {
-                      const blockCell = blockSpans.get(room.id)?.get(slotIdx);
-
-                      const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
-                      const isOpen = !!opening;
-
-                      const nextSlot = slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
-
-                      // Find any treatment booking that covers this room and time slot
-                      const matchedTreatment = flatTreatments.find((t) => {
-                        const matchRoom = t.roomId ? t.roomId === room.id : t.roomName === room.name;
-                        return matchRoom && slot < t.endTimeStr && nextSlot > t.startTimeStr;
-                      });
-
-                      const isTempBooked = matchedTreatment?.status === 'Draft';
-
-                      const activeTherapists = (roster.therapistShifts || []).filter((s) => {
-                        if (s.roomId !== room.id) return false;
-                        const startStr = s.startTime.slice(0, 5);
-                        const endStr = s.endTime.slice(0, 5);
-                        return slot >= startStr && slot < endStr;
-                      });
-                      const isStaffed = isOpen && activeTherapists.length > 0;
-
-                      return (
-                        <td
-                          key={room.id}
-                          className={`border-r border-border/40 vertical-align-top ${blockCell ? 'px-2 py-0' : 'p-2'}`}
-                        >
-                          {matchedTreatment ? (
+                      <div
+                        key={room.id}
+                        role="cell"
+                        className={`border-r border-b border-border/40 hover:bg-accent/10 transition-colors ${blockCell ? 'px-2 py-0' : 'p-2'}`}
+                      >
+                        {matchedTreatment ? (
                             /* BOOKED / TEMP BOOKED SLOT CARD WITH BOOKING ID & CUSTOMER INFO */
                             <div className={`rounded-lg border p-2.5 space-y-1.5 shadow-2xs ${isTempBooked
                               ? 'border-amber-500/40 bg-amber-500/10'
@@ -960,14 +991,13 @@ function ScheduleGridView({
                               )}
                             </div>
                           )}
-                        </td>
+                        </div>
                       );
                     })}
-                  </tr>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
         )}
       </CardContent>
     </Card>
