@@ -30,6 +30,7 @@ using SaloonApi.Shared.Cors;
 using SaloonApi.Shared.Data;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
+using SaloonApi.Shared.Logging;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.OpenApi;
 using SaloonApi.Shared.Realtime;
@@ -37,233 +38,242 @@ using SaloonApi.Shared.Security;
 using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
-using Serilog.Formatting.Json;
-using System.Globalization;
 using System.Text;
 
+StaticLogger.Initialize();
 
-var builder = WebApplication.CreateBuilder(args);
-
-builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
-
-builder.Host.UseSerilog((_, cfg) =>
+try
 {
-    var json = new JsonFormatter(renderMessage: true, formatProvider: CultureInfo.InvariantCulture);
-    cfg.Enrich.FromLogContext() // required for CorrelationIdMiddleware's LogContext.PushProperty to show up
-       .Enrich.WithMachineName()
-       .Enrich.WithEnvironmentName()
-       .Enrich.WithThreadId()
-       .MinimumLevel.Information()
-       .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-       .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-#if DEBUG
-       .WriteTo.Console(json)
-#endif
-       .WriteTo.File(json, "Logs/log-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
-});
+    Log.Information("Starting SaloonApi web application...");
 
-builder.Services.AddOpenApi(options =>
-{
-    options.AddScalarTransformers();
-    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
-    options.AddOperationTransformer<DefaultResponsesOperationTransformer>();
+    var builder = WebApplication.CreateBuilder(args);
 
-    options.AddFluentValidationRules();
-});
+    builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-});
-
-builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
-builder.Services.AddFluentValidationRulesToOpenApi();
-
-builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<AppExceptionHandler>();
-
-builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
-builder.Services.Configure<PortalUrlOptions>(builder.Configuration.GetSection("Portals"));
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
-
-
-builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-    .Configure<IOptionsMonitor<JwtOptions>>((options, jwtMonitor) =>
+    builder.Host.UseSerilog((_, cfg) =>
     {
-        var jwt = jwtMonitor.CurrentValue;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidIssuer = jwt.Issuer,
-            ValidAudience = jwt.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true
-        };
+        cfg.GetLoggerConfiguration("MainLog");
     });
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
-
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
-    options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
-    options.AddPolicy("ChainDetailsManagement", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin)));
-    options.AddPolicy("LocationManagement", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
-    options.AddPolicy("LocationDetailsManagement", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
-    options.AddPolicy("AdminAccess", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
-    options.AddPolicy("StaffAccess", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
-    options.AddPolicy("CustomerManagement", p => p.RequireRole(
-        nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
-});
-
-builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
-
-builder.Services.AddCors();
-builder.Services.AddOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>()
-    .Configure<IOptionsMonitor<CorsOptions>, IOptionsMonitor<PortalUrlOptions>>((options, corsMonitor, portalMonitor) =>
+    builder.Services.AddOpenApi(options =>
     {
-        var configuredOrigins = corsMonitor.CurrentValue.AllowedOrigins ?? [];
-        var clientUrl = portalMonitor.CurrentValue.ClientPortalUrl;
-        var adminUrl = portalMonitor.CurrentValue.AdminPortalUrl;
+        options.AddScalarTransformers();
+        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+        options.AddOperationTransformer<DefaultResponsesOperationTransformer>();
 
-        var allOrigins = configuredOrigins
-            .Concat([clientUrl, adminUrl])
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        options.AddFluentValidationRules();
+    });
 
-        if (allOrigins.Length == 0)
+    builder.Services.ConfigureHttpJsonOptions(options =>
+    {
+        options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+    builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
+    builder.Services.AddFluentValidationRulesToOpenApi();
+
+    builder.Services.AddProblemDetails();
+    builder.Services.AddExceptionHandler<AppExceptionHandler>();
+
+    builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+    builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+    builder.Services.Configure<PortalUrlOptions>(builder.Configuration.GetSection("Portals"));
+    builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+
+
+    builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+        .Configure<IOptionsMonitor<JwtOptions>>((options, jwtMonitor) =>
         {
-            allOrigins = ["http://localhost:5173", "http://localhost:58569", "http://localhost:58562"];
+            var jwt = jwtMonitor.CurrentValue;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidIssuer = jwt.Issuer,
+                ValidAudience = jwt.Audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true
+            };
+        });
+
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer();
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
+        options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
+        options.AddPolicy("ChainDetailsManagement", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin)));
+        options.AddPolicy("LocationManagement", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+        options.AddPolicy("LocationDetailsManagement", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
+        options.AddPolicy("AdminAccess", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
+        options.AddPolicy("StaffAccess", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
+        options.AddPolicy("CustomerManagement", p => p.RequireRole(
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+    });
+
+    builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));
+
+    builder.Services.AddCors();
+    builder.Services.AddOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>()
+        .Configure<IOptionsMonitor<CorsOptions>, IOptionsMonitor<PortalUrlOptions>>((options, corsMonitor, portalMonitor) =>
+        {
+            var configuredOrigins = corsMonitor.CurrentValue.AllowedOrigins ?? [];
+            var clientUrl = portalMonitor.CurrentValue.ClientPortalUrl;
+            var adminUrl = portalMonitor.CurrentValue.AdminPortalUrl;
+
+            var allOrigins = configuredOrigins
+                .Concat([clientUrl, adminUrl])
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (allOrigins.Length == 0)
+            {
+                allOrigins = ["http://localhost:5173", "http://localhost:58569", "http://localhost:58562"];
+            }
+
+            options.AddDefaultPolicy(policy => policy
+                .WithOrigins(allOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .WithExposedHeaders("Tus-Resumable", "Upload-Offset", "Upload-Length", "Upload-Metadata", "Location"));
+        });
+
+    builder.Services.AddTransient<CorrelationIdMiddleware>();
+    builder.Services.AddTransient<CurrentUserMiddleware>();
+    builder.Services.AddTransient<SecurityHeadersMiddleware>();
+    builder.Services.AddScoped<CurrentUser>();
+    builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+
+    builder.Services.AddSingleton<SqlConnectionFactory>();
+
+    builder.Services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
+    builder.Services.AddScoped<IAvailabilityCache, RedisAvailabilityCache>();
+    builder.Services.AddSingleton<SseBroadcaster>();
+    builder.Services.AddSingleton<TokenService>();
+    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+    builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
+
+    builder.Services.AddScoped<UserRepository>();
+    builder.Services.AddScoped<RefreshTokenRepository>();
+    builder.Services.AddScoped<PasswordResetTokenRepository>();
+    builder.Services.AddScoped<EmailChangeTokenRepository>();
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<CatalogRepository>();
+    builder.Services.AddScoped<BookingRepository>();
+    builder.Services.AddScoped<BookingService>();
+    builder.Services.AddScoped<SchedulingRepository>();
+    builder.Services.AddScoped<ProfileRepository>();
+    builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
+    builder.Services.AddScoped<IPaymentGateway, CashPaymentGateway>();
+    builder.Services.AddScoped<IPaymentGateway, InHousePaymentGateway>();
+    builder.Services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
+    builder.Services.AddScoped<PaymentRepository>();
+    builder.Services.AddScoped<StripeCustomerService>();
+    builder.Services.AddScoped<PaymentService>();
+
+    builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
+    builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
+
+    builder.Services.AddSingleton<IStorageService>(sp =>
+    {
+        var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>().CurrentValue;
+        if (string.Equals(opts.Provider, "S3", StringComparison.OrdinalIgnoreCase))
+        {
+            return new S3StorageService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>());
         }
-
-        options.AddDefaultPolicy(policy => policy
-            .WithOrigins(allOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .WithExposedHeaders("Tus-Resumable", "Upload-Offset", "Upload-Length", "Upload-Metadata", "Location"));
+        return new LocalStorageService(
+            sp.GetRequiredService<IWebHostEnvironment>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>()
+        );
     });
 
-builder.Services.AddTransient<CorrelationIdMiddleware>();
-builder.Services.AddTransient<CurrentUserMiddleware>();
-builder.Services.AddTransient<SecurityHeadersMiddleware>();
-builder.Services.AddScoped<CurrentUser>();
-builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+    builder.Services.AddHostedService<HoldExpirySweepService>();
+    builder.Services.AddHostedService<EmailQueueBackgroundService>();
 
-builder.Services.AddSingleton<SqlConnectionFactory>();
+    builder.Services.AddHealthChecks();
+    builder.Services.AddAntiforgery();
 
-builder.Services.AddSingleton<IRedisConnectionProvider, RedisConnectionProvider>();
-builder.Services.AddScoped<IAvailabilityCache, RedisAvailabilityCache>();
-builder.Services.AddSingleton<SseBroadcaster>();
-builder.Services.AddSingleton<TokenService>();
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
+    var app = builder.Build();
 
-builder.Services.AddScoped<UserRepository>();
-builder.Services.AddScoped<RefreshTokenRepository>();
-builder.Services.AddScoped<PasswordResetTokenRepository>();
-builder.Services.AddScoped<EmailChangeTokenRepository>();
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<CatalogRepository>();
-builder.Services.AddScoped<BookingRepository>();
-builder.Services.AddScoped<BookingService>();
-builder.Services.AddScoped<SchedulingRepository>();
-builder.Services.AddScoped<ProfileRepository>();
-builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
-builder.Services.AddScoped<IPaymentGateway, CashPaymentGateway>();
-builder.Services.AddScoped<IPaymentGateway, InHousePaymentGateway>();
-builder.Services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
-builder.Services.AddScoped<PaymentRepository>();
-builder.Services.AddScoped<StripeCustomerService>();
-builder.Services.AddScoped<PaymentService>();
 
-builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
-builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
-
-builder.Services.AddSingleton<IStorageService>(sp =>
-{
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>().CurrentValue;
-    if (string.Equals(opts.Provider, "S3", StringComparison.OrdinalIgnoreCase))
+    var forwardedHeadersOptions = new ForwardedHeadersOptions
     {
-        return new S3StorageService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>());
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    };
+    forwardedHeadersOptions.KnownIPNetworks.Clear();
+    forwardedHeadersOptions.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwardedHeadersOptions);
+
+    var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
+    Directory.CreateDirectory(uploadsPath);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(uploadsPath),
+        RequestPath = "/uploads"
+    });
+
+    app.UseMiddleware<CorrelationIdMiddleware>();
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.MapOpenApi();
+        app.MapScalarApiReference();
     }
-    return new LocalStorageService(
-        sp.GetRequiredService<IWebHostEnvironment>(),
-        sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>()
-    );
-});
 
-builder.Services.AddHostedService<HoldExpirySweepService>();
-builder.Services.AddHostedService<EmailQueueBackgroundService>();
+    app.UseExceptionHandler();
 
-builder.Services.AddHealthChecks();
-builder.Services.AddAntiforgery();
+    app.UseMiddleware<SecurityHeadersMiddleware>();
 
-var app = builder.Build();
+    app.UseHttpsRedirection();
+    app.UseCors();
+    app.UseAuthentication();
+    app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs context.User's claims populated
+    app.UseAuthorization();
+    app.UseAntiforgery();
+    app.UseTusEndpoints();
 
+    // Polled by both frontends' ConnectivityBanner to distinguish "server is down" from "you're offline"
+    // -- no auth, no tags, just a 200 so a plain fetch (no generated client) can hit it from any origin.
+    app.MapHealthChecks("/health");
 
-var forwardedHeadersOptions = new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-};
-forwardedHeadersOptions.KnownIPNetworks.Clear();
-forwardedHeadersOptions.KnownProxies.Clear();
-app.UseForwardedHeaders(forwardedHeadersOptions);
+    app.MapAuthEndpoints();
+    app.MapConfigEndpoints();
+    app.MapCatalogEndpoints();
+    app.MapBookingEndpoints();
+    app.MapPaymentEndpoints();
+    app.MapAdminCatalogEndpoints();
+    app.MapAdminStaffEndpoints();
+    app.MapAdminBookingEndpoints();
+    app.MapAdminCustomersEndpoints();
+    app.MapAdminDashboardEndpoints();
+    app.MapSchedulingEndpoints();
+    app.MapProfileEndpoints();
 
-var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
-Directory.CreateDirectory(uploadsPath);
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(uploadsPath),
-    RequestPath = "/uploads"
-});
+    await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
 
-app.UseMiddleware<CorrelationIdMiddleware>();
-
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    await app.RunAsync();
 }
+#pragma warning disable CA1031
+catch (Exception ex) when (!ex.GetType().Name.Equals("StopTheHostException", StringComparison.Ordinal))
+{
+    StaticLogger.Initialize();
 
-app.UseExceptionHandler();
+    Log.Fatal(ex, "SaloonApi host terminated unexpectedly");
+}
+#pragma warning restore CA1031
+finally
+{
+    StaticLogger.Initialize();
 
-app.UseMiddleware<SecurityHeadersMiddleware>();
+    Log.Information("SaloonApi host shutdown complete.");
 
-app.UseHttpsRedirection();
-app.UseCors();
-app.UseAuthentication();
-app.UseMiddleware<CurrentUserMiddleware>(); // after UseAuthentication(): needs context.User's claims populated
-app.UseAuthorization();
-app.UseAntiforgery();
-app.UseTusEndpoints();
-
-// Polled by both frontends' ConnectivityBanner to distinguish "server is down" from "you're offline"
-// -- no auth, no tags, just a 200 so a plain fetch (no generated client) can hit it from any origin.
-app.MapHealthChecks("/health");
-
-app.MapAuthEndpoints();
-app.MapConfigEndpoints();
-app.MapCatalogEndpoints();
-app.MapBookingEndpoints();
-app.MapPaymentEndpoints();
-app.MapAdminCatalogEndpoints();
-app.MapAdminStaffEndpoints();
-app.MapAdminBookingEndpoints();
-app.MapAdminCustomersEndpoints();
-app.MapAdminDashboardEndpoints();
-app.MapSchedulingEndpoints();
-app.MapProfileEndpoints();
-
-await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
-
-await app.RunAsync();
+    await Log.CloseAndFlushAsync();
+}
