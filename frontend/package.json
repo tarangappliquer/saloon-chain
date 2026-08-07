@@ -17,7 +17,6 @@
     "e2e:admin": "pnpm --filter adminportal e2e",
     "e2e:headed:admin": "pnpm --filter adminportal e2e:headed",
     "e2e:open:admin": "pnpm --filter adminportal e2e:open",
-    "e2e:headless:admin": "pnpm --filter adminportal e2e:headless",
     "dev:client": "pnpm --filter clientportal dev",
     "build:client": "pnpm --filter clientportal build",
     "lint:client": "pnpm --filter clientportal lint",
@@ -25,7 +24,6 @@
     "e2e:client": "pnpm --filter clientportal e2e",
     "e2e:headed:client": "pnpm --filter clientportal e2e:headed",
     "e2e:open:client": "pnpm --filter clientportal e2e:open",
-    "e2e:headless:client": "pnpm --filter clientportal e2e:headless",
     "api": "openapi-generator-cli generate -i http://localhost:5127/openapi/v1.json -g typescript-axios -o ./packages/api-client/src"
   },
   "keywords": [],
@@ -43,6 +41,7 @@
     "@openapitools/openapi-generator-cli": "^2.40.1",
     "axios": "^1.19.0",
     "cypress": "^15.20.0",
-    "start-server-and-test": "^3.0.12"
+    "start-server-and-test": "^3.0.12",
+    "yargs": "^18.1.0"
   }
 }

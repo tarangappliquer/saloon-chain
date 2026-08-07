@@ -12,7 +12,8 @@ namespace SaloonApi.Modules.Identity.Application;
 internal sealed class AuthService(
     UserRepository repo, RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
     EmailChangeTokenRepository emailChangeTokens, TokenService tokens, IBackgroundEmailQueue emailQueue,
-    StripeCustomerService stripeCustomerService, IOptions<PortalUrlOptions> portalUrls, SseBroadcaster sse)
+    StripeCustomerService stripeCustomerService, IOptions<PortalUrlOptions> portalUrls, SseBroadcaster sse,
+    IOptions<AuthOptions> authOptions)
 {
     // "Set your password" (new account, less urgent) gets a longer window than "forgot password"
     // (an active account-recovery request) -- both intentionally short compared to RefreshTokenExpiryDays.
@@ -24,7 +25,8 @@ internal sealed class AuthService(
     {
         var (hash, salt) = PasswordHasher.Hash(password);
         // Self-registration is always Customer role. Staff accounts are created via admin portal.
-        var id = await repo.CreateAsync(name, email, hash, salt, phone);
+        bool isEmailVerified = !authOptions.Value.RequireEmailVerification;
+        var id = await repo.CreateAsync(name, email, hash, salt, phone, isEmailVerified: isEmailVerified);
         await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
         var (accessToken, refreshToken) = await IssueTokensAsync(id, email, UserRole.Customer);
         return (id, accessToken, refreshToken);
@@ -39,7 +41,8 @@ internal sealed class AuthService(
         var (accessToken, refreshToken) = await IssueTokensAsync(
             user.Id, user.Email, user.Role, user.ChainId, user.LocationId, user.TherapistId);
         bool canEmulate = user.Role == UserRole.RootSuperAdmin || user.IsEmulator;
-        return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken, user.PhotoPath, user.IsEmailVerified);
+        bool isEmailVerified = !authOptions.Value.RequireEmailVerification || user.IsEmailVerified;
+        return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken, user.PhotoPath, isEmailVerified);
     }
 
     public async Task<(int Id, string Name, string Email, UserRole Role, bool CanEmulate, string Token, string RefreshToken, bool IsEmailVerified)?> RefreshAsync(string refreshToken)
@@ -53,7 +56,8 @@ internal sealed class AuthService(
         var (accessToken, newRefreshToken) = await IssueTokensAsync(
             stored.UserId, stored.Email, stored.Role, stored.ChainId, stored.LocationId, stored.TherapistId);
         bool canEmulate = stored.Role == UserRole.RootSuperAdmin || stored.IsEmulator;
-        return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken, stored.IsEmailVerified);
+        bool isEmailVerified = !authOptions.Value.RequireEmailVerification || stored.IsEmailVerified;
+        return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken, isEmailVerified);
     }
 
     public async Task LogoutAsync(string refreshToken)

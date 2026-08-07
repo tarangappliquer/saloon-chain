@@ -80,6 +80,7 @@ builder.Services.AddExceptionHandler<AppExceptionHandler>();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<PortalUrlOptions>(builder.Configuration.GetSection("Portals"));
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
     ?? throw new InvalidOperationException("Missing Jwt configuration");
 

@@ -8,10 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "e2e": "start-server-and-test dev http://localhost:58569 'cypress run'",
-    "e2e:headed": "start-server-and-test dev http://localhost:58569 'cypress run --headed'",
-    "e2e:open": "start-server-and-test dev http://localhost:58569 'cypress open'",
-    "e2e:headless": "cypress run"
+    "e2e": "node ../../scripts/run-e2e.cjs --url http://localhost:58569 --exec 'cypress run'",
+    "e2e:headed": "node ../../scripts/run-e2e.cjs --url http://localhost:58569 --exec 'cypress run --headed'",
+    "e2e:open": "node ../../scripts/run-e2e.cjs --url http://localhost:58569 --exec 'cypress open'"
   },
   "dependencies": {
     "@saloon/api-client": "workspace:*",
