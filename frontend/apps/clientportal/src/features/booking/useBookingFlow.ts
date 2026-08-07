@@ -48,8 +48,10 @@ function reducer(state: State, action: Action): State {
       return { ...state, loading: false, booking: action.booking };
     case 'RESTORE_DONE':
       return { ...state, restoring: false };
-    case 'DATES_LOADED':
-      return { ...state, loading: false, dates: action.dates, datesFetched: true };
+    case 'DATES_LOADED': {
+      const merged = Array.from(new Set([...state.dates, ...action.dates])).sort();
+      return { ...state, loading: false, dates: merged, datesFetched: true };
+    }
     case 'SLOTS_LOADED':
       return { ...state, loading: false, slotsByTreatment: action.slotsByTreatment };
     case 'LINE_SCHEDULED': {
@@ -120,20 +122,25 @@ export function useBookingFlow(bookingId: number) {
     })();
   }, [bookingId]);
 
-  const loadDates = useCallback(async (locationId: number, treatmentIds: number[], bookingId?: number) => {
-    dispatch({ type: 'LOADING' });
-    try {
-      const now = new Date();
-      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const toDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
-      const to = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
-      const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
-      const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to, tIdsStr, bookingId);
-      dispatch({ type: 'DATES_LOADED', dates: data });
-    } catch (err) {
-      dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available dates') });
-    }
-  }, []);
+  const loadDates = useCallback(
+    async (locationId: number, treatmentIds: number[], bookingId?: number, fromDate?: string, toDate?: string) => {
+      dispatch({ type: 'LOADING' });
+      try {
+        const now = new Date();
+        const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const defaultToDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
+        const defaultTo = `${defaultToDate.getFullYear()}-${String(defaultToDate.getMonth() + 1).padStart(2, '0')}-${String(defaultToDate.getDate()).padStart(2, '0')}`;
+        const from = fromDate || defaultFrom;
+        const to = toDate || defaultTo;
+        const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
+        const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to, tIdsStr, bookingId);
+        dispatch({ type: 'DATES_LOADED', dates: data });
+      } catch (err) {
+        dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available dates') });
+      }
+    },
+    [],
+  );
 
   const loadSlots = useCallback(async (locationId: number, date: string, treatmentIds: number[]) => {
     if (treatmentIds.length === 0) return;

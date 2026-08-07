@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@saloon/ui';
 import { AlertTriangle, Info, MapPin, Store } from 'lucide-react';
@@ -7,7 +7,7 @@ import type { Treatment } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useBookingContext } from '../../pages/BookPage';
 import { routes } from '../../routes';
-import { DatePicker } from './DatePicker';
+import { MonthYearPicker } from './MonthYearPicker';
 import { SlotPicker } from './SlotPicker';
 import { TreatmentBar } from './TreatmentBar';
 import { useAvailabilityStream } from './useAvailabilityStream';
@@ -113,6 +113,18 @@ export function ScheduleStep() {
     }
   };
   useAvailabilityStream(locationId, date, handleRealtimeUpdate);
+
+  const handleMonthYearChange = useCallback(
+    (year: number, month: number) => {
+      if (!booking || !locationId) return;
+      const tIds = booking.treatments.map((t) => t.treatmentId);
+      const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const lastDayNum = new Date(year, month + 1, 0).getDate();
+      const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+      loadDates(locationId, tIds, Number(bookingId), firstDay, lastDay);
+    },
+    [booking, locationId, bookingId, loadDates],
+  );
 
   if (!booking) return null;
 
@@ -247,12 +259,13 @@ export function ScheduleStep() {
         loading={state.loading}
       />
 
-      <DatePicker
+      <MonthYearPicker
         dates={state.dates}
         selectedDate={date}
         onPick={pickDate}
         loading={state.loading}
         isEmulated={isEmulated}
+        onMonthYearChange={handleMonthYearChange}
       />
 
       {date && (
