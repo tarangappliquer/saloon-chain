@@ -1,7 +1,8 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { AuthApi, BookingApi, CatalogApi, ConfigApi, Configuration, PaymentApi, ProfileApi } from '@saloon/api-client';
+import { appConfig } from '../config';
 
-export const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5127';
+export const API_BASE: string = appConfig.apiBaseUrl;
 
 const TOKEN_KEY = 'saloon_token';
 const REFRESH_KEY = 'saloon_refresh_token';

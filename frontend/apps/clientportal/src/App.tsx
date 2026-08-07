@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { BrandMark, ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, ThemeToggle } from '@saloon/ui';
 import { API_BASE } from './api/client';
+import { appConfig } from './config';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
@@ -105,7 +106,7 @@ const Nav = memo(function Nav() {
         </div>
 
         <div className="flex items-center gap-3 text-sm">
-          <ThemeToggle />
+          {appConfig.enableThemeToggle && <ThemeToggle />}
           <Link
             to="/profile"
             className="flex items-center gap-2 rounded-lg border border-border bg-card p-1 pr-3 text-foreground hover:bg-accent transition"

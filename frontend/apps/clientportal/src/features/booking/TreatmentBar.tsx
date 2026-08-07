@@ -28,6 +28,7 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
           className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
         >
           <span className="text-gray-900 dark:text-gray-100">{line.treatmentName}</span>
+          <span className="font-semibold text-gray-700 dark:text-gray-300">${line.price.toFixed(2)}</span>
           <span className="text-gray-400">{line.startTime ? fmtTime(line.startTime) : 'no time yet'}</span>
           <button
             type="button"
@@ -49,7 +50,7 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
             if (picked?.value) onAdd(Number(picked.value));
           }}
           placeholder="+ Add treatment"
-          options={addable.map((t) => ({ value: String(t.id), label: t.name }))}
+          options={addable.map((t) => ({ value: String(t.id), label: `${t.name} — $${t.price.toFixed(2)}` }))}
           unstyled
           classNames={selectClassNames('rounded-full border border-dashed border-gray-300 bg-transparent px-3 py-1 text-sm text-gray-500 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400')}
         />

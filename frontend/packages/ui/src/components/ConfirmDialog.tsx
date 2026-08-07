@@ -26,17 +26,11 @@ export interface ConfirmSwalOptions {
   danger?: boolean;
 }
 
-const getSwalThemeClasses = (danger: boolean) => ({
-  popup: '!rounded-2xl !border !border-border !bg-card !text-card-foreground !shadow-lift !p-6 !font-sans !max-w-md',
-  title: '!text-lg !font-bold !text-foreground !pt-1',
-  htmlContainer: '!text-xs !text-muted-foreground !mt-2',
-  actions: '!flex !items-center !justify-end !gap-3 !w-full !mt-5 !pt-4 !p-2 !border-t !border-border/60',
-  confirmButton: danger
-    ? '!px-4 !py-2 !rounded-lg !bg-destructive hover:!opacity-90 !text-destructive-foreground !font-semibold !text-xs !transition-all !cursor-pointer !border-0 !shadow-sm'
-    : '!px-4 !py-2 !rounded-lg !bg-primary hover:!opacity-90 !text-primary-foreground !font-semibold !text-xs !transition-all !cursor-pointer !border-0 !shadow-sm',
-  cancelButton:
-    '!px-4 !py-2 !rounded-lg !bg-secondary hover:!bg-accent !text-secondary-foreground !font-semibold !text-xs !transition-all !cursor-pointer !border !border-border !shadow-sm',
-});
+// Colors/spacing come from the `--swal2-*` variables set on `.swal2-popup` in globals.css
+// (SweetAlert2's own theming hooks), so buttonsStyling stays on and we get its default button
+// padding/border-radius for free. `confirm-button-danger` just swaps the confirm button's
+// variables to the destructive palette for the two-choice "danger" variant.
+const getSwalThemeClasses = (danger: boolean) => (danger ? { confirmButton: 'confirm-button-danger' } : undefined);
 
 export async function showConfirmSwal({
   title,
@@ -55,7 +49,6 @@ export async function showConfirmSwal({
     cancelButtonText,
     reverseButtons: true,
     customClass: getSwalThemeClasses(danger),
-    buttonsStyling: false,
   });
 
   return result.isConfirmed;
@@ -90,14 +83,13 @@ export function ConfirmDialog({
       cancelButtonText: cancelLabel,
       reverseButtons: true,
       customClass: getSwalThemeClasses(variant === 'danger'),
-      buttonsStyling: false,
       allowOutsideClick: !loading,
       allowEscapeKey: !loading,
       showLoaderOnConfirm: true,
       preConfirm: async () => {
         try {
           await onConfirm();
-        } catch (err) {
+        } catch {
           // If onConfirm throws, caller handles error
           return false;
         }

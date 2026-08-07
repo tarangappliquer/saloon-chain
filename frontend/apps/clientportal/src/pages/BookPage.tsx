@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
-import { PageHeader } from '@saloon/ui';
-import { bookingApi, catalogApi } from '../api/client';
+import { Button, ConfirmDialog, PageHeader } from '@saloon/ui';
+import { ApiError, bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 
@@ -18,6 +18,7 @@ export function useBookingContext() {
 
 export function BookPage() {
   const { bookingId } = useParams<{ bookingId?: string }>();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const searchLocId = searchParams.get('locationId') ? Number(searchParams.get('locationId')) : null;
   const isEditingBooking = Boolean(bookingId);
@@ -27,6 +28,25 @@ export function BookPage() {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locationId, setLocationId] = useState<number | null>(null);
+
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  async function handleConfirmCancel() {
+    if (!bookingId) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await bookingApi.apiBookingIdDelete(Number(bookingId));
+      setShowCancelModal(false);
+      navigate('/my-bookings', { replace: true });
+    } catch (err) {
+      setCancelError(err instanceof ApiError ? err.message : 'Failed to cancel booking.');
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   useEffect(() => {
     catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
@@ -94,11 +114,27 @@ export function BookPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+      <ConfirmDialog
+        isOpen={showCancelModal}
+        title="Cancel Booking"
+        description="Are you sure you want to cancel this booking? Any held slots will be released and this cannot be undone."
+        confirmLabel="Yes, Cancel Booking"
+        cancelLabel="Keep Booking"
+        variant="danger"
+        loading={cancelling}
+        onConfirm={handleConfirmCancel}
+        onClose={() => setShowCancelModal(false)}
+      />
+
       <PageHeader
         title="Book a Treatment"
         description="Select your preferred salon location and choose from our treatment menu."
         action={
-          (!isEditingBooking && (chains.length > 0 || locations.length > 0)) ? (
+          isEditingBooking ? (
+            <Button type="button" variant="outline" onClick={() => setShowCancelModal(true)} className="text-xs font-semibold cursor-pointer">
+              Cancel Booking
+            </Button>
+          ) : (chains.length > 0 || locations.length > 0) ? (
             <div className="flex flex-wrap items-center gap-2">
               {chains.length > 1 && (
                 <Select
@@ -126,6 +162,12 @@ export function BookPage() {
           ) : undefined
         }
       />
+
+      {cancelError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {cancelError}
+        </div>
+      )}
 
       <Outlet key={locationId} context={{ treatments, locationId } satisfies BookingContext} />
     </div>

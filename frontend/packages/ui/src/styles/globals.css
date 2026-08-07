@@ -351,18 +351,45 @@
     border: 1px solid var(--color-border);
   }
 
-  /* SweetAlert2 Theme Integration */
+  /* SweetAlert2 Theme Integration -- colors/spacing go through SweetAlert2's own `--swal2-*`
+     custom properties (https://sweetalert2.github.io/#make-it-yours) wherever one exists, so its
+     default button padding/border-radius/etc. still apply. SweetAlert2 injects its stylesheet as
+     plain, unlayered CSS at runtime, and unlayered rules always beat anything declared inside a
+     Tailwind `@layer` regardless of selector specificity -- so the few properties with no
+     `--swal2-*` equivalent (icon colors, title/body text color, loader color) still need
+     `!important` to win at all. */
   .swal2-container {
     z-index: 100 !important;
   }
 
   .swal2-popup {
-    background: var(--color-card) !important;
-    color: var(--color-foreground) !important;
-    border: 1px solid var(--color-border) !important;
-    border-radius: var(--radius-2xl) !important;
+    --swal2-background: var(--color-card);
+    --swal2-color: var(--color-foreground);
+    --swal2-border: 1px solid var(--color-border);
+    --swal2-border-radius: var(--radius-2xl);
+    --swal2-width: 28rem;
+    --swal2-title-padding: 0 0 0.5rem;
+    --swal2-html-container-padding: 0.5rem 1.6em 0;
+    /* --swal2-actions-justify-content: flex-end; */
+    --swal2-actions-width: 100%;
+    --swal2-actions-margin: 1.25rem 0 0;
+    --swal2-actions-padding: 1rem 0 0;
+
+    --swal2-confirm-button-background-color: var(--color-primary);
+    --swal2-confirm-button-color: var(--color-primary-foreground);
+    --swal2-confirm-button-border-radius: var(--radius-lg);
+
+    --swal2-cancel-button-background-color: var(--color-secondary);
+    --swal2-cancel-button-color: var(--color-secondary-foreground);
+    --swal2-cancel-button-border-radius: var(--radius-lg);
+
     box-shadow: var(--shadow-lift) !important;
     font-family: var(--font-sans) !important;
+  }
+
+  .swal2-confirm.confirm-button-danger {
+    --swal2-confirm-button-background-color: var(--color-destructive);
+    --swal2-confirm-button-color: var(--color-destructive-foreground);
   }
 
   .swal2-title {
@@ -395,16 +422,7 @@
   }
 
   .swal2-actions {
-    width: 100% !important;
-    margin-top: 1.25rem !important;
-    padding-top: 1rem !important;
     border-top: 1px solid var(--color-border) !important;
-    justify-content: flex-end !important;
-    gap: 0.75rem !important;
-  }
-
-  .swal2-actions button {
-    margin: 0 !important;
   }
 
   .swal2-loader {

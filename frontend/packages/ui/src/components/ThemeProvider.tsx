@@ -15,11 +15,10 @@ const STORAGE_THEME_KEY = "saloon.theme";
 const STORAGE_ACCENT_KEY = "saloon.accent";
 
 function resolveInitialTheme(): Theme {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "dark";
   const stored = window.localStorage.getItem(STORAGE_THEME_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) return "dark";
-  return "light";
+  return "dark";
 }
 
 function resolveInitialAccent(): Accent {
