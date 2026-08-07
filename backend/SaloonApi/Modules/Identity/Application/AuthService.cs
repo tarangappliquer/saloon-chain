@@ -15,12 +15,6 @@ internal sealed class AuthService(
     StripeCustomerService stripeCustomerService, IOptionsMonitor<PortalUrlOptions> portalUrls, SseBroadcaster sse,
     IOptionsMonitor<AuthOptions> authOptions)
 {
-    // "Set your password" (new account, less urgent) gets a longer window than "forgot password"
-    // (an active account-recovery request) -- both intentionally short compared to RefreshTokenExpiryDays.
-    private const int SetPasswordExpiryHours = 72;
-    private const int ForgotPasswordExpiryHours = 1;
-    private const int EmailChangeExpiryHours = 24;
-
     public async Task<(int Id, string Token, string RefreshToken)> RegisterAsync(string name, string email, string password, string? phone)
     {
         var (hash, salt) = PasswordHasher.Hash(password);
@@ -102,7 +96,7 @@ internal sealed class AuthService(
     private async Task SendSetPasswordEmailAsync(int userId, string name, string email, string portalBaseUrl)
     {
         var token = TokenService.GenerateRefreshToken();
-        await resetTokens.CreateAsync(userId, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(SetPasswordExpiryHours));
+        await resetTokens.CreateAsync(userId, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.SetPasswordExpiryHours));
         emailQueue.Enqueue(BuildPasswordEmail(
             name, email, portalBaseUrl, token,
             subject: "Set your password",
@@ -116,7 +110,7 @@ internal sealed class AuthService(
         if (user is null) return;
 
         var token = TokenService.GenerateRefreshToken();
-        await resetTokens.CreateAsync(user.Id, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(ForgotPasswordExpiryHours));
+        await resetTokens.CreateAsync(user.Id, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.ForgotPasswordExpiryHours));
 
         var portalUrl = user.Role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
         emailQueue.Enqueue(BuildPasswordEmail(
@@ -145,7 +139,7 @@ internal sealed class AuthService(
     public async Task RequestEmailChangeAsync(int userId, UserRole role, string name, string newEmail)
     {
         var token = TokenService.GenerateRefreshToken();
-        await emailChangeTokens.CreateAsync(userId, newEmail, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(EmailChangeExpiryHours));
+        await emailChangeTokens.CreateAsync(userId, newEmail, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.EmailChangeExpiryHours));
 
         var portalUrl = role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
         emailQueue.Enqueue(BuildEmailChangeEmail(name, newEmail, portalUrl, token));
