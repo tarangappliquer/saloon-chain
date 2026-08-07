@@ -15,7 +15,11 @@ internal sealed record RoomOpeningDto(
 
 internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, string ShiftType, int TreatmentCategoryId);
 
-internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings);
+internal sealed record BlockedSlotDto(int Id, int RoomId, string RoomName, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+
+internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+
+internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings, IReadOnlyList<BlockedSlotDto> BlockedSlots);
 
 internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
@@ -30,7 +34,8 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
 
         var shifts = (await multi.ReadAsync<TherapistShiftDto>()).ToList();
         var rooms = (await multi.ReadAsync<RoomOpeningDto>()).ToList();
-        return new RosterDto(shifts, rooms);
+        var blockedSlots = (await multi.ReadAsync<BlockedSlotDto>()).ToList();
+        return new RosterDto(shifts, rooms, blockedSlots);
     }
 
     public async Task<int> AssignTherapistShiftAsync(
@@ -126,6 +131,67 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
             RoomId = roomId,
             WorkDate = workDate.ToDateTime(TimeOnly.MinValue)
         });
+    }
+
+    public async Task<bool> HasRoomOpeningAsync(int roomId, DateOnly workDate)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasRoomOpening", new
+        {
+            RoomId = roomId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue)
+        });
+    }
+
+    public async Task<bool> HasBookingOverlapAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasBookingOverlap", new
+        {
+            RoomId = roomId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime
+        });
+    }
+
+    public async Task<bool> HasBlockOverlapAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasBlockOverlap", new
+        {
+            RoomId = roomId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime
+        });
+    }
+
+    public async Task<int> BlockSlotAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, string reason)
+    {
+        using var db = factory.Create();
+        var p = new DynamicParameters();
+        p.Add("@RoomId", roomId);
+        p.Add("@WorkDate", workDate.ToDateTime(TimeOnly.MinValue));
+        p.Add("@StartTime", startTime);
+        p.Add("@EndTime", endTime);
+        p.Add("@Reason", reason);
+        p.Add("@CreatedBy", currentUser.RequireUserId());
+        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        await db.ExecuteSpAsync("dbo.sp_Scheduling_BlockSlot", p);
+        return p.Get<int>("@Id");
+    }
+
+    public async Task UnblockSlotAsync(int id)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Scheduling_UnblockSlot", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task<BlockedSlotDetailsDto?> GetBlockedSlotDetailsAsync(int id)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<BlockedSlotDetailsDto?>("dbo.sp_Scheduling_GetBlockedSlotDetails", new { Id = id });
     }
 }
 

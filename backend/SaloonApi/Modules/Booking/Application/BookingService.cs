@@ -65,14 +65,19 @@ internal sealed class BookingService(
                 .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
                 .ToDictionary(g => g.Key, IReadOnlyList<ExistingBooking> (g) =>
                     [.. g.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft"))]);
+            var blockedByDate = data.BlockedRanges
+                .GroupBy(b => b.WorkDate)
+                .ToDictionary(g => g.Key, IReadOnlyList<BlockedRange> (g) =>
+                    [.. g.Select(b => new BlockedRange(b.RoomId, b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime))))]);
 
             var openDatesForTreatment = new HashSet<DateOnly>();
             foreach (var d in candidates)
             {
                 var pairs = pairsByDate.GetValueOrDefault(d, []);
                 var bookings = bookingsByDate.GetValueOrDefault(d, []);
+                var blocked = blockedByDate.GetValueOrDefault(d, []);
                 var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, data.Location.OpenTime, data.Location.CloseTime, treatment.DurationSlots, pairs, bookings);
+                    d, data.Location.OpenTime, data.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked);
                 if (slots.Count > 0) openDatesForTreatment.Add(d);
             }
             return openDatesForTreatment;
@@ -96,9 +101,11 @@ internal sealed class BookingService(
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd)).ToList();
         var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft")).ToList();
+        var blocked = data.BlockedRanges.Select(b =>
+            new BlockedRange(b.RoomId, date.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), date.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime)))).ToList();
 
         var slots = SlotCalculator.ComputeAvailableSlots(
-            date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing);
+            date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing, blocked);
 
         if (excludeBookingId is null)
         {

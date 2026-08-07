@@ -9,24 +9,28 @@ internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, b
 internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
 internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
 internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
+internal sealed record BlockedRangeRow(int RoomId, TimeSpan StartTime, TimeSpan EndTime);
 
 internal sealed record AvailabilityData(
     LocationHoursRow? Location,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRow> EligiblePairs,
-    IReadOnlyList<ExistingBookingRow> ExistingBookings);
+    IReadOnlyList<ExistingBookingRow> ExistingBookings,
+    IReadOnlyList<BlockedRangeRow> BlockedRanges);
 
 // Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
 // (callers resolve holiday dates for the whole range separately, see CatalogRepository), and
 // EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
 internal sealed record LocationHoursRangeRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask);
 internal sealed record EligiblePairRangeRow(DateOnly WorkDate, int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
+internal sealed record BlockedRangeRangeRow(DateOnly WorkDate, int RoomId, TimeSpan StartTime, TimeSpan EndTime);
 
 internal sealed record AvailabilityRangeData(
     LocationHoursRangeRow? Location,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRangeRow> EligiblePairs,
-    IReadOnlyList<ExistingBookingRow> ExistingBookings);
+    IReadOnlyList<ExistingBookingRow> ExistingBookings,
+    IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
 // (LocationId, RoomId, WorkDate) tuple identifying one affected slot -- Confirm/Cancel/ExpireStaleHolds
 // each return one of these per treatment line they touched, since a booking can span several
@@ -97,8 +101,9 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
         var eligible = (await multi.ReadAsync<EligiblePairRow>()).ToList();
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
+        var blocked = (await multi.ReadAsync<BlockedRangeRow>()).ToList();
 
-        return new AvailabilityData(location, treatments, eligible, existing);
+        return new AvailabilityData(location, treatments, eligible, existing, blocked);
     }
 
     // Same eligibility rules as GetAvailabilityDataAsync, but for a whole [from, to] range in one
@@ -121,8 +126,9 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
         var eligible = (await multi.ReadAsync<EligiblePairRangeRow>()).ToList();
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
+        var blocked = (await multi.ReadAsync<BlockedRangeRangeRow>()).ToList();
 
-        return new AvailabilityRangeData(location, treatments, eligible, existing);
+        return new AvailabilityRangeData(location, treatments, eligible, existing, blocked);
     }
 
     public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)

@@ -299,6 +299,27 @@ CREATE INDEX IX_RoomCategoryAssignments_Room_Date ON dbo.RoomCategoryAssignments
 CREATE UNIQUE INDEX UQ_RoomCategoryAssignments_Room_Shift_Date
     ON dbo.RoomCategoryAssignments(RoomId, ShiftType, WorkDate) WHERE IsDelete = 0;
 
+-- Admin-initiated block on a room/time range (lunch break, therapist emergency leave, etc) --
+-- distinct from RoomCategoryAssignments (whole room open/closed for a shift) since a block covers
+-- an arbitrary sub-range of an otherwise-open, staffed room. Enforced not-overlapping any live
+-- booking at insert time (see sp_Scheduling_HasBookingOverlap) -- an already-booked slot can't be
+-- blocked, matching the same booking-takes-precedence rule as closing a room/removing a shift.
+CREATE TABLE dbo.BlockedSlots (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    RoomId       INT NOT NULL REFERENCES dbo.Rooms(Id),
+    WorkDate     DATE NOT NULL,
+    StartTime    TIME NOT NULL,
+    EndTime      TIME NOT NULL,
+    Reason       NVARCHAR(200) NOT NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+CREATE INDEX IX_BlockedSlots_Room_Date ON dbo.BlockedSlots(RoomId, WorkDate) WHERE IsDelete = 0;
+
 -- A booking is a draft/cart container for one or more treatments booked in the same checkout.
 -- It carries no schedule itself -- each treatment is scheduled (room/therapist/time) independently
 -- on its own BookingTreatments row, so treatments can be picked at different times. 'Draft' covers

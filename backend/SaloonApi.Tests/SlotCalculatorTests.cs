@@ -94,4 +94,36 @@ public class SlotCalculatorTests
         var slot = Assert.Single(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))));
         Assert.True(slot.IsHeld);
     }
+
+    [Fact]
+    public void BlockedRangeExcludesOverlappingStartTimesUnconditionally()
+    {
+        var pairs = new[] { new EligiblePair(1, 1, TimeSpan.FromHours(9), TimeSpan.FromHours(10)) };
+        var blocked = new[]
+        {
+            new BlockedRange(RoomId: 1,
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.25))),
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.5))))
+        };
+        var slots = SlotCalculator.ComputeAvailableSlots(Date, TimeSpan.FromHours(9), TimeSpan.FromHours(18), totalDurationSlots: 2, pairs, [], blocked);
+
+        Assert.DoesNotContain(slots, s =>
+            s.StartTime < Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.5))) &&
+            s.EndTime > Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.25))));
+    }
+
+    [Fact]
+    public void BlockedRangeOnDifferentRoomDoesNotAffectSlot()
+    {
+        var pairs = new[] { new EligiblePair(RoomId: 2, TherapistId: 1, TimeSpan.FromHours(9), TimeSpan.FromHours(10)) };
+        var blocked = new[]
+        {
+            new BlockedRange(RoomId: 1,
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))),
+                Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9.5))))
+        };
+        var slots = SlotCalculator.ComputeAvailableSlots(Date, TimeSpan.FromHours(9), TimeSpan.FromHours(18), totalDurationSlots: 2, pairs, [], blocked);
+
+        Assert.Contains(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))));
+    }
 }

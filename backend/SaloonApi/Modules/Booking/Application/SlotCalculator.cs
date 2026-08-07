@@ -2,6 +2,7 @@ namespace SaloonApi.Modules.Booking.Application;
 
 internal sealed record EligiblePair(int RoomId, int TherapistId, TimeSpan ShiftStart, TimeSpan ShiftEnd);
 internal sealed record ExistingBooking(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, bool IsHeld = false);
+internal sealed record BlockedRange(int RoomId, DateTime StartTime, DateTime EndTime);
 internal sealed record AvailableSlot(DateTime StartTime, DateTime EndTime, int RoomId, int TherapistId, bool IsHeld = false);
 
 // Pure function: the one non-trivial algorithm in the booking flow, kept out of T-SQL so it's
@@ -17,6 +18,7 @@ internal static class SlotCalculator
         int totalDurationSlots,
         IReadOnlyList<EligiblePair> eligiblePairs,
         IReadOnlyList<ExistingBooking> existingBookings,
+        IReadOnlyList<BlockedRange>? blockedRanges = null,
         int slotMinutes = 15)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
@@ -60,6 +62,20 @@ internal static class SlotCalculator
 
                     if (!b.IsHeld) { hardConflict = true; break; }
                     held = true;
+                }
+
+                // An admin-blocked range (lunch break, therapist leave, etc) is room-scoped, not
+                // therapist-scoped, and always a hard conflict -- unlike a held booking, it's not
+                // someone else's in-progress checkout that might expire, so the slot just disappears.
+                if (!hardConflict && blockedRanges is not null)
+                {
+                    foreach (var block in blockedRanges)
+                    {
+                        if (block.RoomId != pair.RoomId || block.StartTime >= slotEnd || block.EndTime <= cursor)
+                            continue;
+                        hardConflict = true;
+                        break;
+                    }
                 }
 
                 if (!hardConflict && seenStartTimes.Add(cursor))

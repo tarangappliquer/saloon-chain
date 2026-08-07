@@ -169,9 +169,19 @@ export interface RoomOpening {
   shiftType: ShiftType;
 }
 
+export interface BlockedSlot {
+  id: number;
+  roomId: number;
+  roomName: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+}
+
 export interface Roster {
   therapistShifts: TherapistShift[];
   roomOpenings: RoomOpening[];
+  blockedSlots: BlockedSlot[];
 }
 
 export interface Profile {

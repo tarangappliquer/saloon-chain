@@ -368,7 +368,7 @@
     --swal2-border: 1px solid var(--color-border);
     --swal2-border-radius: var(--radius-2xl);
     --swal2-width: 28rem;
-    --swal2-title-padding: 0 0 0.5rem;
+    --swal2-title-padding: 0 0 1.5rem;
     --swal2-html-container-padding: 0.5rem 1.6em 0;
     /* --swal2-actions-justify-content: flex-end; */
     --swal2-actions-width: 100%;

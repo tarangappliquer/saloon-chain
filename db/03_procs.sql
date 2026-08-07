@@ -184,6 +184,13 @@ BEGIN
         AND bt.IsDelete = 0 AND b.IsDelete = 0
         AND (@ExcludeBookingId IS NULL OR b.Id <> @ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
+
+    -- 5) admin-blocked room/time ranges that day (lunch break, therapist leave, etc) -- excluded from
+    -- availability the same as a hard-conflicting booking, see SlotCalculator.ComputeAvailableSlots.
+    SELECT bs.RoomId, bs.StartTime, bs.EndTime
+    FROM dbo.BlockedSlots bs
+        JOIN dbo.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = @LocationId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0;
 END
 GO
 
@@ -304,6 +311,13 @@ BEGIN
         AND bt.IsDelete = 0 AND b.IsDelete = 0
         AND (@ExcludeBookingId IS NULL OR b.Id <> @ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()));
+
+    -- 5) admin-blocked room/time ranges across the whole range -- same reasoning as
+    -- sp_Booking_GetAvailabilityData's blocked-slots result set above.
+    SELECT bs.WorkDate, bs.RoomId, bs.StartTime, bs.EndTime
+    FROM dbo.BlockedSlots bs
+        JOIN dbo.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = @LocationId AND bs.WorkDate BETWEEN @FromDate AND @ToDate AND bs.IsDelete = 0;
 END
 GO
 
@@ -1794,6 +1808,12 @@ BEGIN
         JOIN dbo.TreatmentCategories tc ON tc.Id = rca.TreatmentCategoryId
     WHERE r.LocationId = @LocationId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0
     ORDER BY rca.ShiftType, r.Name;
+
+    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason
+    FROM dbo.BlockedSlots bs
+        JOIN dbo.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = @LocationId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0
+    ORDER BY r.Name, bs.StartTime;
 END
 GO
 
@@ -1979,6 +1999,22 @@ BEGIN
 END
 GO
 
+-- A closed room (no room opening at all for the date, any shift) has no bookable capacity to carve
+-- unavailability out of -- sp_Scheduling_BlockSlot's caller checks this before blocking a slot.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasRoomOpening
+    @RoomId   INT,
+    @WorkDate DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.RoomCategoryAssignments rca
+        WHERE rca.RoomId = @RoomId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasRoomOpening;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasRoomBookings
     @RoomId   INT,
     @WorkDate DATE
@@ -1994,6 +2030,96 @@ BEGIN
             AND bt.IsDelete = 0
             AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
     ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasBookings;
+END
+GO
+
+-- Time-range-aware version of sp_Scheduling_HasRoomBookings above, used before blocking a slot --
+-- a whole-day check would reject blocking e.g. a 12:00-12:30 lunch break just because the room has
+-- an unrelated 15:00 booking that same day.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasBookingOverlap
+    @RoomId    INT,
+    @WorkDate  DATE,
+    @StartTime TIME,
+    @EndTime   TIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE bt.RoomId = @RoomId
+            AND bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
+            AND bt.IsDelete = 0
+            AND CAST(bt.StartTime AS TIME) < @EndTime AND CAST(bt.EndTime AS TIME) > @StartTime
+            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOverlap;
+END
+GO
+
+-- Two blocks covering the same room/time would silently collide in the admin grid (whichever one's
+-- rowSpan is computed last wins that grid position, the other vanishes) -- reject a new block that
+-- overlaps an existing one instead of allowing that state to happen.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasBlockOverlap
+    @RoomId    INT,
+    @WorkDate  DATE,
+    @StartTime TIME,
+    @EndTime   TIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.BlockedSlots bs
+        WHERE bs.RoomId = @RoomId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0
+            AND bs.StartTime < @EndTime AND bs.EndTime > @StartTime
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOverlap;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_BlockSlot
+    @RoomId    INT,
+    @WorkDate  DATE,
+    @StartTime TIME,
+    @EndTime   TIME,
+    @Reason    NVARCHAR(200),
+    @CreatedBy INT,
+    @Id        INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.BlockedSlots (RoomId, WorkDate, StartTime, EndTime, Reason, CreatedBy)
+    VALUES (@RoomId, @WorkDate, @StartTime, @EndTime, @Reason, @CreatedBy);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_UnblockSlot
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.BlockedSlots
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50032, 'Blocked slot not found.', 1;
+END
+GO
+
+-- Ownership lookup for DELETE /blocked-slots/{id} -- same reasoning as sp_Scheduling_GetShiftLocationId.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetBlockedSlotDetails
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT bs.Id, r.LocationId, bs.RoomId, bs.WorkDate, bs.StartTime, bs.EndTime, bs.Reason
+    FROM dbo.BlockedSlots bs
+        JOIN dbo.Rooms r ON r.Id = bs.RoomId
+    WHERE bs.Id = @Id AND bs.IsDelete = 0;
 END
 GO
 

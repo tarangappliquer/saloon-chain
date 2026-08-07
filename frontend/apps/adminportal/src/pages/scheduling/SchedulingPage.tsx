@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, MySwal, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
-import type { AdminBooking, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
+import type { AdminBooking, BlockedSlot, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TimeInput } from '../../components/TimeInput';
 import { DateInput } from '../../components/DateInput';
@@ -39,6 +39,16 @@ function generateTimeSlots(startStr: string, endStr: string, stepMinutes = 15): 
   return slots;
 }
 
+const BLOCK_DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360];
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  const hh = Math.floor(total / 60).toString().padStart(2, '0');
+  const mm = (total % 60).toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 interface FlatTreatmentSlot {
   bookingId: number;
   customerName: string;
@@ -50,6 +60,66 @@ interface FlatTreatmentSlot {
   roomName: string | null;
   startTimeStr: string; // HH:mm
   endTimeStr: string;   // HH:mm
+}
+
+type BlockPosition = 'only' | 'first' | 'middle' | 'last';
+type BlockCellState = { blocks: BlockedSlot[]; position: BlockPosition };
+
+// Every 15-min row a block covers keeps its own visible <td> -- this does NOT collapse them into
+// one rowSpan-ed cell. It only figures out, per room/slot-index, which contiguous run ("cluster")
+// of blocked rows that slot belongs to and where in that run it sits (first/middle/last/only), so
+// the renderer can draw matching partial borders on each row that together read as one rectangle
+// wrapping the whole run -- e.g. slots 1-4 blocked under the same PK get a border-top+sides on row
+// 1, sides only on rows 2-3, and border-bottom+sides on row 4.
+//
+// The backend rejects creating a block that overlaps an existing one (sp_Scheduling_HasBlockOverlap),
+// so normally a cluster is exactly one block. This still merges overlapping blocks into one cluster
+// (by shared covered slot index) rather than picking one and dropping the rest, purely so any
+// already-overlapping rows from before that guard existed stay visible and unblockable instead of
+// silently disappearing from the grid.
+function computeBlockSpans(rooms: Room[], blockedSlots: BlockedSlot[], timeSlots: string[]): Map<number, Map<number, BlockCellState>> {
+  const byRoom = new Map<number, Map<number, BlockCellState>>();
+  for (const room of rooms) {
+    const cellMap = new Map<number, BlockCellState>();
+
+    const covered = blockedSlots
+      .filter((b) => b.roomId === room.id)
+      .map((block) => {
+        const startStr = block.startTime.slice(0, 5);
+        const endStr = block.endTime.slice(0, 5);
+        const idx: number[] = [];
+        timeSlots.forEach((slot, i) => {
+          const nextSlot = i + 1 < timeSlots.length ? timeSlots[i + 1] : '23:59';
+          if (slot < endStr && nextSlot > startStr) idx.push(i);
+        });
+        return { block, idx };
+      })
+      .filter((c) => c.idx.length > 0)
+      .sort((a, b) => a.idx[0] - b.idx[0]);
+
+    const clusters: { blocks: BlockedSlot[]; start: number; end: number }[] = [];
+    for (const { block, idx } of covered) {
+      const [first, last] = [idx[0], idx[idx.length - 1]];
+      const current = clusters.at(-1);
+      if (current && first <= current.end) {
+        current.blocks.push(block);
+        current.end = Math.max(current.end, last);
+      } else {
+        clusters.push({ blocks: [block], start: first, end: last });
+      }
+    }
+
+    for (const cluster of clusters) {
+      for (let idx = cluster.start; idx <= cluster.end; idx++) {
+        const position: BlockPosition =
+          cluster.start === cluster.end ? 'only' : idx === cluster.start ? 'first' : idx === cluster.end ? 'last' : 'middle';
+        cellMap.set(idx, { blocks: cluster.blocks, position });
+      }
+    }
+
+    byRoom.set(room.id, cellMap);
+  }
+  return byRoom;
 }
 
 function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
@@ -99,7 +169,7 @@ export function SchedulingPage() {
   const [therapists, setTherapists] = useState<{ id: number; name: string }[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
-  const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [] });
+  const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [], blockedSlots: [] });
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -307,6 +377,110 @@ export function SchedulingPage() {
     }
   }
 
+  // How much free time actually remains in this room from startTime -- the earliest of location
+  // close time, the room's next booking, or the room's next existing block. Caps the duration
+  // dropdown so it never offers a choice that would silently collide with something already there.
+  function getMaxBlockMinutes(roomId: number, startTime: string): number {
+    const candidates: string[] = [];
+    if (workClose) candidates.push(workClose);
+    for (const t of flatTreatments) {
+      if (t.roomId === roomId && t.startTimeStr > startTime) candidates.push(t.startTimeStr);
+    }
+    for (const b of roster.blockedSlots) {
+      const bStart = b.startTime.slice(0, 5);
+      if (b.roomId === roomId && bStart > startTime) candidates.push(bStart);
+    }
+    const cutoff = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : '23:59';
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [ch, cm] = cutoff.split(':').map(Number);
+    return Math.max(0, ch * 60 + cm - (sh * 60 + sm));
+  }
+
+  async function handleBlockSlot(roomId: number, startTime: string) {
+    const maxMinutes = getMaxBlockMinutes(roomId, startTime);
+    if (maxMinutes < 5) {
+      setError('No free time remains in this room to block from this slot.');
+      return;
+    }
+    const durationChoices = BLOCK_DURATION_OPTIONS.filter((mins) => mins <= maxMinutes);
+    if (durationChoices.length === 0) durationChoices.push(maxMinutes);
+
+    const { value } = await MySwal.fire({
+      title: 'Block time slot',
+      html: (
+        <div className="space-y-3 text-left">
+          <div>
+            <label htmlFor="swal-block-duration" className="mb-1 block text-xs font-semibold text-muted-foreground">
+              Duration <span className="font-normal normal-case text-muted-foreground/70">(up to {maxMinutes} min free)</span>
+            </label>
+            <select
+              id="swal-block-duration"
+              className="swal2-select"
+              style={{ display: 'block', width: '100%', margin: 0, color: '#1f2937', colorScheme: 'light' }}
+              defaultValue={durationChoices[0]}
+            >
+              {durationChoices.map((mins) => (
+                <option key={mins} value={mins} style={{ color: '#1f2937' }}>
+                  {mins} min
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="swal-block-reason" className="mb-1 block text-xs font-semibold text-muted-foreground">
+              Reason
+            </label>
+            <input
+              id="swal-block-reason"
+              className="swal2-input"
+              style={{ width: '100%', margin: 0 }}
+              placeholder="e.g. Lunch break, staff leave"
+            />
+          </div>
+        </div>
+      ) as any,
+      showCancelButton: true,
+      confirmButtonText: 'Block',
+      reverseButtons: true,
+      focusConfirm: false,
+      preConfirm: () => {
+        const durationEl = document.getElementById('swal-block-duration') as HTMLSelectElement | null;
+        const reasonEl = document.getElementById('swal-block-reason') as HTMLInputElement | null;
+        const reason = reasonEl?.value.trim();
+        if (!reason) {
+          MySwal.showValidationMessage('Reason is required');
+          return false;
+        }
+        return { duration: Number(durationEl?.value ?? durationChoices[0]), reason };
+      },
+    });
+    if (!value) return;
+
+    setError(null);
+    try {
+      await schedulingApi.apiAdminSchedulingBlockedSlotsPost({
+        roomId,
+        workDate: date,
+        startTime,
+        endTime: addMinutesToTime(startTime, value.duration),
+        reason: value.reason,
+      });
+      await loadRosterAndBookings(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to block slot');
+    }
+  }
+
+  async function handleUnblockSlot(id: number) {
+    setError(null);
+    try {
+      await schedulingApi.apiAdminSchedulingBlockedSlotsIdDelete(id);
+      await loadRosterAndBookings(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to unblock slot');
+    }
+  }
+
   async function changeRoomStatus(room: Room, opening: RoomOpening | undefined, categoryValue: string) {
     setError(null);
     try {
@@ -440,6 +614,8 @@ export function SchedulingPage() {
           handleAssignShift={handleAssignShift}
           handleRemoveShift={handleRemoveShift}
           changeRoomStatus={changeRoomStatus}
+          handleBlockSlot={handleBlockSlot}
+          handleUnblockSlot={handleUnblockSlot}
         />
       )}
     </div>
@@ -459,6 +635,8 @@ interface ScheduleGridViewProps {
   handleAssignShift: (therapistId: string, roomId: number) => void;
   handleRemoveShift: (id: number) => void;
   changeRoomStatus: (room: Room, opening: RoomOpening | undefined, categoryValue: string) => void;
+  handleBlockSlot: (roomId: number, startTime: string) => void;
+  handleUnblockSlot: (id: number) => void;
 }
 
 function ScheduleGridView({
@@ -474,8 +652,43 @@ function ScheduleGridView({
   handleAssignShift,
   handleRemoveShift,
   changeRoomStatus,
+  handleBlockSlot,
+  handleUnblockSlot,
 }: ScheduleGridViewProps) {
+  const blockSpans = computeBlockSpans(rooms, roster.blockedSlots || [], timeSlots);
+
+  const [contextMenu, setContextMenu] = useState<
+    | { x: number; y: number; kind: 'block'; roomId: number; startTime: string }
+    | { x: number; y: number; kind: 'unblock'; blocks: BlockedSlot[] }
+    | null
+  >(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [contextMenu]);
+
+  function openBlockMenu(e: React.MouseEvent, roomId: number, startTime: string) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, kind: 'block', roomId, startTime });
+  }
+
+  function openUnblockMenu(e: React.MouseEvent, blocks: BlockedSlot[]) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, kind: 'unblock', blocks });
+  }
+
   return (
+    <>
     <Card className="overflow-hidden">
       <CardHeader className="border-b border-border/50 pb-4">
         <div className="flex items-center justify-between">
@@ -501,6 +714,10 @@ function ScheduleGridView({
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-muted" />
               Closed Room
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+              Blocked
             </span>
           </div>
         </div>
@@ -583,7 +800,7 @@ function ScheduleGridView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {timeSlots.map((slot) => (
+                {timeSlots.map((slot, slotIdx) => (
                   <tr key={slot} className="hover:bg-accent/10 transition-colors">
                     {/* Sticky Time Column */}
                     <td className="sticky left-0 z-10 border-r border-border bg-card p-2.5 font-mono text-xs font-bold text-foreground">
@@ -592,11 +809,12 @@ function ScheduleGridView({
 
                     {/* Room Columns */}
                     {rooms.map((room) => {
+                      const blockCell = blockSpans.get(room.id)?.get(slotIdx);
+
                       const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
                       const isOpen = !!opening;
 
-                      const slotIdx = timeSlots.indexOf(slot);
-                      const nextSlot = slotIdx >= 0 && slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
+                      const nextSlot = slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
 
                       // Find any treatment booking that covers this room and time slot
                       const matchedTreatment = flatTreatments.find((t) => {
@@ -615,7 +833,10 @@ function ScheduleGridView({
                       const isStaffed = isOpen && activeTherapists.length > 0;
 
                       return (
-                        <td key={room.id} className="border-r border-border/40 p-2 vertical-align-top">
+                        <td
+                          key={room.id}
+                          className={`border-r border-border/40 vertical-align-top ${blockCell ? 'px-2 py-0' : 'p-2'}`}
+                        >
                           {matchedTreatment ? (
                             /* BOOKED / TEMP BOOKED SLOT CARD WITH BOOKING ID & CUSTOMER INFO */
                             <div className={`rounded-lg border p-2.5 space-y-1.5 shadow-2xs ${isTempBooked
@@ -648,9 +869,52 @@ function ScheduleGridView({
                                 )}
                               </div>
                             </div>
+                          ) : blockCell ? (
+                            /* BLOCKED SLOT -- every 15-min row the block covers keeps its own visible
+                               cell (content repeats per row); border-t/rounded-t only on the group's
+                               first row and border-b/rounded-b only on its last stitch the individual
+                               rows into one rectangle outline for the whole group. */
+                            <div
+                              className={`h-full border-l border-r border-violet-500/40 bg-violet-500/10 p-2 space-y-1.5 shadow-2xs ${blockCell.position === 'only'
+                                ? 'rounded-lg border-t border-b'
+                                : blockCell.position === 'first'
+                                  ? 'rounded-t-lg border-t'
+                                  : blockCell.position === 'last'
+                                    ? 'rounded-b-lg border-b'
+                                    : ''
+                                }`}
+                              title={blockCell.blocks.length === 1 ? blockCell.blocks[0].reason : `${blockCell.blocks.length} overlapping blocked ranges`}
+                              onContextMenu={(e) => openUnblockMenu(e, blockCell.blocks)}
+                            >
+                              {blockCell.blocks.map((block) => (
+                                <div key={block.id} className="space-y-1">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="rounded-full bg-violet-500/20 border border-violet-500/40 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:text-violet-200">
+                                      Blocked
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnblockSlot(block.id)}
+                                      className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 underline"
+                                    >
+                                      Unblock
+                                    </button>
+                                  </div>
+                                  <p className="text-[10px] font-mono font-bold text-violet-700 dark:text-violet-300">
+                                    {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}
+                                  </p>
+                                  <p className="text-[11px] text-violet-800 dark:text-violet-200 line-clamp-2">
+                                    {block.reason}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
                           ) : isStaffed ? (
                             /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
-                            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs">
+                            <div
+                              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs"
+                              onContextMenu={(e) => openBlockMenu(e, room.id, slot)}
+                            >
                               <div className="flex items-center justify-between gap-1">
                                 <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                                   Available
@@ -665,11 +929,35 @@ function ScheduleGridView({
                                   {activeTherapists.map((t) => t.therapistName).join(', ')}
                                 </span>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => handleBlockSlot(room.id, slot)}
+                                className="text-[10px] font-medium text-muted-foreground underline hover:text-foreground"
+                              >
+                                Block
+                              </button>
                             </div>
                           ) : (
-                            /* CLOSED OR UNSTAFFED ROOM SLOT */
-                            <div className="rounded-md bg-muted/15 p-2 text-center text-[10px] text-muted-foreground/40 italic">
-                              {isOpen ? 'No Staff Assigned' : 'Closed'}
+                            /* CLOSED OR UNSTAFFED ROOM SLOT -- a closed room (no room opening at all)
+                               isn't blockable, there's no bookable capacity there to carve out. An
+                               open-but-unstaffed room still is, e.g. to reserve time ahead of a shift
+                               assignment. */
+                            <div
+                              className="rounded-md bg-muted/15 p-2 text-center space-y-1"
+                              onContextMenu={isOpen ? (e) => openBlockMenu(e, room.id, slot) : undefined}
+                            >
+                              <p className="text-[10px] text-muted-foreground/40 italic">
+                                {isOpen ? 'No Staff Assigned' : 'Closed'}
+                              </p>
+                              {isOpen && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleBlockSlot(room.id, slot)}
+                                  className="text-[10px] font-medium text-muted-foreground underline hover:text-foreground"
+                                >
+                                  Block
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -683,5 +971,42 @@ function ScheduleGridView({
         )}
       </CardContent>
     </Card>
+
+    {contextMenu && (
+      <div
+        className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-card py-1 text-xs shadow-lg"
+        style={{ top: contextMenu.y, left: contextMenu.x }}
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {contextMenu.kind === 'block' ? (
+          <button
+            type="button"
+            onClick={() => {
+              setContextMenu(null);
+              handleBlockSlot(contextMenu.roomId, contextMenu.startTime);
+            }}
+            className="block w-full px-3 py-1.5 text-left font-medium text-foreground hover:bg-accent"
+          >
+            Block slot
+          </button>
+        ) : (
+          contextMenu.blocks.map((block) => (
+            <button
+              key={block.id}
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                handleUnblockSlot(block.id);
+              }}
+              className="block w-full px-3 py-1.5 text-left font-medium text-violet-700 dark:text-violet-300 hover:bg-accent"
+            >
+              {contextMenu.blocks.length === 1 ? 'Unblock slot' : `Unblock ${block.startTime.slice(0, 5)}–${block.endTime.slice(0, 5)}`}
+            </button>
+          ))
+        )}
+      </div>
+    )}
+    </>
   );
 }
