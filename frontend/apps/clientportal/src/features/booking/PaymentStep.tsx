@@ -36,6 +36,14 @@ export function PaymentStep() {
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [stripePublishableKey, setStripePublishableKey] = useState<string | null>(null);
   const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
+  const [tip, setTip] = useState('0');
+  const [amountTendered, setAmountTendered] = useState('');
+
+  const owed = booking?.treatments.reduce((sum, t) => sum + t.price, 0) ?? 0;
+  const tipAmount = Number(tip) || 0;
+  const tenderedAmount = Number(amountTendered) || 0;
+  const changeDue = Math.max(0, tenderedAmount - (owed + tipAmount));
+  const cashTenderedTooLow = selectedProvider === 'Cash' && tenderedAmount < owed + tipAmount;
 
   useEffect(() => {
     if (!isEmulated && selectedProvider !== 'Stripe') {
@@ -71,12 +79,14 @@ export function PaymentStep() {
   }, [selectedProvider, bookingId, stripeClientSecret]);
 
   async function handlePaymentAndConfirm() {
+    if (cashTenderedTooLow) return;
     setIsProcessing(true);
     setPaymentError(null);
     try {
       const res = await paymentApi.apiPaymentsCreateIntentPost({
         bookingId: Number(bookingId),
         provider: selectedProvider,
+        tipAmount,
       });
 
       const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
@@ -85,6 +95,7 @@ export function PaymentStep() {
         paymentId: res.data.paymentId,
         success: true,
         transactionId: res.data.transactionId ?? (selectedProvider === 'Stripe' ? `stripe_checkout_${Date.now()}` : undefined),
+        amountTendered: selectedProvider === 'Cash' ? tenderedAmount : undefined,
       });
 
       if (selectedProvider === 'Stripe' && checkoutUrl) {
@@ -200,6 +211,20 @@ export function PaymentStep() {
           )}
         </div>
 
+        <div className="mb-6 flex items-center justify-between rounded-xl bg-slate-950/60 border border-slate-800/80 p-4">
+          <label className="text-xs text-slate-400 flex-1 space-y-1">
+            <span>Add a Tip (optional)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={tip}
+              onChange={(e) => setTip(e.target.value)}
+              className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-white"
+            />
+          </label>
+        </div>
+
         {/* Selected Provider Detail */}
         <div className="p-5 rounded-xl bg-slate-950/60 border border-slate-800/80 mb-6">
           {selectedProvider === 'Stripe' && (
@@ -230,11 +255,35 @@ export function PaymentStep() {
           )}
 
           {selectedProvider === 'Cash' && (
-            <div className="text-sm text-slate-300 space-y-2">
-              <h4 className="font-medium text-white">Pay on Arrival Instructions</h4>
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Your appointment will be reserved. Please present your booking confirmation at the front desk and pay via cash prior to your treatment.
-              </p>
+            <div className="text-sm text-slate-300 space-y-4">
+              <div>
+                <h4 className="font-medium text-white">Cash Collected At Checkout</h4>
+                <p className="text-slate-400 text-xs leading-relaxed mt-1">
+                  Enter what the customer handed over -- must cover the total plus tip before this can be confirmed.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs text-slate-400 space-y-1">
+                  <span>Amount Tendered</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={amountTendered}
+                    onChange={(e) => setAmountTendered(e.target.value)}
+                    className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+                <div className="text-xs text-slate-400 space-y-1">
+                  <span>Change Due</span>
+                  <div className="rounded-lg bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-white">
+                    ${changeDue.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              {cashTenderedTooLow && amountTendered && (
+                <p className="text-xs text-amber-400">Amount tendered must be at least ${(owed + tipAmount).toFixed(2)}.</p>
+              )}
             </div>
           )}
 

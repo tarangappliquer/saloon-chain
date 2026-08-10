@@ -9,10 +9,15 @@ import { normalizeUserRole } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { routes } from '../../routes';
 
-// IsEmulator only ever applies to RootSuperAdmin/SuperAdmin/Admin -- Manager/Receptionist/Therapist/
-// Other/Customer are always false (see AdminStaffEndpoints' matching clamp), so the checkbox/toggle
-// is hidden both for a target role outside this set and for a caller outside this set.
-const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
+// IsEmulator applies to any POS_ACCESS role -- Therapist/Other/Customer are always false (see
+// AdminStaffEndpoints' matching clamp). Widened to include Manager/Receptionist because POS
+// checkout now runs entirely through emulation.
+const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin', 'Manager', 'Receptionist'];
+// Separate from the above: granting/changing the flag itself stays RootSuperAdmin/SuperAdmin/
+// Admin's call (matches AdminStaffEndpoints' caller-role gate) even though Manager/Receptionist
+// are now eligible targets -- otherwise a Manager creating their own Receptionist could hand out
+// emulation rights with zero oversight.
+const CAN_GRANT_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
 function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
   if (callerRole === 'RootSuperAdmin') return ['SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
@@ -383,7 +388,7 @@ export function StaffPage() {
                 </div>
               )}
 
-              {Boolean(currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role)) && EMULATOR_ELIGIBLE_ROLES.includes(form.role) && (
+              {Boolean(currentUser && CAN_GRANT_EMULATOR_ROLES.includes(currentUser.role)) && EMULATOR_ELIGIBLE_ROLES.includes(form.role) && (
                 <div className="flex items-center gap-2.5">
                   <input
                     type="checkbox"
@@ -463,7 +468,7 @@ export function StaffPage() {
                     <td className="px-6 py-4">
                       {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
                         <span className="text-muted-foreground">n/a</span>
-                      ) : currentUser && EMULATOR_ELIGIBLE_ROLES.includes(currentUser.role) ? (
+                      ) : currentUser && CAN_GRANT_EMULATOR_ROLES.includes(currentUser.role) ? (
                         <Button
                           variant="outline"
                           size="sm"

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Infrastructure;
+using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
@@ -19,6 +20,7 @@ internal sealed class BookingService(
     SseBroadcaster sse,
     IBackgroundEmailQueue emailQueue,
     PaymentRepository paymentRepo,
+    IPaymentGatewayFactory paymentGatewayFactory,
     IServiceScopeFactory scopeFactory,
     ILogger<BookingService> logger)
 {
@@ -278,18 +280,42 @@ internal sealed class BookingService(
 
         var affected = await repo.CancelAsync(bookingId, customerId);
 
-        // Refund flow: Automatically process refund for any completed payments for this booking
-        var payments = await paymentRepo.GetByBookingIdAsync(bookingId);
-        foreach (var p in payments.Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) || p.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase)))
-        {
-            await paymentRepo.UpdateStatusAsync(p.Id, "Refunded", p.TransactionId, failureReason: "Automated refund: Booking cancelled >48h prior to appointment");
-        }
+        await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled >48h prior to appointment");
 
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
             emailQueue.Enqueue(BuildCancellationEmail(details));
+    }
+
+    private async Task RefundSucceededPaymentsAsync(int bookingId, string reason)
+    {
+        var payments = await paymentRepo.GetByBookingIdAsync(bookingId);
+        foreach (var p in payments.Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!Enum.TryParse<PaymentProvider>(p.Provider, out var provider))
+            {
+                provider = PaymentProvider.Cash;
+            }
+
+            var gateway = paymentGatewayFactory.GetGateway(provider);
+            var result = await gateway.RefundAsync(p.TransactionId, p.Amount + p.TipAmount, reason);
+
+            if (result.Success)
+            {
+                await paymentRepo.UpdateStatusAsync(p.Id, "Refunded", p.TransactionId, failureReason: reason);
+            }
+            else
+            {
+                logger.LogError(
+                    "Refund failed for payment {PaymentId} on booking {BookingId}: {Error}",
+                    p.Id, bookingId, result.ErrorMessage);
+                await paymentRepo.UpdateStatusAsync(
+                    p.Id, p.Status, p.TransactionId,
+                    failureReason: $"Refund attempt failed, needs manual follow-up: {result.ErrorMessage}");
+            }
+        }
     }
 
     public async Task CancelAsAdminAsync(int bookingId)
@@ -298,12 +324,7 @@ internal sealed class BookingService(
 
         var affected = await repo.CancelAsAdminAsync(bookingId);
 
-        // Refund flow: Automatically process refund for any completed payments for this booking
-        var payments = await paymentRepo.GetByBookingIdAsync(bookingId);
-        foreach (var p in payments.Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) || p.Status.Equals("Paid", StringComparison.OrdinalIgnoreCase)))
-        {
-            await paymentRepo.UpdateStatusAsync(p.Id, "Refunded", p.TransactionId, failureReason: "Automated refund: Booking cancelled by admin");
-        }
+        await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled by admin");
 
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
@@ -312,7 +333,8 @@ internal sealed class BookingService(
             emailQueue.Enqueue(BuildCancellationEmail(details));
     }
 
-    public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null) => repo.GetMineAsync(customerId, chainId);
+    public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null) =>
+        repo.GetMineAsync(customerId, chainId, locationId);
 
     public async Task SweepExpiredHoldsAsync()
     {

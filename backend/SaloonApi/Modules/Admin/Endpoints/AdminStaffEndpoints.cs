@@ -9,10 +9,12 @@ namespace SaloonApi.Modules.Admin.Endpoints;
 
 internal static class AdminStaffEndpoints
 {
-    // IsEmulator only ever applies to RootSuperAdmin/SuperAdmin/Admin -- Manager/Receptionist/
-    // Therapist/Other/Customer are always false, regardless of what a request sends (the adminportal
-    // form hides the option entirely for those roles too). Matches AuthService.EmulatorEligibleRoles.
-    private static readonly UserRole[] EmulatorEligibleRoles = [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin];
+    // IsEmulator applies to any POS_ACCESS role (RootSuperAdmin/SuperAdmin/Admin/Manager/
+    // Receptionist) -- Therapist/Other/Customer are always false, regardless of what a request
+    // sends (the adminportal form hides the option entirely for those roles too). Widened to
+    // include Manager/Receptionist because POS checkout now runs entirely through emulation.
+    private static readonly UserRole[] EmulatorEligibleRoles =
+        [UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager, UserRole.Receptionist];
 
     public static void MapAdminStaffEndpoints(this IEndpointRouteBuilder app)
     {
@@ -105,7 +107,11 @@ internal static class AdminStaffEndpoints
                 return Results.Problem("Not authorized to create staff.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            var isEmulator = req.IsEmulator && EmulatorEligibleRoles.Contains(role);
+            // Granting the flag itself stays RootSuperAdmin/SuperAdmin/Admin's call even though
+            // Manager/Receptionist are now eligible targets -- otherwise a Manager creating their
+            // own Receptionist could hand out emulation rights with zero oversight.
+            var isEmulator = req.IsEmulator && EmulatorEligibleRoles.Contains(role)
+                && currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin);
 
             // A Therapist login needs a dbo.TherapistProfile row to be assignable to shifts (ShiftAssignments.TherapistId
             // is a hard FK to Therapists, not Users) -- auto-create one from the staff member's name rather than
@@ -215,14 +221,14 @@ internal static class AdminStaffEndpoints
 
 // No Password field -- an admin creating a staff login never chooses/sees a password (see
 // AuthService.CreateStaffAsync); the new user gets a "set your password" email instead.
-// IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside RootSuperAdmin/
-// SuperAdmin/Admin regardless of what's sent here.
+// IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside that set, and
+// for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
 internal sealed record CreateStaffRequest(
     string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId,
     bool IsEmulator = false);
 
-// IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside RootSuperAdmin/
-// SuperAdmin/Admin regardless of what's sent here.
+// IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside that set, and
+// for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
 internal sealed record UpdateStaffRequest(
     string Name, string? Phone, string? Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive);
 

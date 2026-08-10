@@ -9,7 +9,7 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
 {
     public async Task<int> CreateAsync(
         int bookingId, decimal amount, string currency, string provider, string paymentMethod, string status,
-        string? transactionId = null, string? clientSecret = null, int? createdBy = null)
+        string? transactionId = null, string? clientSecret = null, int? createdBy = null, decimal tipAmount = 0)
     {
         using var conn = factory.Create();
         var p = new DynamicParameters();
@@ -22,12 +22,14 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         p.Add("@TransactionId", transactionId);
         p.Add("@ClientSecret", clientSecret);
         p.Add("@CreatedBy", createdBy);
+        p.Add("@TipAmount", tipAmount);
 
         return await conn.ExecuteScalarAsync<int>("dbo.sp_Payment_Create", p, commandType: CommandType.StoredProcedure);
     }
 
     public async Task UpdateStatusAsync(
-        int paymentId, string status, string? transactionId = null, string? failureReason = null, int? updatedBy = null)
+        int paymentId, string status, string? transactionId = null, string? failureReason = null, int? updatedBy = null,
+        decimal? amountTendered = null)
     {
         using var conn = factory.Create();
         var p = new DynamicParameters();
@@ -36,6 +38,7 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         p.Add("@TransactionId", transactionId);
         p.Add("@FailureReason", failureReason);
         p.Add("@UpdatedBy", updatedBy);
+        p.Add("@AmountTendered", amountTendered);
 
         await conn.ExecuteAsync("dbo.sp_Payment_UpdateStatus", p, commandType: CommandType.StoredProcedure);
     }

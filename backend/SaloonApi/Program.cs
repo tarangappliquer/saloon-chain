@@ -116,8 +116,10 @@ try
             nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager)));
         options.AddPolicy("StaffAccess", p => p.RequireRole(
             nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist), nameof(UserRole.Therapist), nameof(UserRole.Other)));
+        // Includes Manager/Receptionist (not just Admin+) so front-desk POS checkout can create a
+        // walk-in's customer record on the spot, same as Fresha's front-desk quick-add.
         options.AddPolicy("CustomerManagement", p => p.RequireRole(
-            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin), nameof(UserRole.Manager), nameof(UserRole.Receptionist)));
     });
 
     builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection("Cors"));

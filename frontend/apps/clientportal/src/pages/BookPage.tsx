@@ -7,6 +7,7 @@ import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { findChainForLocation } from '../api/findChainForLocation';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 import { routes } from '../routes';
+import { useAuth } from '../features/auth/AuthContext';
 
 export interface BookingContext {
   treatments: Treatment[];
@@ -21,6 +22,7 @@ export function useBookingContext() {
 }
 
 export function BookPage() {
+  const { user } = useAuth();
   const { bookingId } = useParams<{ bookingId?: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -61,7 +63,19 @@ export function BookPage() {
   useEffect(() => {
     if (isEditingBooking) return;
     catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
-      const cs = data as unknown as Chain[];
+      let cs = data as unknown as Chain[];
+
+      // Emulated staff can only ever book within their own scope (enforced server-side too, in
+      // BookingEndpoints) -- narrow the chain list before anything below picks a default from it.
+      if (user?.isEmulated) {
+        if (user.emulatorLocationId) {
+          const match = await findChainForLocation(cs, user.emulatorLocationId);
+          if (match) cs = [match.chain];
+        } else if (user.emulatorChainId) {
+          cs = cs.filter((c) => c.id === user.emulatorChainId);
+        }
+      }
+
       setChains(cs);
 
       if (searchLocId) {
@@ -78,7 +92,7 @@ export function BookPage() {
         setChainId(cs[0].id);
       }
     });
-  }, [chainId, isEditingBooking, searchLocId]);
+  }, [chainId, isEditingBooking, searchLocId, user?.isEmulated, user?.emulatorChainId, user?.emulatorLocationId]);
 
   useEffect(() => {
     if (!isEditingBooking || !bookingId) return;
@@ -104,11 +118,14 @@ export function BookPage() {
   useEffect(() => {
     if (isEditingBooking || !chainId) return;
     catalogApi.apiCatalogLocationsGet(chainId).then(({ data }) => {
-      const locs = data as unknown as Location[];
+      let locs = data as unknown as Location[];
+      if (user?.isEmulated && user.emulatorLocationId) {
+        locs = locs.filter((l) => l.id === user.emulatorLocationId);
+      }
       setLocations(locs);
       if (locs.length > 0 && !searchLocId) setLocationId(locs[0].id);
     });
-  }, [chainId, isEditingBooking, searchLocId]);
+  }, [chainId, isEditingBooking, searchLocId, user?.isEmulated, user?.emulatorLocationId]);
 
   useEffect(() => {
     if (!locationId) return;

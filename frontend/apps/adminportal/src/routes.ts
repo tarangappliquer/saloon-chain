@@ -24,6 +24,7 @@ export const routes = {
   myLocation: '/my-location',
   bookings: '/bookings',
   customers: '/customers',
+  pos: '/pos',
   scheduling: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
     withQuery('/scheduling', params),
   catalog: {

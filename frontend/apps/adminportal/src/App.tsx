@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
 import { Nav } from './components/Nav';
-import { ADMIN_ACCESS, LOCATION_MANAGEMENT, MANAGER_ONLY, ROOT_SUPER_ADMIN_ONLY, STAFF_ACCESS } from './constants';
+import { ADMIN_ACCESS, LOCATION_MANAGEMENT, MANAGER_ONLY, POS_ACCESS, ROOT_SUPER_ADMIN_ONLY, STAFF_ACCESS } from './constants';
 import type { UserRole } from './api/types';
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
@@ -28,6 +28,7 @@ const StaffPage = lazy(() => import('./pages/staff/StaffPage').then((m) => ({ de
 const TherapistsPage = lazy(() => import('./pages/staff/TherapistsPage').then((m) => ({ default: m.TherapistsPage })));
 const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ default: m.RoomsPage })));
 const BookingsPage = lazy(() => import('./pages/bookings/BookingsPage').then((m) => ({ default: m.BookingsPage })));
+const PosPage = lazy(() => import('./pages/pos/PosPage').then((m) => ({ default: m.PosPage })));
 const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })));
 const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
@@ -191,6 +192,14 @@ function AppRoutes() {
               element={
                 <RequireRole roles={STAFF_ACCESS}>
                   <BookingsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.pos}
+              element={
+                <RequireRole roles={POS_ACCESS}>
+                  <PosPage />
                 </RequireRole>
               }
             />

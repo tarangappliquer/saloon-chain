@@ -87,6 +87,8 @@ export interface AuthResponse {
   refreshToken: string;
   photoPath: string | null;
   isEmailVerified: boolean;
+  emulatorChainId: number | null;
+  emulatorLocationId: number | null;
 }
 
 export interface MyBookingTreatment {

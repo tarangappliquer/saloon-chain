@@ -201,4 +201,41 @@ internal sealed class StripePaymentGateway(IOptionsMonitor<StripeOptions> option
         }
 #pragma warning restore CA1031
     }
+
+    public async Task<PaymentResultDto> RefundAsync(
+        string? transactionId, decimal amount, string? reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(transactionId))
+        {
+            return new PaymentResultDto(false, 0, PaymentStatus.Failed, null, "No transaction id to refund.");
+        }
+
+        if (string.IsNullOrEmpty(_options.SecretKey))
+        {
+            // Dev mock fallback
+            return new PaymentResultDto(true, 0, PaymentStatus.Refunded, $"re_mock_{Guid.NewGuid():N}", null);
+        }
+
+        StripeConfiguration.ApiKey = _options.SecretKey;
+        var refundService = new Stripe.RefundService();
+
+        try
+        {
+            // transactionId is normally the PaymentIntent id (pi_...) captured on success; falls back to the
+            // checkout session id (cs_...) only if Stripe never reported one back, which Refund can't accept.
+            var refund = await refundService.CreateAsync(new RefundCreateOptions
+            {
+                PaymentIntent = transactionId,
+                Amount = (long)Math.Round(amount * 100),
+                Reason = "requested_by_customer"
+            }, cancellationToken: ct);
+
+            return new PaymentResultDto(true, 0, PaymentStatus.Refunded, refund.Id, null);
+        }
+        catch (StripeException ex)
+        {
+            logger.LogError(ex, "Stripe refund failed for transaction {TransactionId}", transactionId);
+            return new PaymentResultDto(false, 0, PaymentStatus.Failed, null, ex.Message);
+        }
+    }
 }

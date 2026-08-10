@@ -5,7 +5,7 @@ import { API_BASE } from '../api/client';
 import { appConfig } from '../config';
 import { routes } from '../routes';
 import { useAuth } from '../features/auth/AuthContext';
-import { ADMIN_ACCESS, LOCATION_MANAGEMENT } from '../constants';
+import { ADMIN_ACCESS, LOCATION_MANAGEMENT, POS_ACCESS } from '../constants';
 
 const NavLink = memo(function NavLink({ to, children }: { to: string; children: ReactNode }) {
   const location = useLocation();
@@ -46,6 +46,7 @@ export const Nav = memo(function Nav() {
             <NavLink to={routes.root}>Dashboard</NavLink>
             {LOCATION_MANAGEMENT.includes(user.role) && <NavLink to={routes.catalog.saloons}>Saloons</NavLink>}
             {user.role === 'Manager' && <NavLink to={routes.myLocation}>My Location</NavLink>}
+            {POS_ACCESS.includes(user.role) && <NavLink to={routes.pos}>POS</NavLink>}
             <NavLink to={routes.bookings}>Bookings</NavLink>
             {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.customers}>Customers</NavLink>}
           </div>

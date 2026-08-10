@@ -9,6 +9,10 @@ interface AuthUser {
   email: string;
   isEmulated: boolean;
   emulatedByName: string | null;
+  // Only meaningful when isEmulated -- the emulating staff member's own scope, used to restrict
+  // the saloon/location picker to what they're actually authorized to book at.
+  emulatorChainId: number | null;
+  emulatorLocationId: number | null;
   photoPath: string | null;
   photoVersion: number;
   isEmailVerified: boolean;
@@ -42,6 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: res.email,
       isEmulated: res.isEmulated,
       emulatedByName: res.emulatedByName,
+      emulatorChainId: res.emulatorChainId,
+      emulatorLocationId: res.emulatorLocationId,
       photoPath: res.photoPath ?? null,
       photoVersion: Date.now(),
       isEmailVerified: res.isEmailVerified,

@@ -134,7 +134,11 @@ internal static class AuthEndpoints
                     CanEmulate: false, IsEmulated: true, EmulatedByName: currentUser.Email,
                     // Skip the email-verification gate for emulated sessions -- the staff member already
                     // authenticated properly; a customer's own unverified email shouldn't block support access.
-                    IsEmailVerified: true));
+                    IsEmailVerified: true,
+                    // currentUser here is still the staff caller (token swap hasn't happened yet), so
+                    // these are read straight off their claims -- lets clientportal scope the saloon/
+                    // location picker to what this emulator is actually allowed to book at.
+                    EmulatorChainId: currentUser.ChainId, EmulatorLocationId: currentUser.LocationId));
         }).RequireAuthorization("StaffAccess")
           .Produces<AuthResponse>()
           .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -150,14 +154,22 @@ internal static class AuthEndpoints
             if (me is null) return Results.Unauthorized();
 
             string? emulatedByName = null;
+            int? emulatorChainId = null;
+            int? emulatorLocationId = null;
             if (currentUser.EmulatedByUserId is { } emulatorId)
-                emulatedByName = (await repo.GetByIdAsync(emulatorId))?.Name;
+            {
+                var emulator = await repo.GetByIdAsync(emulatorId);
+                emulatedByName = emulator?.Name;
+                emulatorChainId = emulator?.ChainId;
+                emulatorLocationId = emulator?.LocationId;
+            }
 
             bool canEmulate = me.Role == UserRole.RootSuperAdmin || me.IsEmulator;
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
                 CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName,
-                PhotoPath: me.PhotoPath, IsEmailVerified: me.IsEmailVerified));
+                PhotoPath: me.PhotoPath, IsEmailVerified: me.IsEmailVerified,
+                EmulatorChainId: emulatorChainId, EmulatorLocationId: emulatorLocationId));
         }).RequireAuthorization()
           .Produces<AuthResponse>()
           .Produces(StatusCodes.Status401Unauthorized)
@@ -175,7 +187,11 @@ internal sealed record ConfirmEmailChangeRequest(string Token);
 internal sealed record AuthResponse(
     int UserId, string Name, string Email, string Role, string Token,
     bool CanEmulate = false, bool IsEmulated = false, string? EmulatedByName = null, string RefreshToken = "",
-    string? PhotoPath = null, bool IsEmailVerified = false);
+    string? PhotoPath = null, bool IsEmailVerified = false,
+    // Only meaningful when IsEmulated -- the emulating staff member's own chain/location scope, not
+    // the emulated customer's. Lets clientportal restrict the saloon/location picker to what that
+    // staff member is actually authorized to book at (see BookingEndpoints' matching enforcement).
+    int? EmulatorChainId = null, int? EmulatorLocationId = null);
 
 internal sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {

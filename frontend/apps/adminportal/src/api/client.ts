@@ -6,6 +6,7 @@ import {
   AdminDashboardApi,
   AdminStaffApi,
   AuthApi,
+  BookingApi,
   CatalogApi,
   ConfigApi,
   Configuration,
@@ -144,6 +145,7 @@ const configuration = new Configuration();
 
 export const adminBookingsApi = new AdminBookingsApi(configuration, API_BASE, axiosInstance);
 export const adminCatalogApi = new AdminCatalogApi(configuration, API_BASE, axiosInstance);
+export const bookingApi = new BookingApi(configuration, API_BASE, axiosInstance);
 export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance);
 export const adminCustomersApi = new AdminCustomersApi(configuration, API_BASE, axiosInstance);
 export const adminDashboardApi = new AdminDashboardApi(configuration, API_BASE, axiosInstance);

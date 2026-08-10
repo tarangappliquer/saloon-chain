@@ -25,6 +25,8 @@ internal static class PaymentEndpoints
                 provider: provider,
                 paymentMethod: req.PaymentMethod ?? "card",
                 currency: req.Currency ?? "USD",
+                amount: req.Amount,
+                tipAmount: req.TipAmount ?? 0,
                 ct: ct
             );
 
@@ -44,6 +46,7 @@ internal static class PaymentEndpoints
                 success: req.Success,
                 transactionId: req.TransactionId,
                 failureReason: req.FailureReason,
+                amountTendered: req.AmountTendered,
                 ct: ct
             );
 
@@ -88,14 +91,17 @@ internal sealed record CreateIntentEndpointRequest(
     int BookingId,
     string Provider,
     string? PaymentMethod = "card",
-    string? Currency = "USD"
+    string? Currency = "USD",
+    decimal? Amount = null,
+    decimal? TipAmount = null
 );
 
 internal sealed record ConfirmManualEndpointRequest(
     int PaymentId,
     bool Success,
     string? TransactionId = null,
-    string? FailureReason = null
+    string? FailureReason = null,
+    decimal? AmountTendered = null
 );
 
 internal sealed record VerifyCheckoutSessionEndpointRequest(
@@ -109,6 +115,8 @@ internal sealed class CreateIntentEndpointRequestValidator : AbstractValidator<C
     {
         RuleFor(x => x.BookingId).GreaterThan(0);
         RuleFor(x => x.Provider).NotEmpty();
+        RuleFor(x => x.Amount).GreaterThan(0).When(x => x.Amount.HasValue);
+        RuleFor(x => x.TipAmount).GreaterThanOrEqualTo(0).When(x => x.TipAmount.HasValue);
     }
 }
 
@@ -117,6 +125,7 @@ internal sealed class ConfirmManualEndpointRequestValidator : AbstractValidator<
     public ConfirmManualEndpointRequestValidator()
     {
         RuleFor(x => x.PaymentId).GreaterThan(0);
+        RuleFor(x => x.AmountTendered).GreaterThanOrEqualTo(0).When(x => x.AmountTendered.HasValue);
     }
 }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
 import { routes } from '../routes';
+import { useAuth } from '../features/auth/AuthContext';
 
 interface VenueCardData extends Location {
   chainName: string;
@@ -23,6 +24,7 @@ const SAMPLE_IMAGES = [
 
 export function ExplorePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [venues, setVenues] = useState<VenueCardData[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>(['All']);
   const [loading, setLoading] = useState(true);
@@ -35,7 +37,19 @@ export function ExplorePage() {
       setLoading(true);
       try {
         const searchRes = await catalogApi.apiCatalogSearchGet(searchQuery.trim() || undefined);
-        const searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
+        let searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
+
+        // Emulated staff can only ever book at their own scope (enforced server-side too, in
+        // BookingEndpoints) -- Manager/Receptionist see just their one location, SuperAdmin/Admin
+        // see their whole chain, RootSuperAdmin (neither id set) sees everything.
+        if (user?.isEmulated) {
+          if (user.emulatorLocationId) {
+            searchResults = searchResults.filter((loc) => loc.id === user.emulatorLocationId);
+          } else if (user.emulatorChainId) {
+            searchResults = searchResults.filter((loc) => loc.chainId === user.emulatorChainId);
+          }
+        }
+
         const allCatsSet = new Set<string>();
 
         const venueList: VenueCardData[] = await Promise.all(
@@ -131,7 +145,7 @@ export function ExplorePage() {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [searchQuery]);
+  }, [searchQuery, user?.isEmulated, user?.emulatorChainId, user?.emulatorLocationId]);
 
   const filteredVenues = venues.filter((venue) => {
     return (

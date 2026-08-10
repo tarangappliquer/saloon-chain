@@ -256,10 +256,10 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return (await db.QuerySpAsync<BookingLocationRow>("dbo.sp_Booking_ExpireStaleHolds")).ToList();
     }
 
-    public async Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null)
+    public async Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId });
+        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
 
         var bookings = (await multi.ReadAsync<MyBookingHeaderRow>()).ToList();
         var treatments = (await multi.ReadAsync<MyBookingTreatmentRow>()).ToList();

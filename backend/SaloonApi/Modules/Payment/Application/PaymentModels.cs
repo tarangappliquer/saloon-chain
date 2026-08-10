@@ -21,7 +21,9 @@ internal sealed record CreatePaymentIntentRequest(
     int BookingId,
     PaymentProvider Provider,
     string PaymentMethod = "card",
-    string Currency = "USD"
+    string Currency = "USD",
+    decimal? Amount = null,
+    decimal TipAmount = 0
 );
 
 internal sealed record CreatePaymentResponse(
@@ -34,7 +36,8 @@ internal sealed record CreatePaymentResponse(
     string? ClientSecret,
     string? TransactionId,
     string? PublishableKey,
-    string? CheckoutUrl = null
+    string? CheckoutUrl = null,
+    decimal TipAmount = 0
 );
 
 internal sealed record ProcessManualPaymentRequest(
@@ -43,7 +46,8 @@ internal sealed record ProcessManualPaymentRequest(
     PaymentProvider Provider,
     bool Success,
     string? TransactionId = null,
-    string? FailureReason = null
+    string? FailureReason = null,
+    decimal? AmountTendered = null
 );
 
 internal sealed record PaymentResultDto(
@@ -75,5 +79,7 @@ internal sealed record PaymentDto(
     string? ClientSecret,
     string? FailureReason,
     int? CreatedBy,
-    DateTime CreatedDate
+    DateTime CreatedDate,
+    decimal TipAmount = 0,
+    decimal? AmountTendered = null
 );

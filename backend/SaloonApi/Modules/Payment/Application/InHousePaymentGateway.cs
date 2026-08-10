@@ -35,4 +35,18 @@ internal sealed class InHousePaymentGateway : IPaymentGateway
     {
         return Task.FromResult(new WebhookProcessResult(false, "unsupported_inhouse_webhook", null, null, null));
     }
+
+    // ponytail: no real terminal integration exists yet, same stub tier as ProcessManualPaymentAsync above.
+    public Task<PaymentResultDto> RefundAsync(
+        string? transactionId, decimal amount, string? reason, CancellationToken ct = default)
+    {
+        var refundId = $"term_refund_{DateTime.UtcNow.Ticks}";
+        return Task.FromResult(new PaymentResultDto(
+            Success: true,
+            PaymentId: 0,
+            Status: PaymentStatus.Refunded,
+            TransactionId: refundId,
+            ErrorMessage: null
+        ));
+    }
 }

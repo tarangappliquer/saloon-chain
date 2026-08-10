@@ -12,4 +12,7 @@ internal interface IPaymentGateway
 
     Task<WebhookProcessResult> ProcessWebhookAsync(
         string payload, string signatureHeader, CancellationToken ct = default);
+
+    Task<PaymentResultDto> RefundAsync(
+        string? transactionId, decimal amount, string? reason, CancellationToken ct = default);
 }

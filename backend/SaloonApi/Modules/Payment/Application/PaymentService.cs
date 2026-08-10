@@ -15,12 +15,25 @@ internal sealed class PaymentService(
     IOptionsMonitor<StripeOptions> stripeOptions)
 {
     public async Task<CreatePaymentResponse> CreatePaymentIntentAsync(
-        int bookingId, int customerId, PaymentProvider provider, string paymentMethod = "card", string currency = "USD", CancellationToken ct = default)
+        int bookingId, int customerId, PaymentProvider provider, string paymentMethod = "card", string currency = "USD",
+        decimal? amount = null, decimal tipAmount = 0, CancellationToken ct = default)
     {
+        if (tipAmount < 0)
+        {
+            throw new InvalidOperationException("Tip amount cannot be negative.");
+        }
+
         var booking = await bookingService.GetByIdAsync(bookingId, customerId)
             ?? throw new KeyNotFoundException($"Booking {bookingId} not found for customer.");
 
-        var totalAmount = booking.Treatments.Sum(t => t.Price);
+        var bookingTotal = booking.Treatments.Sum(t => t.Price);
+        var existingPayments = await repo.GetByBookingIdAsync(bookingId);
+        var alreadyPaid = existingPayments
+            .Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase))
+            .Sum(p => p.Amount);
+
+        var chargeAmount = ResolveChargeAmount(bookingTotal, alreadyPaid, amount);
+
         var gateway = factory.GetGateway(provider);
 
         string? stripeCustomerId = null;
@@ -33,36 +46,39 @@ internal sealed class PaymentService(
             }
         }
 
-        var result = await gateway.CreatePaymentAsync(bookingId, totalAmount, currency, paymentMethod, stripeCustomerId, ct);
+        var result = await gateway.CreatePaymentAsync(bookingId, chargeAmount + tipAmount, currency, paymentMethod, stripeCustomerId, ct);
 
         var paymentId = await repo.CreateAsync(
             bookingId: bookingId,
-            amount: totalAmount,
+            amount: chargeAmount,
             currency: currency,
             provider: provider.ToString(),
             paymentMethod: paymentMethod,
             status: result.Status.ToString(),
             transactionId: result.TransactionId,
             clientSecret: result.TransactionId != null ? $"{result.TransactionId}_secret" : null,
-            createdBy: customerId
+            createdBy: customerId,
+            tipAmount: tipAmount
         );
 
         return new CreatePaymentResponse(
             PaymentId: paymentId,
             BookingId: bookingId,
-            Amount: totalAmount,
+            Amount: chargeAmount,
             Currency: currency,
             Provider: provider,
             Status: result.Status,
             ClientSecret: result.TransactionId != null ? $"{result.TransactionId}_secret" : null,
             TransactionId: result.TransactionId,
             PublishableKey: provider == PaymentProvider.Stripe ? stripeOptions.CurrentValue.PublishableKey : null,
-            CheckoutUrl: result.CheckoutUrl
+            CheckoutUrl: result.CheckoutUrl,
+            TipAmount: tipAmount
         );
     }
 
     public async Task<PaymentResultDto> ProcessManualPaymentAsync(
-        int paymentId, int userId, bool success, string? transactionId = null, string? failureReason = null, CancellationToken ct = default)
+        int paymentId, int userId, bool success, string? transactionId = null, string? failureReason = null,
+        decimal? amountTendered = null, CancellationToken ct = default)
     {
         var payment = await repo.GetByIdAsync(paymentId)
             ?? throw new KeyNotFoundException($"Payment {paymentId} not found.");
@@ -72,10 +88,20 @@ internal sealed class PaymentService(
             provider = PaymentProvider.Cash;
         }
 
+        if (success && provider == PaymentProvider.Cash)
+        {
+            var owed = payment.Amount + payment.TipAmount;
+            if (amountTendered is null || amountTendered < owed)
+            {
+                throw new InvalidOperationException(
+                    $"Amount tendered ({amountTendered:0.00}) is less than the amount owed ({owed:0.00}).");
+            }
+        }
+
         var gateway = factory.GetGateway(provider);
         var result = await gateway.ProcessManualPaymentAsync(paymentId, success, transactionId, failureReason, ct);
 
-        await repo.UpdateStatusAsync(paymentId, result.Status.ToString(), result.TransactionId, failureReason, updatedBy: userId);
+        await repo.UpdateStatusAsync(paymentId, result.Status.ToString(), result.TransactionId, failureReason, updatedBy: userId, amountTendered: amountTendered);
 
         if (result.Success && result.Status == PaymentStatus.Succeeded)
         {
@@ -172,4 +198,23 @@ internal sealed class PaymentService(
     }
 
     public Task<IReadOnlyList<PaymentDto>> GetByBookingIdAsync(int bookingId) => repo.GetByBookingIdAsync(bookingId);
+
+    /// <summary>
+    /// Resolves how much a new payment intent should charge given what's already been paid on the booking.
+    /// Pure/no I-O so it's directly unit-testable — covers deposits (requestedAmount &lt; remaining) and
+    /// split payments (repeated calls against a shrinking remaining balance).
+    /// </summary>
+    internal static decimal ResolveChargeAmount(decimal bookingTotal, decimal alreadyPaid, decimal? requestedAmount)
+    {
+        var remainingBalance = bookingTotal - alreadyPaid;
+        var chargeAmount = requestedAmount ?? remainingBalance;
+
+        if (chargeAmount <= 0 || chargeAmount > remainingBalance)
+        {
+            throw new InvalidOperationException(
+                $"Requested amount {chargeAmount:0.00} is invalid; remaining balance is {remainingBalance:0.00}.");
+        }
+
+        return chargeAmount;
+    }
 }

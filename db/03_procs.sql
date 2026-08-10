@@ -843,7 +843,8 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetMine
     @CustomerId INT,
-    @ChainId INT = NULL
+    @ChainId INT = NULL,
+    @LocationId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -860,6 +861,7 @@ BEGIN
         ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+        AND (@LocationId IS NULL OR b.LocationId = @LocationId)
         AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -30, SYSUTCDATETIME())))
         AND b.IsDelete = 0
     ORDER BY b.Id DESC;
@@ -873,6 +875,7 @@ BEGIN
         LEFT JOIN dbo.TherapistProfile th WITH (NOLOCK) ON th.Id = bt.TherapistId
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+        AND (@LocationId IS NULL OR b.LocationId = @LocationId)
         AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > DATEADD(MINUTE, -15, SYSUTCDATETIME())))
         AND b.IsDelete = 0 AND bt.IsDelete = 0;
 END
@@ -2463,18 +2466,19 @@ CREATE OR ALTER PROCEDURE dbo.sp_Payment_Create
     @Status        VARCHAR(20),
     @TransactionId NVARCHAR(200) = NULL,
     @ClientSecret  NVARCHAR(500) = NULL,
-    @CreatedBy     INT = NULL
+    @CreatedBy     INT = NULL,
+    @TipAmount     DECIMAL(10,2) = 0
 AS
 BEGIN
     SET NOCOUNT ON;
 
     INSERT INTO dbo.Payments
         (
-        BookingId, Amount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, CreatedBy, CreatedDate
+        BookingId, Amount, TipAmount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, CreatedBy, CreatedDate
         )
     VALUES
         (
-            @BookingId, @Amount, @Currency, @Provider, @PaymentMethod, @Status, @TransactionId, @ClientSecret, @CreatedBy, SYSUTCDATETIME()
+            @BookingId, @Amount, @TipAmount, @Currency, @Provider, @PaymentMethod, @Status, @TransactionId, @ClientSecret, @CreatedBy, SYSUTCDATETIME()
     );
 
     SELECT CAST(SCOPE_IDENTITY() AS INT);
@@ -2482,11 +2486,12 @@ END;
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Payment_UpdateStatus
-    @PaymentId     INT,
-    @Status        VARCHAR(20),
-    @TransactionId NVARCHAR(200) = NULL,
-    @FailureReason NVARCHAR(500) = NULL,
-    @UpdatedBy     INT = NULL
+    @PaymentId      INT,
+    @Status         VARCHAR(20),
+    @TransactionId  NVARCHAR(200) = NULL,
+    @FailureReason  NVARCHAR(500) = NULL,
+    @UpdatedBy      INT = NULL,
+    @AmountTendered DECIMAL(10,2) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2495,6 +2500,7 @@ BEGIN
     SET Status = @Status,
         TransactionId = ISNULL(@TransactionId, TransactionId),
         FailureReason = @FailureReason,
+        AmountTendered = ISNULL(@AmountTendered, AmountTendered),
         UpdatedBy = @UpdatedBy,
         UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @PaymentId AND IsDelete = 0;
@@ -2507,7 +2513,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT Id, BookingId, Amount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, FailureReason, CreatedBy, CreatedDate
+    SELECT Id, BookingId, Amount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, FailureReason, CreatedBy, CreatedDate, TipAmount, AmountTendered
     FROM dbo.Payments
     WHERE BookingId = @BookingId AND IsDelete = 0
     ORDER BY Id DESC;
@@ -2520,7 +2526,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT Id, BookingId, Amount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, FailureReason, CreatedBy, CreatedDate
+    SELECT Id, BookingId, Amount, Currency, Provider, PaymentMethod, Status, TransactionId, ClientSecret, FailureReason, CreatedBy, CreatedDate, TipAmount, AmountTendered
     FROM dbo.Payments
     WHERE Id = @Id AND IsDelete = 0;
 END;
