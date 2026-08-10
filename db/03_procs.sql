@@ -1877,52 +1877,95 @@ GO
 -- Powers the admin-portal "Customers" picker used to start an emulation session -- active customers
 -- only, top 20, always requires @Search. Kept separate from sp_Admin_GetCustomers below (the full
 -- management listing, inactive included, no row cap) so the picker stays fast and narrow.
+-- CanEmulate used to be a per-row correlated EXISTS (Bookings JOIN Locations, re-run once per
+-- customer). Harmless at demo-data scale, but under real concurrent write traffic (bookings being
+-- created/held/swept) a plain, un-hinted read against Bookings can queue up behind a lock instead
+-- of just being slow -- same blocking class as sp_Admin_GetDashboardStats's deadlock, and this proc
+-- has no NOLOCK at all. Precomputing the chain's customer ids once (one set-based query) and
+-- joining that against Users, both under NOLOCK, removes the per-row lock surface entirely instead
+-- of just shrinking it.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_SearchCustomers
     @Search NVARCHAR(200),
     @ChainId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT TOP (20)
-        u.Id, u.Name, u.Email, u.Phone,
-        CASE
-            WHEN @ChainId IS NULL THEN CAST(1 AS BIT)
-            WHEN EXISTS (
-                SELECT 1
-        FROM dbo.Bookings b
-            JOIN dbo.Locations l ON l.Id = b.LocationId
-        WHERE b.CustomerId = u.Id AND l.ChainId = @ChainId AND b.IsDelete = 0
-            ) THEN CAST(1 AS BIT)
-            ELSE CAST(0 AS BIT)
-        END AS CanEmulate
-    FROM dbo.Users u
-    WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
-        AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
-    ORDER BY u.Name;
+
+    -- Same IF/ELSE split as sp_Admin_GetCustomers -- @ChainId IS NULL can't be proven false at
+    -- compile time inside a single CASE-based query, so it would still touch Bookings/Locations
+    -- per row for the common no-chain-scoping case otherwise.
+    IF @ChainId IS NULL
+    BEGIN
+        SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone, CAST(1 AS BIT) AS CanEmulate
+        FROM dbo.Users u WITH (NOLOCK)
+        WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
+            AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+        ORDER BY u.Name;
+    END
+    ELSE
+    BEGIN
+        SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone,
+            CASE WHEN cb.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+        FROM dbo.Users u WITH (NOLOCK)
+            LEFT JOIN (
+                SELECT DISTINCT b.CustomerId
+                FROM dbo.Bookings b WITH (NOLOCK)
+                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
+                WHERE l.ChainId = @ChainId AND b.IsDelete = 0
+            ) cb ON cb.CustomerId = u.Id
+        WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
+            AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+        ORDER BY u.Name;
+    END
 END
 GO
 
+-- Keyset (cursor) pagination, not OFFSET/FETCH -- @CursorName/@CursorId are the last row's own
+-- Name/Id from the previous page, so the WHERE clause seeks straight to where the next page starts
+-- instead of re-scanning and discarding N rows every time the caller scrolls further (the cost of
+-- OFFSET N FETCH NEXT grows with N; this stays flat). Name isn't unique, so Id breaks ties and keeps
+-- the ordering (and therefore the pagination) stable.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCustomers
-    @Search NVARCHAR(200) = NULL,
-    @ChainId INT = NULL
+    @Search      NVARCHAR(200) = NULL,
+    @ChainId     INT = NULL,
+    @PageSize    INT = 50,
+    @CursorName  NVARCHAR(200) = NULL,
+    @CursorId    INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
-        CASE
-            WHEN @ChainId IS NULL THEN CAST(1 AS BIT)
-            WHEN EXISTS (
-                SELECT 1
-        FROM dbo.Bookings b
-            JOIN dbo.Locations l ON l.Id = b.LocationId
-        WHERE b.CustomerId = u.Id AND l.ChainId = @ChainId AND b.IsDelete = 0
-            ) THEN CAST(1 AS BIT)
-            ELSE CAST(0 AS BIT)
-        END AS CanEmulate
-    FROM dbo.Users u
-    WHERE u.Role = 'Customer' AND u.IsDelete = 0
-        AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
-    ORDER BY u.Name;
+
+    -- Two code paths, not one query with "WHEN @ChainId IS NULL THEN 1" -- a runtime variable
+    -- comparison can't be proven false at compile time, so a single plan still touches
+    -- Bookings/Locations per row even when @ChainId is NULL (the common RootSuperAdmin case, no
+    -- chain scoping at all). Splitting the CanEmulate join out entirely for that case removes the
+    -- touch, not just the row it would have matched.
+    IF @ChainId IS NULL
+    BEGIN
+        SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
+            CAST(1 AS BIT) AS CanEmulate
+        FROM dbo.Users u WITH (NOLOCK)
+        WHERE u.Role = 'Customer' AND u.IsDelete = 0
+            AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+            AND (@CursorName IS NULL OR u.Name > @CursorName OR (u.Name = @CursorName AND u.Id > @CursorId))
+        ORDER BY u.Name, u.Id;
+    END
+    ELSE
+    BEGIN
+        SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
+            CASE WHEN cb.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+        FROM dbo.Users u WITH (NOLOCK)
+            LEFT JOIN (
+                SELECT DISTINCT b.CustomerId
+                FROM dbo.Bookings b WITH (NOLOCK)
+                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
+                WHERE l.ChainId = @ChainId AND b.IsDelete = 0
+            ) cb ON cb.CustomerId = u.Id
+        WHERE u.Role = 'Customer' AND u.IsDelete = 0
+            AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
+            AND (@CursorName IS NULL OR u.Name > @CursorName OR (u.Name = @CursorName AND u.Id > @CursorId))
+        ORDER BY u.Name, u.Id;
+    END
 END
 GO
 
@@ -2541,17 +2584,26 @@ BEGIN
 
     DECLARE @Yesterday DATE = DATEADD(day, -1, @StartDate);
 
+    -- Half-open [Start, End) DATETIME2 bounds instead of CAST(bt.StartTime AS DATE) BETWEEN --
+    -- wrapping the column in CAST() makes every one of these predicates non-sargable, forcing a
+    -- full scan of BookingTreatments (900K+ rows once real volume builds up) on every dashboard
+    -- load instead of a range seek. This rewrite is the actual fix for the ~6-7s load time; see
+    -- IX_BookingTreatments_StartTime below for the index that makes the seek possible.
+    DECLARE @StartDateTime DATETIME2 = CAST(@StartDate AS DATETIME2);
+    DECLARE @EndDateTimeExcl DATETIME2 = DATEADD(DAY, 1, CAST(@EndDate AS DATETIME2));
+    DECLARE @YesterdayDateTime DATETIME2 = CAST(@Yesterday AS DATETIME2);
+
     DECLARE @ScopedLocations TABLE (LocationId INT PRIMARY KEY);
 
     IF @Role IN ('RootSuperAdmin', 'root_super_admin')
     BEGIN
         INSERT INTO @ScopedLocations (LocationId)
-        SELECT Id FROM dbo.Locations WHERE IsDelete = 0 AND IsActive = 1;
+        SELECT Id FROM dbo.Locations WITH (NOLOCK) WHERE IsDelete = 0 AND IsActive = 1;
     END
     ELSE IF @Role IN ('SuperAdmin', 'Admin', 'superadmin', 'admin') AND @ChainId IS NOT NULL
     BEGIN
         INSERT INTO @ScopedLocations (LocationId)
-        SELECT Id FROM dbo.Locations WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
+        SELECT Id FROM dbo.Locations WITH (NOLOCK) WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
     END
     ELSE IF @LocationId IS NOT NULL
     BEGIN
@@ -2561,12 +2613,12 @@ BEGIN
     ELSE IF @ChainId IS NOT NULL
     BEGIN
         INSERT INTO @ScopedLocations (LocationId)
-        SELECT Id FROM dbo.Locations WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
+        SELECT Id FROM dbo.Locations WITH (NOLOCK) WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1;
     END
     ELSE
     BEGIN
         INSERT INTO @ScopedLocations (LocationId)
-        SELECT Id FROM dbo.Locations WHERE IsDelete = 0 AND IsActive = 1;
+        SELECT Id FROM dbo.Locations WITH (NOLOCK) WHERE IsDelete = 0 AND IsActive = 1;
     END;
 
     DECLARE @TodayRevenue DECIMAL(18, 2) = 0;
@@ -2575,42 +2627,72 @@ BEGIN
     DECLARE @AppointmentsInProgress INT = 0;
     DECLARE @ActiveTherapists INT = 0;
 
+    -- NOLOCK throughout this proc: pure read, dashboard-summary use, same measured
+    -- Bookings/BookingTreatments contention (and now a live deadlock) as every other read-only
+    -- proc against these tables -- see sp_Booking_GetAvailabilityData's matching comment.
     SELECT @TodayRevenue = ISNULL(SUM(p.Amount), 0)
-    FROM dbo.Payments p
-        JOIN dbo.Bookings b ON b.Id = p.BookingId
+    FROM dbo.Payments p WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = p.BookingId
         JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
     WHERE p.Status = 'Succeeded'
       AND p.IsDelete = 0
-      AND CAST(p.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate;
+      AND p.CreatedDate >= @StartDateTime AND p.CreatedDate < @EndDateTimeExcl;
 
     SELECT @YesterdayRevenue = ISNULL(SUM(p.Amount), 0)
-    FROM dbo.Payments p
-        JOIN dbo.Bookings b ON b.Id = p.BookingId
+    FROM dbo.Payments p WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = p.BookingId
         JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
     WHERE p.Status = 'Succeeded'
       AND p.IsDelete = 0
-      AND CAST(p.CreatedDate AS DATE) = @Yesterday;
+      AND p.CreatedDate >= @YesterdayDateTime AND p.CreatedDate < @StartDateTime;
 
-    SELECT @AppointmentsToday = COUNT(DISTINCT b.Id)
-    FROM dbo.Bookings b
-        JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id
-        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
-    WHERE b.Status <> 'Cancelled'
-      AND b.IsDelete = 0
-      AND bt.IsDelete = 0
-      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate));
+    -- AppointmentsToday and AppointmentsInProgress used to be two separate full scans of
+    -- Bookings/BookingTreatments (each re-evaluating the same non-sargable OR condition). One pass
+    -- over a DISTINCT-booking CTE, built from two sargable range-seekable branches (has a scheduled
+    -- line in range, or is still unscheduled but was created in range), then both counts fall out
+    -- of a single cheap aggregate over it.
+    --
+    -- The "unscheduled, fell back to CreatedDate" branch only matters when the range could contain
+    -- today (CreatedDate can never be in the future) -- an actual IF, not a WHERE-clause guard,
+    -- because SQL Server can't prove a runtime-variable comparison false at compile time and would
+    -- otherwise still build (and run) a full plan for that branch even when it's unreachable.
+    IF @StartDateTime <= SYSUTCDATETIME()
+    BEGIN
+        ;WITH QualifyingBookings AS (
+            SELECT DISTINCT b.Id, b.Status
+            FROM dbo.Bookings b WITH (NOLOCK)
+                JOIN dbo.BookingTreatments bt WITH (NOLOCK) ON bt.BookingId = b.Id
+                JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+            WHERE b.Status <> 'Cancelled' AND b.IsDelete = 0 AND bt.IsDelete = 0
+              AND bt.StartTime >= @StartDateTime AND bt.StartTime < @EndDateTimeExcl
 
-    SELECT @AppointmentsInProgress = COUNT(DISTINCT b.Id)
-    FROM dbo.Bookings b
-        JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id
-        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
-    WHERE b.Status = 'Confirmed'
-      AND b.IsDelete = 0
-      AND bt.IsDelete = 0
-      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate));
+            UNION
+
+            SELECT DISTINCT b.Id, b.Status
+            FROM dbo.Bookings b WITH (NOLOCK)
+                JOIN dbo.BookingTreatments bt WITH (NOLOCK) ON bt.BookingId = b.Id
+                JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+            WHERE b.Status <> 'Cancelled' AND b.IsDelete = 0 AND bt.IsDelete = 0
+              AND bt.StartTime IS NULL
+              AND b.CreatedDate >= @StartDateTime AND b.CreatedDate < @EndDateTimeExcl
+        )
+        SELECT @AppointmentsToday = COUNT(*),
+               @AppointmentsInProgress = ISNULL(SUM(CASE WHEN Status = 'Confirmed' THEN 1 ELSE 0 END), 0)
+        FROM QualifyingBookings;
+    END
+    ELSE
+    BEGIN
+        SELECT @AppointmentsToday = COUNT(DISTINCT b.Id),
+               @AppointmentsInProgress = COUNT(DISTINCT CASE WHEN b.Status = 'Confirmed' THEN b.Id END)
+        FROM dbo.Bookings b WITH (NOLOCK)
+            JOIN dbo.BookingTreatments bt WITH (NOLOCK) ON bt.BookingId = b.Id
+            JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+        WHERE b.Status <> 'Cancelled' AND b.IsDelete = 0 AND bt.IsDelete = 0
+          AND bt.StartTime >= @StartDateTime AND bt.StartTime < @EndDateTimeExcl;
+    END
 
     SELECT @ActiveTherapists = COUNT(DISTINCT tp.Id)
-    FROM dbo.TherapistProfile tp
+    FROM dbo.TherapistProfile tp WITH (NOLOCK)
     WHERE tp.IsActive = 1 AND tp.IsDelete = 0
       AND (
           tp.LocationId IN (SELECT LocationId FROM @ScopedLocations)
@@ -2625,25 +2707,60 @@ BEGIN
         @AppointmentsInProgress AS AppointmentsInProgress,
         @ActiveTherapists AS ActiveTherapists;
 
-    -- 2nd Result Set: Today's / Date Range Upcoming Appointments List
+    -- 2nd Result Set: Today's / Date Range Upcoming Appointments List. Same fix as the
+    -- QualifyingBookings CTE above: the old single LEFT JOIN + OR-across-two-columns shape can't
+    -- seek on either branch (measured ~990ms full scan of both Bookings and BookingTreatments on
+    -- ~900K/600K rows). Splitting into two independently seekable branches -- narrowed to just the
+    -- candidate ids and their own StartTime/TherapistId first -- then joining the display columns
+    -- (Locations/Users/TherapistProfile/price subquery) only onto the resulting TOP 20 gets this
+    -- down to single-digit milliseconds. The unscheduled/CreatedDate-fallback branch uses NOT
+    -- EXISTS, not LEFT JOIN ... IS NULL -- that shape measured a 21-SECOND plan (hash join
+    -- spilling to tempdb) building a hash table over all of BookingTreatments before the anti-join
+    -- could even start filtering; NOT EXISTS against the same BookingId index gives the optimizer
+    -- a predictable anti-semi-join instead. And same as above, that branch only runs via an actual
+    -- IF (not a WHERE-clause guard) -- CreatedDate can never be in the future, so a wholly-future
+    -- range skips it, and skips paying for a plan that would touch it, entirely.
+    CREATE TABLE #Candidates (BookingId INT, StartTime DATETIME2, EndTime DATETIME2, TherapistId INT, CreatedDate DATETIME2, LocationId INT, CustomerId INT, Status VARCHAR(10));
+
+    INSERT INTO #Candidates (BookingId, StartTime, EndTime, TherapistId, CreatedDate, LocationId, CustomerId, Status)
+    SELECT TOP 20 b.Id, bt.StartTime, bt.EndTime, bt.TherapistId, b.CreatedDate, b.LocationId, b.CustomerId, b.Status
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+    WHERE bt.SequenceOrder = 1 AND bt.IsDelete = 0
+      AND b.IsDelete = 0 AND b.Status <> 'Cancelled'
+      AND bt.StartTime >= @StartDateTime AND bt.StartTime < @EndDateTimeExcl
+    ORDER BY bt.StartTime ASC;
+
+    IF @StartDateTime <= SYSUTCDATETIME()
+    BEGIN
+        INSERT INTO #Candidates (BookingId, StartTime, EndTime, TherapistId, CreatedDate, LocationId, CustomerId, Status)
+        SELECT TOP 20 b.Id, NULL, NULL, NULL, b.CreatedDate, b.LocationId, b.CustomerId, b.Status
+        FROM dbo.Bookings b WITH (NOLOCK)
+            JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
+        WHERE b.IsDelete = 0 AND b.Status <> 'Cancelled'
+          AND b.CreatedDate >= @StartDateTime AND b.CreatedDate < @EndDateTimeExcl
+          AND NOT EXISTS (
+              SELECT 1 FROM dbo.BookingTreatments bt2 WITH (NOLOCK)
+              WHERE bt2.BookingId = b.Id AND bt2.SequenceOrder = 1 AND bt2.IsDelete = 0 AND bt2.StartTime IS NOT NULL
+          )
+        ORDER BY b.CreatedDate ASC;
+    END
+
     SELECT TOP 20
-        b.Id AS BookingId,
-        CAST(ISNULL(bt.StartTime, b.CreatedDate) AS TIME) AS StartTimeSlot,
-        CAST(ISNULL(bt.EndTime, DATEADD(minute, 30, b.CreatedDate)) AS TIME) AS EndTimeSlot,
-        c.Name AS CustomerName,
+        c.BookingId,
+        CAST(ISNULL(c.StartTime, c.CreatedDate) AS DATE) AS AppointmentDate,
+        CAST(ISNULL(c.StartTime, c.CreatedDate) AS TIME) AS StartTimeSlot,
+        CAST(ISNULL(c.EndTime, DATEADD(minute, 30, c.CreatedDate)) AS TIME) AS EndTimeSlot,
+        u.Name AS CustomerName,
         l.Name AS LocationName,
         tp.Name AS TherapistName,
-        b.Status,
-        ISNULL((SELECT SUM(Price) FROM dbo.BookingTreatments WHERE BookingId = b.Id AND IsDelete = 0), 0) AS TotalAmount
-    FROM dbo.Bookings b
-        JOIN @ScopedLocations sl ON sl.LocationId = b.LocationId
-        JOIN dbo.Locations l ON l.Id = b.LocationId
-        JOIN dbo.Users c ON c.Id = b.CustomerId
-        LEFT JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id AND bt.SequenceOrder = 1 AND bt.IsDelete = 0
-        LEFT JOIN dbo.TherapistProfile tp ON tp.Id = bt.TherapistId
-    WHERE b.IsDelete = 0
-      AND b.Status <> 'Cancelled'
-      AND ((CAST(bt.StartTime AS DATE) BETWEEN @StartDate AND @EndDate) OR (bt.StartTime IS NULL AND CAST(b.CreatedDate AS DATE) BETWEEN @StartDate AND @EndDate))
-    ORDER BY ISNULL(bt.StartTime, b.CreatedDate) ASC;
+        c.Status,
+        ISNULL((SELECT SUM(Price) FROM dbo.BookingTreatments WITH (NOLOCK) WHERE BookingId = c.BookingId AND IsDelete = 0), 0) AS TotalAmount
+    FROM #Candidates c
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = c.LocationId
+        JOIN dbo.Users u WITH (NOLOCK) ON u.Id = c.CustomerId
+        LEFT JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = c.TherapistId
+    ORDER BY ISNULL(c.StartTime, c.CreatedDate) ASC;
 END;
 GO

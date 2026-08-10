@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import { usePortalConfig } from '../../features/config/PortalConfigContext';
-import type { AdminCustomer, AuthResponse } from '../../api/types';
+import type { AdminCustomer, AdminCustomersPage, AuthResponse } from '../../api/types';
+
+const PAGE_SIZE = 50;
 
 function emptyForm() {
   return { name: '', email: '', phone: '' };
@@ -17,6 +19,9 @@ export function CustomersPage() {
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const cursorRef = useRef<{ name: string; id: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emulatingId, setEmulatingId] = useState<number | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -28,12 +33,21 @@ export function CustomersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
 
+  // First page (or a fresh search) -- resets the cursor and replaces the list, unlike loadMore
+  // below which appends. Also what every mutation (create/edit/delete/toggle) re-runs afterward,
+  // same "just reload from the top" simplicity the old full-list version had.
   async function load() {
     setLoading(true);
     setError(null);
+    cursorRef.current = null;
     try {
-      const { data } = await adminCustomersApi.apiAdminCustomersGet(search || undefined);
-      setCustomers(data as unknown as AdminCustomer[]);
+      const { data } = await adminCustomersApi.apiAdminCustomersGet(search || undefined, PAGE_SIZE);
+      const page = data as unknown as AdminCustomersPage;
+      setCustomers(page.items);
+      setHasMore(page.hasMore);
+      cursorRef.current = page.hasMore && page.nextCursorName != null && page.nextCursorId != null
+        ? { name: page.nextCursorName, id: page.nextCursorId }
+        : null;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load customers');
     } finally {
@@ -41,10 +55,44 @@ export function CustomersPage() {
     }
   }
 
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !cursorRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { data } = await adminCustomersApi.apiAdminCustomersGet(
+        search || undefined, PAGE_SIZE, cursorRef.current.name, cursorRef.current.id,
+      );
+      const page = data as unknown as AdminCustomersPage;
+      setCustomers((prev) => [...prev, ...page.items]);
+      setHasMore(page.hasMore);
+      cursorRef.current = page.hasMore && page.nextCursorName != null && page.nextCursorId != null
+        ? { name: page.nextCursorName, id: page.nextCursorId }
+        : null;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load more customers');
+    } finally {
+      setLoadingMore(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingMore, hasMore, search]);
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Infinite scroll: fetch the next page once the sentinel row at the bottom of the table
+  // scrolls into view, instead of a "Load more" click or page-number controls.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   function handleSearchSubmit(e: FormEvent) {
     e.preventDefault();
@@ -230,7 +278,7 @@ export function CustomersPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Customers ({customers.length})</CardTitle>
+          <CardTitle>Customers ({customers.length}{hasMore ? '+' : ''})</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
           <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3 items-end max-w-lg">
@@ -301,6 +349,11 @@ export function CustomersPage() {
                 ))}
               </tbody>
             </table>
+            {hasMore && (
+              <div ref={sentinelRef} className="py-4 text-center text-xs text-muted-foreground">
+                {loadingMore ? 'Loading more...' : ''}
+              </div>
+            )}
           </div>
         )}
       </Card>

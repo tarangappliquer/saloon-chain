@@ -141,6 +141,13 @@ export interface AdminCustomer {
   canEmulate?: boolean;
 }
 
+export interface AdminCustomersPage {
+  items: AdminCustomer[];
+  nextCursorName: string | null;
+  nextCursorId: number | null;
+  hasMore: boolean;
+}
+
 export interface AdminBookingTreatment {
   roomId?: number | null;
   treatmentName: string;

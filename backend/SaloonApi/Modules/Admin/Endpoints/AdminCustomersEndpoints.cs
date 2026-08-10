@@ -25,18 +25,19 @@ internal static class AdminCustomersEndpoints
         .Produces<IReadOnlyList<CustomerSummaryDto>>()
         .WithDescription("Search customers by name/email for the emulation picker.");
 
-        // Full roster (inactive included, no row cap) for the Customers management page --
+        // Full roster (inactive included, no row cap on the underlying result -- keyset-paginated
+        // instead, see sp_Admin_GetCustomers) for the Customers management page --
         // RootSuperAdmin/SuperAdmin/Admin/Manager (Receptionist/Therapist/Other can't reach
         // adminportal at all since the portal login gate, but AdminAccess is layered here too for
         // defense in depth, same as everywhere else in this file's sibling endpoints).
-        group.MapGet("", async (string? search, ICurrentUser currentUser, UserRepository repo) =>
+        group.MapGet("", async (string? search, int? pageSize, string? cursorName, int? cursorId, ICurrentUser currentUser, UserRepository repo) =>
         {
             int? chainId = currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) ? currentUser.ChainId : null;
-            return Results.Ok(await repo.GetCustomersForAdminAsync(search, chainId));
+            return Results.Ok(await repo.GetCustomersForAdminAsync(search, chainId, pageSize ?? 50, cursorName, cursorId));
         })
         .RequireAuthorization("AdminAccess")
-        .Produces<IReadOnlyList<AdminCustomerDto>>()
-        .WithDescription("List customers, including inactive, for admin management.");
+        .Produces<AdminCustomersPageDto>()
+        .WithDescription("List customers, including inactive, for admin management -- keyset-paginated by Name/Id for infinite scroll.");
 
         // CustomerManagement, not AdminAccess -- Manager may edit/delete/view a customer but not
         // create one (see Program.cs's CustomerManagement policy).

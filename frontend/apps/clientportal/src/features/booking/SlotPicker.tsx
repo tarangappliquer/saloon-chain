@@ -17,6 +17,15 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+// Used only for the "Selected" badge -- unlike the slot buttons below (all for the single date
+// this picker is currently showing), the line's already-assigned time can be on a different date
+// than what's on screen right now, so that one spot needs the date spelled out too.
+function fmtDateTime(iso: string) {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${date}, ${fmtTime(iso)}`;
+}
+
 function overlaps(a: { startTime: string; endTime: string }, b: { startTime: string; endTime: string }) {
   const s1 = new Date(a.startTime).getTime();
   const e1 = new Date(a.endTime).getTime();
@@ -47,7 +56,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
                 <span className="text-muted-foreground/70">· {line.slotCount * 15} mins</span>
                 {held && line.startTime && (
                   <span className="ml-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                    Selected {fmtTime(line.startTime)}
+                    Selected {fmtDateTime(line.startTime)}
                   </span>
                 )}
               </h3>

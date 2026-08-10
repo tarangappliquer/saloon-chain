@@ -18,6 +18,12 @@ internal sealed record CustomerSummaryDto(int Id, string Name, string Email, str
 
 internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool CanEmulate = true);
 
+// Keyset pagination, not page-number/offset -- see sp_Admin_GetCustomers' own comment for why.
+// NextCursorName/NextCursorId are the last item's own Name/Id, echoed straight back by the caller
+// as @CursorName/@CursorId to fetch the next page; both null once HasMore is false.
+internal sealed record AdminCustomersPageDto(
+    IReadOnlyList<AdminCustomerDto> Items, string? NextCursorName, int? NextCursorId, bool HasMore);
+
 internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
     public async Task<int> CreateAsync(
@@ -72,11 +78,21 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         return rows.ToList();
     }
 
-    public async Task<IReadOnlyList<AdminCustomerDto>> GetCustomersForAdminAsync(string? search, int? chainId = null)
+    public async Task<AdminCustomersPageDto> GetCustomersForAdminAsync(
+        string? search, int? chainId = null, int pageSize = 50, string? cursorName = null, int? cursorId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new { Search = search, ChainId = chainId });
-        return rows.ToList();
+        var rows = (await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new
+        {
+            Search = search,
+            ChainId = chainId,
+            PageSize = pageSize,
+            CursorName = cursorName,
+            CursorId = cursorId
+        })).ToList();
+
+        var last = rows.Count > 0 ? rows[^1] : null;
+        return new AdminCustomersPageDto(rows, last?.Name, last?.Id, rows.Count == pageSize);
     }
 
     public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)

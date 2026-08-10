@@ -3,7 +3,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, CardContent } from '@saloon/ui';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { bookingApi, paymentApi } from '../../api/client';
+import type { BookingDetails } from '../../api/types';
 import { routes } from '../../routes';
+
+function earliestStart(b: BookingDetails): string | null {
+  const starts = b.treatments.map((t) => t.startTime).filter((s): s is string => !!s).sort();
+  return starts.length ? starts[0] : null;
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
 
 export function ConfirmedStep() {
   const navigate = useNavigate();
@@ -12,6 +22,7 @@ export function ConfirmedStep() {
   const sessionId = searchParams.get('session_id');
 
   const [verifying, setVerifying] = useState(Boolean(sessionId));
+  const [appointmentDate, setAppointmentDate] = useState<string | null>(null);
 
   useEffect(() => {
     async function verifyAndConfirm() {
@@ -29,6 +40,15 @@ export function ConfirmedStep() {
         // Ignored if already confirmed or verified
       } finally {
         setVerifying(false);
+      }
+
+      if (!isNaN(bId) && bId > 0) {
+        try {
+          const { data } = await bookingApi.apiBookingIdGet(bId);
+          setAppointmentDate(earliestStart(data as unknown as BookingDetails));
+        } catch {
+          // Confirmation message still shows without a date -- not worth blocking on.
+        }
       }
     }
 
@@ -59,6 +79,9 @@ export function ConfirmedStep() {
             <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
           </div>
           <h1 className="font-display text-2xl font-bold text-foreground">Appointment Confirmed!</h1>
+          {appointmentDate && (
+            <p className="text-sm font-semibold text-foreground">{fmtDate(appointmentDate)}</p>
+          )}
           <p className="text-xs text-muted-foreground">Your booking has been saved. You can manage or view it anytime under My Bookings.</p>
           <div className="pt-4 flex gap-3 w-full justify-center">
             <Button variant="outline" onClick={() => navigate(routes.myBookings)}>

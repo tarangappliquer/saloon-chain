@@ -12,6 +12,7 @@ internal sealed record DashboardKpiDto(
 
 internal sealed record DashboardUpcomingAppointmentDto(
     int BookingId,
+    DateTime AppointmentDate,
     TimeSpan StartTimeSlot,
     TimeSpan EndTimeSlot,
     string CustomerName,

@@ -363,6 +363,13 @@ CREATE TABLE dbo.Bookings (
     UpdatedDate  DATETIME2 NULL
 );
 CREATE INDEX IX_Bookings_CustomerId ON dbo.Bookings(CustomerId);
+-- Location-scoped dashboard/reporting reads (sp_Admin_GetDashboardStats, sp_Booking_GetForLocation)
+-- filter by LocationId + Status/CreatedDate -- without this, those queries fall back to scanning
+-- every non-deleted booking regardless of location.
+CREATE INDEX IX_Bookings_LocationId ON dbo.Bookings(LocationId) INCLUDE (Status, CreatedDate) WHERE IsDelete = 0;
+-- sp_Admin_GetDashboardStats' "unscheduled Draft, fell back to CreatedDate" branch filters
+-- Bookings by CreatedDate directly, with no LocationId in the predicate to seek on instead.
+CREATE INDEX IX_Bookings_CreatedDate ON dbo.Bookings(CreatedDate) INCLUDE (LocationId, CustomerId, Status) WHERE IsDelete = 0;
 
 -- One row per treatment in a booking. RoomId/TherapistId/StartTime/EndTime/ExpiresAt stay NULL
 -- until that treatment's slot is picked -- each treatment gets its own independent time AND its
@@ -394,6 +401,10 @@ CREATE TABLE dbo.BookingTreatments (
 CREATE INDEX IX_BookingTreatments_BookingId ON dbo.BookingTreatments(BookingId);
 CREATE INDEX IX_BookingTreatments_RoomId_StartTime ON dbo.BookingTreatments(RoomId, StartTime) INCLUDE (EndTime, ExpiresAt);
 CREATE INDEX IX_BookingTreatments_TherapistId_StartTime ON dbo.BookingTreatments(TherapistId, StartTime) INCLUDE (EndTime, ExpiresAt);
+-- Date-range dashboard/reporting reads (sp_Admin_GetDashboardStats) filter and sort by StartTime
+-- alone, with no RoomId/TherapistId predicate to anchor on -- neither index above leads with
+-- StartTime, so those reads would still force a full scan without this one.
+CREATE INDEX IX_BookingTreatments_StartTime ON dbo.BookingTreatments(StartTime) INCLUDE (BookingId, EndTime, Price) WHERE IsDelete = 0;
 
 -- 1:1 extension of dbo.Users, split by Staff/Customer per the two roles' very different concerns
 -- (a Customer's profile is self-managed and minimal; a Staff profile could grow admin-managed

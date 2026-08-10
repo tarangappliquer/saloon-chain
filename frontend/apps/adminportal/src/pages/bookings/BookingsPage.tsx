@@ -125,6 +125,7 @@ function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingD
                     </p>
                     {t.startTime && t.endTime && (
                       <p className="font-mono text-[11px] text-primary">
+                        {new Date(t.startTime).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
                         {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
                         {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>

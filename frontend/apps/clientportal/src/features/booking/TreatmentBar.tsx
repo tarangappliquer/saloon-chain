@@ -13,7 +13,10 @@ interface Props {
 }
 
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${date}, ${time}`;
 }
 
 // Persistent strip shown alongside the schedule/summary steps so a treatment can be added or

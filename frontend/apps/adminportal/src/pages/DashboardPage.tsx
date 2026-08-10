@@ -19,6 +19,13 @@ function formatTimeSlot(timeStr?: string): string {
   return `${hours}:${minutes} ${ampm}`;
 }
 
+function formatAppointmentDate(dateStr?: string | Date): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   const [data, setData] = useState<DashboardResponseDto | null>(null);
@@ -201,7 +208,7 @@ export function DashboardPage() {
                         <div className="flex items-center gap-3">
                           <span className="flex items-center gap-1 font-mono font-bold text-foreground">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                            {formatTimeSlot(item.startTimeSlot ? String(item.startTimeSlot) : '')}
+                            {formatAppointmentDate(item.appointmentDate)} {formatTimeSlot(item.startTimeSlot ? String(item.startTimeSlot) : '')}
                           </span>
                           <div>
                             <p className="font-bold text-foreground">{item.customerName}</p>

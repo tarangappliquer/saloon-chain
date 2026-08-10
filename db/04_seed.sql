@@ -16,15 +16,21 @@ DECLARE @Room2 INT = (SELECT Id FROM dbo.Rooms WHERE LocationId = @LocationId AN
 INSERT INTO dbo.TreatmentCategories (LocationId, Name) VALUES (@LocationId, 'Hair Care');
 DECLARE @CategoryId INT = SCOPE_IDENTITY();
 
-DECLARE @NewTreatments TABLE (Id INT, Name NVARCHAR(200));
-INSERT INTO dbo.Treatments (LocationId, CategoryId, Name, DurationSlots)
+DECLARE @NewTreatments TABLE (Id INT, Name NVARCHAR(200), DurationSlots SMALLINT NOT NULL DEFAULT 0);
+INSERT INTO dbo.Treatments (LocationId, CategoryId, Name)
 OUTPUT inserted.Id, inserted.Name INTO @NewTreatments (Id, Name)
 VALUES
-    (@LocationId, @CategoryId, 'Haircut', 6),              -- 30 min
-    (@LocationId, @CategoryId, 'Hair Wash & Blowdry', 4);  -- 20 min
+    (@LocationId, @CategoryId, 'Haircut'),              -- 30 min
+    (@LocationId, @CategoryId, 'Hair Wash & Blowdry');  -- 20 min
+
+UPDATE @NewTreatments SET DurationSlots = CASE Name WHEN 'Haircut' THEN 6 ELSE 4 END;
 
 INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom)
 SELECT Id, CASE Name WHEN 'Haircut' THEN 25.00 ELSE 15.00 END, CAST(GETUTCDATE() AS DATE)
+FROM @NewTreatments;
+
+INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, EffectiveFrom)
+SELECT Id, DurationSlots, CAST(GETUTCDATE() AS DATE)
 FROM @NewTreatments;
 
 -- demo holiday: shifts/room assignments below still get generated for this date (uniform loop),
