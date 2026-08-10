@@ -5,6 +5,7 @@ import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { ApiError, getFieldError } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import { routes } from '../routes';
+import { AUTO_FILL_CREDENTIAL } from '../constants';
 
 export function LoginPage() {
   const { user, login, register } = useAuth();
@@ -147,7 +148,7 @@ export function LoginPage() {
 
         {/* Quick Demo Helper & Password Reset */}
         <div className="mt-6 pt-4 border-t border-border/60 flex flex-col items-center gap-3 text-center">
-          {mode === 'login' && (
+          {AUTO_FILL_CREDENTIAL && mode === 'login' && (
             <button
               type="button"
               onClick={handleFillDemo}
