@@ -37,6 +37,8 @@ export const routes = {
       withQuery('/catalog/treatments', { chainId, locationId }),
     treatmentPrices: (chainId?: Id | null, locationId?: Id | null, treatmentId?: Id | null) =>
       withQuery('/catalog/treatment-prices', { chainId, locationId, treatmentId }),
+    treatmentDurations: (chainId?: Id | null, locationId?: Id | null, treatmentId?: Id | null) =>
+      withQuery('/catalog/treatment-durations', { chainId, locationId, treatmentId }),
   },
   staff: {
     users: '/staff/users',

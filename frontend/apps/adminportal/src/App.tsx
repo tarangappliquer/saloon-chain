@@ -23,6 +23,7 @@ const LocationUsersPage = lazy(() => import('./pages/catalog/LocationUsersPage')
 const TreatmentCategoriesPage = lazy(() => import('./pages/catalog/TreatmentCategoriesPage').then((m) => ({ default: m.TreatmentCategoriesPage })));
 const TreatmentsPage = lazy(() => import('./pages/catalog/TreatmentsPage').then((m) => ({ default: m.TreatmentsPage })));
 const TreatmentPricesPage = lazy(() => import('./pages/catalog/TreatmentPricesPage').then((m) => ({ default: m.TreatmentPricesPage })));
+const TreatmentDurationsPage = lazy(() => import('./pages/catalog/TreatmentDurationsPage').then((m) => ({ default: m.TreatmentDurationsPage })));
 const StaffPage = lazy(() => import('./pages/staff/StaffPage').then((m) => ({ default: m.StaffPage })));
 const TherapistsPage = lazy(() => import('./pages/staff/TherapistsPage').then((m) => ({ default: m.TherapistsPage })));
 const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ default: m.RoomsPage })));
@@ -142,6 +143,14 @@ function AppRoutes() {
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <TreatmentPricesPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.catalog.treatmentDurations()}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <TreatmentDurationsPage />
                 </RequireRole>
               }
             />

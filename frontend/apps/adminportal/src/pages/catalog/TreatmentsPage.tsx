@@ -101,7 +101,7 @@ export function TreatmentsPage() {
     setTreatmentForm({
       categoryId: String(t.categoryId),
       name: t.name,
-      durationSlots: String(t.durationSlots),
+      durationSlots: '',
       effectiveFrom: t.effectiveFrom,
       price: '',
     });
@@ -127,7 +127,6 @@ export function TreatmentsPage() {
         await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(editingTreatment.id, {
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
-          durationSlots: Number(treatmentForm.durationSlots),
           effectiveFrom: treatmentForm.effectiveFrom,
           isActive: editingTreatment.isActive !== false,
         });
@@ -158,7 +157,6 @@ export function TreatmentsPage() {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(t.id, {
         categoryId: t.categoryId,
         name: t.name,
-        durationSlots: t.durationSlots,
         effectiveFrom: t.effectiveFrom,
         isActive: !t.isActive,
       });
@@ -249,15 +247,17 @@ export function TreatmentsPage() {
               onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
               error={getFieldError(treatmentSubmitError, 'name')}
             />
-            <Input
-              required
-              type="number"
-              label="Duration (15-min slots)"
-              placeholder="2 (30 mins)"
-              value={treatmentForm.durationSlots}
-              onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
-              error={getFieldError(treatmentSubmitError, 'durationSlots')}
-            />
+            {!editingTreatment && (
+              <Input
+                required
+                type="number"
+                label="Duration (15-min slots)"
+                placeholder="2 (30 mins)"
+                value={treatmentForm.durationSlots}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
+                error={getFieldError(treatmentSubmitError, 'durationSlots')}
+              />
+            )}
             <DateInput
               required
               label="Effective From"
@@ -342,7 +342,22 @@ export function TreatmentsPage() {
                         </Button>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-muted-foreground">{t.durationSlots * 15} mins</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground">{t.durationSlots * 15} mins</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            navigate(
+                              `/catalog/treatment-durations?chainId=${chainId}&locationId=${locationId}&treatmentId=${t.id}`,
+                            )
+                          }
+                        >
+                          View
+                        </Button>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-muted-foreground">
                       {t.effectiveFrom} {t.effectiveFrom > today() && <Badge status="Inactive" className="ml-1 text-[10px] py-0 px-1.5" />}
                     </td>

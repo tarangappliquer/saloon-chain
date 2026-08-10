@@ -5,6 +5,7 @@ const TABS = [
   { to: routes.catalog.treatmentCategories, label: 'Categories' },
   { to: routes.catalog.treatments(), label: 'Treatments' },
   { to: routes.catalog.treatmentPrices(), label: 'Prices' },
+  { to: routes.catalog.treatmentDurations(), label: 'Durations' },
 ];
 
 export function TreatmentCatalogTabs({ chainId, locationId }: { chainId: number | null; locationId: number | null }) {

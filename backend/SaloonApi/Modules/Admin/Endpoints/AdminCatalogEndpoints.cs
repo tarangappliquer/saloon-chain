@@ -224,12 +224,12 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.DurationSlots, req.EffectiveFrom, req.IsActive);
+            await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.EffectiveFrom, req.IsActive);
             return Results.NoContent();
         }).WithValidation<TreatmentUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("Update a treatment's details, go-live date, or active state (price is managed separately -- see /treatments/{id}/prices).");
+          .WithDescription("Update a treatment's details, go-live date, or active state (price and duration are managed separately -- see /treatments/{id}/prices and /treatments/{id}/durations).");
 
         group.MapGet("/treatments/{id:int}/prices", async (int id, ICurrentUser currentUser, CatalogRepository repo) =>
         {
@@ -283,6 +283,60 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Correct a scheduled price's amount, if no booking has used it yet.");
+
+        group.MapGet("/treatments/{id:int}/durations", async (int id, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentsForAdminAsync(locationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Ok(await repo.GetTreatmentDurationsAsync(id));
+        }).Produces<IEnumerable<TreatmentDurationDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a treatment's duration history, newest effective date first.");
+
+        // Schedules a new duration effective from a given date -- never edits an existing duration
+        // row, so past bookings stay slotted at whatever was effective when they were made.
+        group.MapPost("/treatments/{id:int}/durations", async (int id, TreatmentDurationRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentsForAdminAsync(locationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Ok(new IdResponse(await repo.AddTreatmentDurationAsync(id, req.DurationSlots, req.EffectiveFrom)));
+        }).WithValidation<TreatmentDurationRequest>()
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Schedule a new effective-dated duration for a treatment, rejecting dates that already have a booking on or after them.");
+
+        // Corrects a duration's slot count in place -- only while no non-cancelled booking has yet
+        // been added during that duration's effective window, a guard the stored proc enforces with
+        // a 409 on violation. Route is nested under the treatment for the same ownership check as
+        // the other treatment-scoped routes, even though TreatmentDurations.Id alone is unique.
+        group.MapPut("/treatments/{id:int}/durations/{durationId:int}", async (
+            int id, int durationId, TreatmentDurationUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentsForAdminAsync(locationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            await repo.UpdateTreatmentDurationAsync(durationId, req.DurationSlots);
+            return Results.NoContent();
+        }).WithValidation<TreatmentDurationUpdateRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Correct a scheduled duration's slot count, if no booking has used it yet.");
 
         // Same clamp-not-reject convention as GET /chains -- SuperAdmin/Admin only ever see their own
         // chain's therapists, Manager only their own location's. Previously unscoped: any AdminAccess
@@ -405,9 +459,11 @@ internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive
 
 internal sealed record TreatmentRequest(
     int LocationId, int CategoryId, string Name, short DurationSlots, DateOnly EffectiveFrom, decimal Price);
-internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, short DurationSlots, DateOnly EffectiveFrom, bool IsActive);
+internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, DateOnly EffectiveFrom, bool IsActive);
 internal sealed record TreatmentPriceRequest(decimal Price, DateOnly EffectiveFrom);
 internal sealed record TreatmentPriceUpdateRequest(decimal Price);
+internal sealed record TreatmentDurationRequest(short DurationSlots, DateOnly EffectiveFrom);
+internal sealed record TreatmentDurationUpdateRequest(short DurationSlots);
 
 internal sealed record TherapistRequest(string Name);
 internal sealed record TherapistUpdateRequest(string Name, bool IsActive);
@@ -481,7 +537,6 @@ internal sealed class TreatmentUpdateRequestValidator : AbstractValidator<Treatm
     {
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.DurationSlots).GreaterThan((short)0);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
     }
 }
@@ -498,6 +553,20 @@ internal sealed class TreatmentPriceRequestValidator : AbstractValidator<Treatme
 internal sealed class TreatmentPriceUpdateRequestValidator : AbstractValidator<TreatmentPriceUpdateRequest>
 {
     public TreatmentPriceUpdateRequestValidator() => RuleFor(x => x.Price).GreaterThan(0);
+}
+
+internal sealed class TreatmentDurationRequestValidator : AbstractValidator<TreatmentDurationRequest>
+{
+    public TreatmentDurationRequestValidator()
+    {
+        RuleFor(x => x.DurationSlots).GreaterThan((short)0);
+        RuleFor(x => x.EffectiveFrom).NotEmpty();
+    }
+}
+
+internal sealed class TreatmentDurationUpdateRequestValidator : AbstractValidator<TreatmentDurationUpdateRequest>
+{
+    public TreatmentDurationUpdateRequestValidator() => RuleFor(x => x.DurationSlots).GreaterThan((short)0);
 }
 
 internal sealed class TherapistRequestValidator : AbstractValidator<TherapistRequest>

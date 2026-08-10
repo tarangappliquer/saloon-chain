@@ -88,7 +88,7 @@ CREATE TABLE dbo.Treatments (
     LocationId     INT NOT NULL REFERENCES dbo.Locations(Id),
     CategoryId     INT NOT NULL REFERENCES dbo.TreatmentCategories(Id),
     Name           NVARCHAR(200) NOT NULL,
-    DurationSlots  SMALLINT NOT NULL CHECK (DurationSlots > 0), -- units of 5 minutes
+    Description    NVARCHAR(2000) NULL,
     -- Gates client-portal visibility/bookability independently of price (see sp_Catalog_GetTreatments) --
     -- a treatment can exist and be priced ahead of when it should actually go live.
     EffectiveFrom  DATE NOT NULL DEFAULT CAST(SYSUTCDATETIME() AS DATE),
@@ -119,6 +119,22 @@ CREATE INDEX IX_TreatmentPrices_TreatmentId_EffectiveFrom ON dbo.TreatmentPrices
 -- One price per treatment per effective date -- filtered so a soft-deleted (corrected) entry never
 -- blocks re-scheduling the same date.
 CREATE UNIQUE INDEX UQ_TreatmentPrices_Treatment_EffectiveFrom ON dbo.TreatmentPrices(TreatmentId, EffectiveFrom) WHERE IsDelete = 0;
+
+-- Effective-dated duration list: a treatment's duration slots (units of 5 min) as of any date is
+-- the row with the latest EffectiveFrom <= that date.
+CREATE TABLE dbo.TreatmentDurations (
+    Id             INT IDENTITY(1,1) PRIMARY KEY,
+    TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
+    DurationSlots  SMALLINT NOT NULL CHECK (DurationSlots > 0),
+    EffectiveFrom  DATE NOT NULL,
+    IsDelete       BIT NOT NULL DEFAULT 0,
+    CreatedBy      INT NULL,
+    CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy      INT NULL,
+    UpdatedDate    DATETIME2 NULL
+);
+CREATE INDEX IX_TreatmentDurations_TreatmentId_EffectiveFrom ON dbo.TreatmentDurations(TreatmentId, EffectiveFrom DESC);
+CREATE UNIQUE INDEX UQ_TreatmentDurations_Treatment_EffectiveFrom ON dbo.TreatmentDurations(TreatmentId, EffectiveFrom) WHERE IsDelete = 0;
 
 -- ChainId/LocationId/UserId mirror the scope of whichever dbo.Users row currently links to this
 -- profile (see AdminStaffEndpoints -- kept in sync on staff create/update, not user-editable
@@ -364,6 +380,7 @@ CREATE TABLE dbo.BookingTreatments (
     -- existed. Lets sp_Catalog_UpdateTreatmentPrice check "has any booking used this exact price
     -- row" directly instead of inferring it from dates.
     TreatmentPriceId INT NULL REFERENCES dbo.TreatmentPrices(Id),
+    TreatmentDurationId INT NULL REFERENCES dbo.TreatmentDurations(Id),
     IsDelete       BIT NOT NULL DEFAULT 0,
     IsActive       BIT NOT NULL DEFAULT 1,
     CreatedBy      INT NULL REFERENCES dbo.Users(Id),

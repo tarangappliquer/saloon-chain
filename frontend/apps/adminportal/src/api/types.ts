@@ -87,6 +87,12 @@ export interface TreatmentPrice {
   effectiveFrom: string;
 }
 
+export interface TreatmentDuration {
+  id: number;
+  durationSlots: number;
+  effectiveFrom: string;
+}
+
 export interface Therapist {
   id: number;
   name: string;
