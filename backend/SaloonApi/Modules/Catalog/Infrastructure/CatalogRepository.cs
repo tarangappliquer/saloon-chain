@@ -5,11 +5,11 @@ using System.Data;
 
 namespace SaloonApi.Modules.Catalog.Infrastructure;
 
-internal sealed record ChainDto(int Id, string Name);
+internal sealed record ChainDto(int Id, string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime);
 
 internal sealed record LocationDto(
     int Id, int ChainId, string Name, string? Address,
-    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
+    TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId);
 
 internal sealed record VenueSearchResultDto(
     int Id, int ChainId, string ChainName, string Name, string? Address,
@@ -26,11 +26,11 @@ internal sealed record TherapistDto(int Id, string Name, bool IsActive, int? Cha
 
 internal sealed record RoomDto(int Id, int LocationId, string Name, bool IsActive);
 
-internal sealed record AdminChainDto(int Id, string Name, bool IsActive);
+internal sealed record AdminChainDto(int Id, string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, bool IsActive);
 
 internal sealed record AdminLocationDto(
     int Id, int ChainId, string Name, string? Address,
-    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
+    TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
 
 // Price is nullable only for a treatment whose sole price row is future-dated (created with an
 // EffectiveFrom later than today) -- not yet purchasable, but still visible to admins managing it.
@@ -61,7 +61,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return await db.QuerySpAsync<LocationDto>("dbo.sp_Catalog_GetLocations", new { ChainId = chainId });
     }
 
-    public async Task<IEnumerable<TreatmentDto>> GetTreatmentsAsync(int locationId, int? categoryId)
+    public async Task<IEnumerable<TreatmentDto>> GetTreatmentsAsync(int locationId, int? categoryId = null)
     {
         using var db = factory.Create();
         return await db.QuerySpAsync<TreatmentDto>(
@@ -80,7 +80,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return rows.Select(r => DateOnly.FromDateTime(r.HolidayDate)).ToList();
     }
 
-    public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId)
+    public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId = null)
     {
         using var db = factory.Create();
         return await db.QuerySpAsync<AdminChainDto>("dbo.sp_Admin_GetChains", new { ChainId = chainId });
@@ -96,7 +96,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<AdminLocationDto>(
-            "dbo.sp_Admin_GetLocations", new { ChainId = (int?)null, LocationId = locationId });
+            "dbo.sp_Admin_GetLocations", new { LocationId = locationId });
         return rows.FirstOrDefault();
     }
 
@@ -108,22 +108,31 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
             r.Id, r.CategoryId, r.CategoryName, r.Name, r.Price, r.DurationSlots, DateOnly.FromDateTime(r.EffectiveFrom), r.IsActive));
     }
 
-    public async Task<int> CreateChainAsync(string name)
+    public async Task<int> CreateChainAsync(string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
         p.Add("@Name", name);
+        p.Add("@BreakStartTime", breakStartTime);
+        p.Add("@BreakEndTime", breakEndTime);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("dbo.sp_Catalog_CreateChain", p);
         return p.Get<int>("@Id");
     }
 
-    public async Task UpdateChainAsync(int id, string name, bool isActive)
+    public async Task UpdateChainAsync(int id, string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime, bool isActive)
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateChain", new
-        { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
+        {
+            Id = id,
+            Name = name,
+            BreakStartTime = breakStartTime,
+            BreakEndTime = breakEndTime,
+            IsActive = isActive,
+            UpdatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task DeleteChainAsync(int id)
@@ -133,7 +142,8 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     }
 
     public async Task<int> CreateLocationAsync(
-        int chainId, string name, string? address, TimeSpan openTime, TimeSpan closeTime, byte workingDaysMask, string timeZoneId)
+        int chainId, string name, string? address, TimeSpan openTime, TimeSpan closeTime,
+        TimeSpan? breakStartTime, TimeSpan? breakEndTime, byte workingDaysMask, string timeZoneId)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
@@ -142,6 +152,8 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Address", address);
         p.Add("@OpenTime", openTime);
         p.Add("@CloseTime", closeTime);
+        p.Add("@BreakStartTime", breakStartTime);
+        p.Add("@BreakEndTime", breakEndTime);
         p.Add("@WorkingDaysMask", workingDaysMask);
         p.Add("@TimeZoneId", timeZoneId);
         p.Add("@CreatedBy", currentUser.RequireUserId());
@@ -151,7 +163,8 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     }
 
     public async Task UpdateLocationAsync(
-        int id, string name, string? address, TimeSpan openTime, TimeSpan closeTime, byte workingDaysMask,
+        int id, string name, string? address, TimeSpan openTime, TimeSpan closeTime,
+        TimeSpan? breakStartTime, TimeSpan? breakEndTime, byte workingDaysMask,
         string timeZoneId, bool isActive)
     {
         using var db = factory.Create();
@@ -162,6 +175,8 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
             Address = address,
             OpenTime = openTime,
             CloseTime = closeTime,
+            BreakStartTime = breakStartTime,
+            BreakEndTime = breakEndTime,
             WorkingDaysMask = workingDaysMask,
             TimeZoneId = timeZoneId,
             IsActive = isActive,

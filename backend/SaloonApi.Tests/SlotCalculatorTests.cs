@@ -126,4 +126,20 @@ public class SlotCalculatorTests
 
         Assert.Contains(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(9))));
     }
+
+    [Fact]
+    public void SaloonBreakIntervalExcludesOverlappingSlots()
+    {
+        var pairs = new[] { new EligiblePair(1, 1, TimeSpan.FromHours(9), TimeSpan.FromHours(17)) };
+        var slots = SlotCalculator.ComputeAvailableSlots(
+            Date, TimeSpan.FromHours(9), TimeSpan.FromHours(17), totalDurationSlots: 2, pairs, [],
+            breakStart: TimeSpan.FromHours(13), breakEnd: TimeSpan.FromHours(14));
+
+        var break1300 = Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(13)));
+        var break1330 = Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(13.5)));
+
+        Assert.DoesNotContain(slots, s => s.StartTime == break1300 || s.StartTime == break1330);
+        Assert.Contains(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(12.5))));
+        Assert.Contains(slots, s => s.StartTime == Date.ToDateTime(TimeOnly.FromTimeSpan(TimeSpan.FromHours(14.0))));
+    }
 }

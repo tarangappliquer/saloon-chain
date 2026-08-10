@@ -42,6 +42,8 @@ export interface AuthResponse {
 export interface Chain {
   id: number;
   name: string;
+  breakStartTime?: string | null;
+  breakEndTime?: string | null;
   isActive?: boolean;
 }
 
@@ -52,6 +54,8 @@ export interface Location {
   address: string | null;
   openTime: string;
   closeTime: string;
+  breakStartTime?: string | null;
+  breakEndTime?: string | null;
   workingDaysMask: number;
   timeZoneId: string;
   isActive?: boolean;

@@ -15,7 +15,7 @@ internal sealed record RoomOpeningDto(
 
 internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, string ShiftType, int TreatmentCategoryId);
 
-internal sealed record BlockedSlotDto(int Id, int RoomId, string RoomName, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+internal sealed record BlockedSlotDto(int Id, int RoomId, string RoomName, TimeSpan StartTime, TimeSpan EndTime, string Reason, bool IsLocationBreak);
 
 internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
 

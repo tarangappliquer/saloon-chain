@@ -148,8 +148,52 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Block a room/time slot for a reason (lunch break, therapist leave, etc). Fails if the slot already has a booking.");
 
+        group.MapPost("/blocked-slots/location", async (BlockLocationSlotRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, BookingService bookingSvc) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId is { } locationId && locationId != req.LocationId)
+            {
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var rooms = (await catalogRepo.GetRoomsAsync(req.LocationId)).ToList();
+            if (rooms.Count == 0)
+            {
+                return Results.Problem("No rooms found for this location.", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            foreach (var room in rooms)
+            {
+                if (await repo.HasRoomOpeningAsync(room.Id, req.WorkDate) &&
+                    await repo.HasBookingOverlapAsync(room.Id, req.WorkDate, req.StartTime, req.EndTime))
+                {
+                    return Results.Problem($"Cannot block saloon break: Room '{room.Name}' has an existing booking during this time.", statusCode: StatusCodes.Status400BadRequest);
+                }
+            }
+
+            var createdIds = new List<int>();
+            foreach (var roomId in rooms.Select(r => r.Id))
+            {
+                if (!await repo.HasBlockOverlapAsync(roomId, req.WorkDate, req.StartTime, req.EndTime))
+                {
+                    var id = await repo.BlockSlotAsync(roomId, req.WorkDate, req.StartTime, req.EndTime, req.Reason);
+                    createdIds.Add(id);
+                }
+            }
+
+            _ = bookingSvc.SyncAndNotifyAsync(req.LocationId, req.WorkDate);
+
+            return Results.Ok(new BlockLocationSlotResponse(createdIds.Count, createdIds));
+        }).WithValidation<BlockLocationSlotRequest>()
+          .Produces<BlockLocationSlotResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("Block a time interval (e.g. lunch break) across all rooms at a saloon location.");
+
         group.MapDelete("/blocked-slots/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
         {
+            if (id <= 0)
+                return Results.Problem("Saloon-level break cannot be unblocked.", statusCode: StatusCodes.Status400BadRequest);
+
             var blocked = await repo.GetBlockedSlotDetailsAsync(id);
             if (blocked is null) return Results.NotFound();
 
@@ -162,11 +206,14 @@ internal static class SchedulingEndpoints
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Unblock a previously blocked room/time slot.");
     }
 }
 
 internal sealed record IdResponse(int Id);
+
+internal sealed record BlockLocationSlotResponse(int Count, IReadOnlyList<int> Ids);
 
 internal sealed record AssignTherapistShiftRequest(
     int LocationId, int TherapistId, int RoomId, string ShiftType, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime);
@@ -174,6 +221,8 @@ internal sealed record AssignTherapistShiftRequest(
 internal sealed record OpenRoomRequest(int RoomId, int TreatmentCategoryId, string ShiftType, DateOnly WorkDate);
 
 internal sealed record BlockSlotRequest(int RoomId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+
+internal sealed record BlockLocationSlotRequest(int LocationId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
 
 internal sealed class AssignTherapistShiftRequestValidator : AbstractValidator<AssignTherapistShiftRequest>
 {
@@ -202,6 +251,16 @@ internal sealed class BlockSlotRequestValidator : AbstractValidator<BlockSlotReq
     public BlockSlotRequestValidator()
     {
         RuleFor(x => x.RoomId).GreaterThan(0);
+        RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(200);
+    }
+}
+
+internal sealed class BlockLocationSlotRequestValidator : AbstractValidator<BlockLocationSlotRequest>
+{
+    public BlockLocationSlotRequestValidator()
+    {
+        RuleFor(x => x.LocationId).GreaterThan(0);
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(200);
     }

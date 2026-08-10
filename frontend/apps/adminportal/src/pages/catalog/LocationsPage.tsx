@@ -24,6 +24,8 @@ function emptyForm() {
     address: '',
     openTime: '09:00',
     closeTime: '18:00',
+    breakStartTime: '',
+    breakEndTime: '',
     timeZoneId: 'UTC',
     days: new Set(DAY_BITS.map((d) => d.bit)),
   };
@@ -90,6 +92,9 @@ export function LocationsPage() {
     });
   }
 
+  const [breakStartError, setBreakStartError] = useState<string | null>(null);
+  const [breakEndError, setBreakEndError] = useState<string | null>(null);
+
   function handleStartEdit(loc: Location) {
     setEditingLocation(loc);
     setFormChainId(loc.chainId ?? chainId);
@@ -102,9 +107,13 @@ export function LocationsPage() {
       address: loc.address ?? '',
       openTime: loc.openTime,
       closeTime: loc.closeTime,
+      breakStartTime: loc.breakStartTime ? loc.breakStartTime.slice(0, 5) : '',
+      breakEndTime: loc.breakEndTime ? loc.breakEndTime.slice(0, 5) : '',
       timeZoneId: loc.timeZoneId,
       days: dayBits,
     });
+    setBreakStartError(null);
+    setBreakEndError(null);
     setError(null);
     setSubmitError(null);
   }
@@ -113,6 +122,8 @@ export function LocationsPage() {
     setEditingLocation(null);
     setForm(emptyForm());
     if (chainId !== null) setFormChainId(chainId);
+    setBreakStartError(null);
+    setBreakEndError(null);
     setError(null);
     setSubmitError(null);
   }
@@ -124,9 +135,34 @@ export function LocationsPage() {
 
     setError(null);
     setSubmitError(null);
+    setBreakStartError(null);
+    setBreakEndError(null);
+
+    if (form.breakStartTime && !form.breakEndTime) {
+      setBreakEndError('Break End Time is required when Start Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (!form.breakStartTime && form.breakEndTime) {
+      setBreakStartError('Break Start Time is required when End Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (form.breakStartTime && form.breakEndTime) {
+      const [sh, sm] = form.breakStartTime.split(':').map(Number);
+      const [eh, em] = form.breakEndTime.split(':').map(Number);
+      if (eh * 60 + em <= sh * 60 + sm) {
+        setBreakEndError('Break End Time must be greater than Break Start Time.');
+        setError('Please fix the validation errors below.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
+      const breakStart = form.breakStartTime ? (form.breakStartTime.length === 5 ? `${form.breakStartTime}:00` : form.breakStartTime) : null;
+      const breakEnd = form.breakEndTime ? (form.breakEndTime.length === 5 ? `${form.breakEndTime}:00` : form.breakEndTime) : null;
 
       if (editingLocation) {
         await adminCatalogApi.apiAdminCatalogLocationsIdPut(editingLocation.id, {
@@ -134,6 +170,8 @@ export function LocationsPage() {
           address: form.address || null,
           openTime: form.openTime,
           closeTime: form.closeTime,
+          breakStartTime: breakStart,
+          breakEndTime: breakEnd,
           workingDaysMask,
           timeZoneId: form.timeZoneId,
           isActive: editingLocation.isActive !== false,
@@ -145,6 +183,8 @@ export function LocationsPage() {
           address: form.address || null,
           openTime: form.openTime,
           closeTime: form.closeTime,
+          breakStartTime: breakStart,
+          breakEndTime: breakEnd,
           workingDaysMask,
           timeZoneId: form.timeZoneId,
         });
@@ -172,6 +212,8 @@ export function LocationsPage() {
         address: loc.address,
         openTime: loc.openTime,
         closeTime: loc.closeTime,
+        breakStartTime: loc.breakStartTime ?? null,
+        breakEndTime: loc.breakEndTime ?? null,
         workingDaysMask: loc.workingDaysMask,
         timeZoneId: loc.timeZoneId,
         isActive: !loc.isActive,
@@ -291,14 +333,38 @@ export function LocationsPage() {
                 required
                 label="Opening Time"
                 value={form.openTime}
+                maxTime={form.closeTime}
                 onChange={(e) => setForm({ ...form, openTime: e.target.value })}
               />
               <TimeInput
                 required
                 label="Closing Time"
                 value={form.closeTime}
+                minTime={form.openTime}
                 onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
                 error={getFieldError(submitError, 'closeTime')}
+              />
+              <TimeInput
+                label="Break Start Time (Optional)"
+                value={form.breakStartTime}
+                minTime={form.openTime}
+                maxTime={form.breakEndTime || form.closeTime}
+                onChange={(e) => {
+                  setForm({ ...form, breakStartTime: e.target.value });
+                  setBreakStartError(null);
+                }}
+                error={breakStartError ?? undefined}
+              />
+              <TimeInput
+                label="Break End Time (Optional)"
+                value={form.breakEndTime}
+                minTime={form.breakStartTime || form.openTime}
+                maxTime={form.closeTime}
+                onChange={(e) => {
+                  setForm({ ...form, breakEndTime: e.target.value });
+                  setBreakEndError(null);
+                }}
+                error={breakEndError ?? undefined}
               />
             </div>
 
@@ -348,14 +414,14 @@ export function LocationsPage() {
           </CardContent>
         ) : locations.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
-            No locations configured for this saloon chain yet.
+            No locations found.
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse min-w-[950px]">
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
-                  <th className="px-6 py-3.5">Name</th>
+              <thead className="border-b border-border bg-muted/30 font-medium text-muted-foreground">
+                <tr>
+                  <th className="px-6 py-3.5">Location Name</th>
                   <th className="px-6 py-3.5">Address</th>
                   <th className="px-6 py-3.5">Hours & Timezone</th>
                   <th className="px-6 py-3.5">Status</th>
@@ -368,7 +434,12 @@ export function LocationsPage() {
                     <td className="px-6 py-4 font-semibold text-foreground">{l.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{l.address ?? '-'}</td>
                     <td className="px-6 py-4 font-mono text-muted-foreground">
-                      {l.openTime} - {l.closeTime} ({l.timeZoneId})
+                      <div>{l.openTime.slice(0, 5)} - {l.closeTime.slice(0, 5)} ({l.timeZoneId})</div>
+                      {l.breakStartTime && l.breakEndTime && (
+                        <div className="text-[11px] text-amber-500 font-sans mt-0.5">
+                          Break: {l.breakStartTime.slice(0, 5)} - {l.breakEndTime.slice(0, 5)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <Badge status={l.isActive === false ? 'Inactive' : 'Active'} />

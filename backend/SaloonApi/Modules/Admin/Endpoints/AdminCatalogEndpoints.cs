@@ -75,10 +75,16 @@ internal static class AdminCatalogEndpoints
           .WithDescription("List a location's treatments, including inactive ones.");
 
         group.MapPost("/chains", async (ChainRequest req, CatalogRepository repo) =>
-            Results.Ok(new IdResponse(await repo.CreateChainAsync(req.Name))))
+        {
+            var breakError = ValidateBreakTimes(req.BreakStartTime, req.BreakEndTime);
+            if (breakError != null) return breakError;
+
+            return Results.Ok(new IdResponse(await repo.CreateChainAsync(req.Name, req.BreakStartTime, req.BreakEndTime)));
+        })
             .WithValidation<ChainRequest>()
             .RequireAuthorization("ChainManagement")
             .Produces<IdResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
             .WithDescription("Create a new saloon chain (RootSuperAdmin only).");
 
         // No scoping check needed for POST/DELETE -- ChainManagement admits only RootSuperAdmin (see
@@ -89,10 +95,14 @@ internal static class AdminCatalogEndpoints
             if (currentUser.IsInRole(UserRole.SuperAdmin) && currentUser.ChainId != id)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
-            await repo.UpdateChainAsync(id, req.Name, req.IsActive);
+            var breakError = ValidateBreakTimes(req.BreakStartTime, req.BreakEndTime);
+            if (breakError != null) return breakError;
+
+            await repo.UpdateChainAsync(id, req.Name, req.BreakStartTime, req.BreakEndTime, req.IsActive);
             return Results.NoContent();
         }).WithValidation<ChainUpdateRequest>().RequireAuthorization("ChainDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin any chain, SuperAdmin their own).");
 
@@ -109,10 +119,14 @@ internal static class AdminCatalogEndpoints
             if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != req.ChainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
+            var breakError = ValidateBreakTimes(req.BreakStartTime, req.BreakEndTime);
+            if (breakError != null) return breakError;
+
             return Results.Ok(new IdResponse(await repo.CreateLocationAsync(
-                req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId)));
+                req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId)));
         }).WithValidation<LocationRequest>().RequireAuthorization("LocationManagement")
           .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Create a new location under a chain.");
 
@@ -127,11 +141,15 @@ internal static class AdminCatalogEndpoints
             if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
+            var breakError = ValidateBreakTimes(req.BreakStartTime, req.BreakEndTime);
+            if (breakError != null) return breakError;
+
             await repo.UpdateLocationAsync(
-                id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
+                id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
             return Results.NoContent();
         }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a location's details or active state (Manager limited to their own location).");
 
@@ -354,6 +372,19 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a room's name or active state.");
     }
+
+    private static IResult? ValidateBreakTimes(TimeSpan? start, TimeSpan? end)
+    {
+        if ((start.HasValue && !end.HasValue) || (!start.HasValue && end.HasValue))
+        {
+            return Results.Problem("Both Lunch Break Start and End times are required when configuring a break.", statusCode: StatusCodes.Status400BadRequest);
+        }
+        if (start.HasValue && end.HasValue && end.Value <= start.Value)
+        {
+            return Results.Problem("Lunch Break End Time must be greater than Break Start Time.", statusCode: StatusCodes.Status400BadRequest);
+        }
+        return null;
+    }
 }
 
 // Shared by every Admin endpoint (this file, AdminStaffEndpoints, SchedulingEndpoints has its own
@@ -361,13 +392,13 @@ internal static class AdminCatalogEndpoints
 // so it can be used as a type argument to .Produces<T>() for OpenAPI response typing.
 internal sealed record IdResponse(int Id);
 
-internal sealed record ChainRequest(string Name);
-internal sealed record ChainUpdateRequest(string Name, bool IsActive);
+internal sealed record ChainRequest(string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime);
+internal sealed record ChainUpdateRequest(string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, bool IsActive);
 
 internal sealed record LocationRequest(
-    int ChainId, string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
+    int ChainId, string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId);
 internal sealed record LocationUpdateRequest(
-    string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
+    string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
 
 internal sealed record TreatmentCategoryRequest(int LocationId, string Name);
 internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive);

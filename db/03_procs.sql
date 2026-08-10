@@ -11,7 +11,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetChains
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name
+    SELECT Id, Name, BreakStartTime, BreakEndTime
     FROM dbo.SaloonChains
     WHERE IsDelete = 0 AND IsActive = 1
     ORDER BY Name;
@@ -23,10 +23,14 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetLocations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId
-    FROM dbo.Locations
-    WHERE ChainId = @ChainId AND IsDelete = 0 AND IsActive = 1
-    ORDER BY Name;
+    SELECT l.Id, l.ChainId, l.Name, l.Address, l.OpenTime, l.CloseTime,
+           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask, l.TimeZoneId
+    FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+    WHERE l.ChainId = @ChainId AND l.IsDelete = 0 AND l.IsActive = 1
+    ORDER BY l.Name;
 END
 GO
 
@@ -78,13 +82,17 @@ BEGIN
     SET NOCOUNT ON;
 
     -- 1) location hours (+ explicit holiday flag, independent of whether shifts happen to exist that day)
-    SELECT l.OpenTime, l.CloseTime, l.WorkingDaysMask,
+    SELECT l.OpenTime, l.CloseTime,
+           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask,
         CASE WHEN EXISTS (
                SELECT 1
         FROM dbo.LocationHolidays h
         WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
            ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsHoliday
     FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
     -- 2) requested treatments (duration/category/price) as offered at this location
@@ -212,8 +220,12 @@ BEGIN
 
     -- 1) location hours -- date-independent, so no per-date holiday flag here (callers already
     -- resolve holiday dates for the whole range separately -- see CatalogRepository.GetHolidayDatesAsync).
-    SELECT l.OpenTime, l.CloseTime, l.WorkingDaysMask
+    SELECT l.OpenTime, l.CloseTime,
+           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask
     FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
     -- 2) requested treatments (duration/category/price) -- same for every date in the range
@@ -1162,7 +1174,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetChains
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, IsActive
+    SELECT Id, Name, BreakStartTime, BreakEndTime, IsActive
     FROM dbo.SaloonChains
     WHERE IsDelete = 0 AND (@ChainId IS NULL OR Id = @ChainId)
     ORDER BY Name;
@@ -1177,12 +1189,16 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetLocations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, IsActive
-    FROM dbo.Locations
-    WHERE IsDelete = 0
-        AND (@ChainId IS NULL OR ChainId = @ChainId)
-        AND (@LocationId IS NULL OR Id = @LocationId)
-    ORDER BY Name;
+    SELECT l.Id, l.ChainId, l.Name, l.Address, l.OpenTime, l.CloseTime,
+           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask, l.TimeZoneId, l.IsActive
+    FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+    WHERE l.IsDelete = 0
+        AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+        AND (@LocationId IS NULL OR l.Id = @LocationId)
+    ORDER BY l.Name;
 END
 GO
 
@@ -1206,30 +1222,35 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateChain
-    @Name      NVARCHAR(200),
-    @CreatedBy INT,
-    @Id        INT OUTPUT
+    @Name           NVARCHAR(200),
+    @BreakStartTime TIME = NULL,
+    @BreakEndTime   TIME = NULL,
+    @CreatedBy      INT,
+    @Id             INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
     INSERT INTO dbo.SaloonChains
-        (Name, CreatedBy)
+        (Name, BreakStartTime, BreakEndTime, CreatedBy)
     VALUES
-        (@Name, @CreatedBy);
+        (@Name, @BreakStartTime, @BreakEndTime, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateChain
-    @Id        INT,
-    @Name      NVARCHAR(200),
-    @IsActive  BIT,
-    @UpdatedBy INT
+    @Id             INT,
+    @Name           NVARCHAR(200),
+    @BreakStartTime TIME = NULL,
+    @BreakEndTime   TIME = NULL,
+    @IsActive       BIT,
+    @UpdatedBy      INT
 AS
 BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.SaloonChains
-    SET Name = @Name, IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    SET Name = @Name, BreakStartTime = @BreakStartTime, BreakEndTime = @BreakEndTime,
+        IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
 
     IF @@ROWCOUNT = 0
@@ -1261,6 +1282,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateLocation
     @Address         NVARCHAR(400) = NULL,
     @OpenTime        TIME,
     @CloseTime       TIME,
+    @BreakStartTime  TIME = NULL,
+    @BreakEndTime    TIME = NULL,
     @WorkingDaysMask TINYINT,
     @TimeZoneId      NVARCHAR(100) = 'UTC',
     @CreatedBy       INT,
@@ -1269,9 +1292,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     INSERT INTO dbo.Locations
-        (ChainId, Name, Address, OpenTime, CloseTime, WorkingDaysMask, TimeZoneId, CreatedBy)
+        (ChainId, Name, Address, OpenTime, CloseTime, BreakStartTime, BreakEndTime, WorkingDaysMask, TimeZoneId, CreatedBy)
     VALUES
-        (@ChainId, @Name, @Address, @OpenTime, @CloseTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
+        (@ChainId, @Name, @Address, @OpenTime, @CloseTime, @BreakStartTime, @BreakEndTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1282,6 +1305,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateLocation
     @Address         NVARCHAR(400) = NULL,
     @OpenTime        TIME,
     @CloseTime       TIME,
+    @BreakStartTime  TIME = NULL,
+    @BreakEndTime    TIME = NULL,
     @WorkingDaysMask TINYINT,
     @TimeZoneId      NVARCHAR(100),
     @IsActive        BIT,
@@ -1291,6 +1316,7 @@ BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.Locations
     SET Name = @Name, Address = @Address, OpenTime = @OpenTime, CloseTime = @CloseTime,
+        BreakStartTime = @BreakStartTime, BreakEndTime = @BreakEndTime,
         WorkingDaysMask = @WorkingDaysMask, TimeZoneId = @TimeZoneId, IsActive = @IsActive,
         UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
@@ -1809,11 +1835,31 @@ BEGIN
     WHERE r.LocationId = @LocationId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0
     ORDER BY rca.ShiftType, r.Name;
 
-    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason
+    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason, CAST(0 AS BIT) AS IsLocationBreak
     FROM dbo.BlockedSlots bs
         JOIN dbo.Rooms r ON r.Id = bs.RoomId
     WHERE r.LocationId = @LocationId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0
-    ORDER BY r.Name, bs.StartTime;
+
+    UNION ALL
+
+    SELECT 
+        0 AS Id, 
+        r.Id AS RoomId, 
+        r.Name AS RoomName, 
+        COALESCE(l.BreakStartTime, c.BreakStartTime) AS StartTime, 
+        COALESCE(l.BreakEndTime, c.BreakEndTime) AS EndTime, 
+        N'Lunch Break' AS Reason,
+        CAST(1 AS BIT) AS IsLocationBreak
+    FROM dbo.Locations l
+    JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+    CROSS JOIN dbo.Rooms r
+    WHERE l.Id = @LocationId 
+      AND r.LocationId = l.Id 
+      AND r.IsDelete = 0 AND r.IsActive = 1
+      AND COALESCE(l.BreakStartTime, c.BreakStartTime) IS NOT NULL 
+      AND COALESCE(l.BreakEndTime, c.BreakEndTime) IS NOT NULL
+
+    ORDER BY RoomName, StartTime;
 END
 GO
 
@@ -2073,6 +2119,16 @@ BEGIN
         FROM dbo.BlockedSlots bs
         WHERE bs.RoomId = @RoomId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0
             AND bs.StartTime < @EndTime AND bs.EndTime > @StartTime
+        UNION ALL
+        SELECT 1
+        FROM dbo.Rooms r
+            JOIN dbo.Locations l ON l.Id = r.LocationId
+            JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+        WHERE r.Id = @RoomId AND r.IsDelete = 0 AND l.IsDelete = 0 AND l.IsActive = 1
+            AND COALESCE(l.BreakStartTime, c.BreakStartTime) IS NOT NULL 
+            AND COALESCE(l.BreakEndTime, c.BreakEndTime) IS NOT NULL
+            AND COALESCE(l.BreakStartTime, c.BreakStartTime) < @EndTime 
+            AND COALESCE(l.BreakEndTime, c.BreakEndTime) > @StartTime
     ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOverlap;
 END
 GO

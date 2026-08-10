@@ -19,7 +19,9 @@ internal static class SlotCalculator
         IReadOnlyList<EligiblePair> eligiblePairs,
         IReadOnlyList<ExistingBooking> existingBookings,
         IReadOnlyList<BlockedRange>? blockedRanges = null,
-        int slotMinutes = 15)
+        int slotMinutes = 15,
+        TimeSpan? breakStart = null,
+        TimeSpan? breakEnd = null)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
         if (date < today || totalDurationSlots <= 0) return [];
@@ -75,6 +77,17 @@ internal static class SlotCalculator
                             continue;
                         hardConflict = true;
                         break;
+                    }
+                }
+
+                // Recurring saloon-level break interval (e.g. lunch break 13:00 - 14:00) applies across all rooms
+                if (!hardConflict && breakStart is not null && breakEnd is not null)
+                {
+                    var breakStartDt = date.ToDateTime(TimeOnly.FromTimeSpan(breakStart.Value));
+                    var breakEndDt = date.ToDateTime(TimeOnly.FromTimeSpan(breakEnd.Value));
+                    if (cursor < breakEndDt && slotEnd > breakStartDt)
+                    {
+                        hardConflict = true;
                     }
                 }
 

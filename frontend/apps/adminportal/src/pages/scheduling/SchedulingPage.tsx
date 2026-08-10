@@ -486,6 +486,10 @@ export function SchedulingPage() {
   }
 
   async function handleUnblockSlot(id: number) {
+    if (id <= 0) {
+      setError('Saloon-level break configured at saloon level cannot be unblocked here.');
+      return;
+    }
     setError(null);
     try {
       await schedulingApi.apiAdminSchedulingBlockedSlotsIdDelete(id);
@@ -920,16 +924,26 @@ function ScheduleGridView({
                               {blockCell.blocks.map((block) => (
                                 <div key={block.id} className="space-y-1">
                                   <div className="flex items-center justify-between gap-1">
-                                    <span className="rounded-full bg-violet-500/20 border border-violet-500/40 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:text-violet-200">
-                                      Blocked
+                                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                                      block.id <= 0
+                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-800 dark:text-amber-200'
+                                        : 'bg-violet-500/20 border-violet-500/40 text-violet-800 dark:text-violet-200'
+                                    }`}>
+                                      {block.id <= 0 ? 'Lunch Break' : 'Blocked'}
                                     </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUnblockSlot(block.id)}
-                                      className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 underline"
-                                    >
-                                      Unblock
-                                    </button>
+                                    {block.id > 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUnblockSlot(block.id)}
+                                        className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 underline cursor-pointer"
+                                      >
+                                        Unblock
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
+                                        🔒 Locked
+                                      </span>
+                                    )}
                                   </div>
                                   <p className="text-[10px] font-mono font-bold text-violet-700 dark:text-violet-300">
                                     {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}

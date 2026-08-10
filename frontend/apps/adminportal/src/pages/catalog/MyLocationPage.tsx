@@ -25,6 +25,8 @@ export function MyLocationPage() {
     address: '',
     openTime: '09:00',
     closeTime: '18:00',
+    breakStartTime: '',
+    breakEndTime: '',
     timeZoneId: 'UTC',
     days: new Set<number>(),
   });
@@ -32,6 +34,8 @@ export function MyLocationPage() {
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [breakStartError, setBreakStartError] = useState<string | null>(null);
+  const [breakEndError, setBreakEndError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -49,9 +53,13 @@ export function MyLocationPage() {
         address: loc.address ?? '',
         openTime: loc.openTime,
         closeTime: loc.closeTime,
+        breakStartTime: loc.breakStartTime ? loc.breakStartTime.slice(0, 5) : '',
+        breakEndTime: loc.breakEndTime ? loc.breakEndTime.slice(0, 5) : '',
         timeZoneId: loc.timeZoneId,
         days,
       });
+      setBreakStartError(null);
+      setBreakEndError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load your location');
     } finally {
@@ -75,16 +83,45 @@ export function MyLocationPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!location) return;
+
     setError(null);
     setSubmitError(null);
+    setBreakStartError(null);
+    setBreakEndError(null);
+
+    if (form.breakStartTime && !form.breakEndTime) {
+      setBreakEndError('Break End Time is required when Start Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (!form.breakStartTime && form.breakEndTime) {
+      setBreakStartError('Break Start Time is required when End Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (form.breakStartTime && form.breakEndTime) {
+      const [sh, sm] = form.breakStartTime.split(':').map(Number);
+      const [eh, em] = form.breakEndTime.split(':').map(Number);
+      if (eh * 60 + em <= sh * 60 + sm) {
+        setBreakEndError('Break End Time must be greater than Break Start Time.');
+        setError('Please fix the validation errors below.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
+      const breakStart = form.breakStartTime ? (form.breakStartTime.length === 5 ? `${form.breakStartTime}:00` : form.breakStartTime) : null;
+      const breakEnd = form.breakEndTime ? (form.breakEndTime.length === 5 ? `${form.breakEndTime}:00` : form.breakEndTime) : null;
+
       await adminCatalogApi.apiAdminCatalogLocationsIdPut(location.id, {
         name: form.name,
         address: form.address || null,
         openTime: form.openTime,
         closeTime: form.closeTime,
+        breakStartTime: breakStart,
+        breakEndTime: breakEnd,
         workingDaysMask,
         timeZoneId: form.timeZoneId,
         isActive: location.isActive !== false,
@@ -192,14 +229,38 @@ export function MyLocationPage() {
                   required
                   label="Opening Time"
                   value={form.openTime}
+                  maxTime={form.closeTime}
                   onChange={(e) => setForm({ ...form, openTime: e.target.value })}
                 />
                 <TimeInput
                   required
                   label="Closing Time"
                   value={form.closeTime}
+                  minTime={form.openTime}
                   onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
                   error={getFieldError(submitError, 'closeTime')}
+                />
+                <TimeInput
+                  label="Break Start Time (Optional)"
+                  value={form.breakStartTime}
+                  minTime={form.openTime}
+                  maxTime={form.breakEndTime || form.closeTime}
+                  onChange={(e) => {
+                    setForm({ ...form, breakStartTime: e.target.value });
+                    setBreakStartError(null);
+                  }}
+                  error={breakStartError ?? undefined}
+                />
+                <TimeInput
+                  label="Break End Time (Optional)"
+                  value={form.breakEndTime}
+                  minTime={form.breakStartTime || form.openTime}
+                  maxTime={form.closeTime}
+                  onChange={(e) => {
+                    setForm({ ...form, breakEndTime: e.target.value });
+                    setBreakEndError(null);
+                  }}
+                  error={breakEndError ?? undefined}
                 />
               </div>
 

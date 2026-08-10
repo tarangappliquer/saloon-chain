@@ -103,7 +103,8 @@ internal sealed class BookingService(
             foreach (var treatment in rangeData.Treatments)
             {
                 var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, rangeData.Location.OpenTime, rangeData.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked);
+                    d, rangeData.Location.OpenTime, rangeData.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked,
+                    breakStart: rangeData.Location.BreakStartTime, breakEnd: rangeData.Location.BreakEndTime);
 
                 if (slots.Count == 0)
                 {
@@ -145,7 +146,8 @@ internal sealed class BookingService(
             new BlockedRange(b.RoomId, date.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), date.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime)))).ToList();
 
         var slots = SlotCalculator.ComputeAvailableSlots(
-            date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing, blocked);
+            date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing, blocked,
+            breakStart: data.Location.BreakStartTime, breakEnd: data.Location.BreakEndTime);
 
         if (excludeBookingId is null)
         {

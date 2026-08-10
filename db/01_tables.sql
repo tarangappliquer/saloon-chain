@@ -11,6 +11,8 @@
 CREATE TABLE dbo.SaloonChains (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     Name         NVARCHAR(200) NOT NULL,
+    BreakStartTime TIME NULL,
+    BreakEndTime   TIME NULL,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
     CreatedBy    INT NULL,
@@ -26,6 +28,8 @@ CREATE TABLE dbo.Locations (
     Address          NVARCHAR(400) NULL,
     OpenTime         TIME NOT NULL,
     CloseTime        TIME NOT NULL,
+    BreakStartTime   TIME NULL,
+    BreakEndTime     TIME NULL,
     WorkingDaysMask  TINYINT NOT NULL, -- bit0=Mon .. bit6=Sun
     TimeZoneId       NVARCHAR(100) NOT NULL DEFAULT 'UTC',
     IsDelete         BIT NOT NULL DEFAULT 0,

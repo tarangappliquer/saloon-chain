@@ -5,7 +5,7 @@ using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Booking.Infrastructure;
 
-internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, bool IsHoliday);
+internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, bool IsHoliday);
 internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
 internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
 internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
@@ -21,7 +21,7 @@ internal sealed record AvailabilityData(
 // Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
 // (callers resolve holiday dates for the whole range separately, see CatalogRepository), and
 // EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
-internal sealed record LocationHoursRangeRow(TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask);
+internal sealed record LocationHoursRangeRow(TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask);
 internal sealed record EligiblePairRangeRow(DateOnly WorkDate, int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
 internal sealed record BlockedRangeRangeRow(DateOnly WorkDate, int RoomId, TimeSpan StartTime, TimeSpan EndTime);
 

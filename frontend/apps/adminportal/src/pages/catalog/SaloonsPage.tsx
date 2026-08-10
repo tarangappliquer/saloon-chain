@@ -7,6 +7,8 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 import { routes } from '../../routes';
 
+import { TimeInput } from '../../components/TimeInput';
+
 export function SaloonsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
@@ -20,6 +22,10 @@ export function SaloonsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingChain, setEditingChain] = useState<Chain | null>(null);
   const [name, setName] = useState('');
+  const [breakStartTime, setBreakStartTime] = useState('');
+  const [breakEndTime, setBreakEndTime] = useState('');
+  const [breakStartError, setBreakStartError] = useState<string | null>(null);
+  const [breakEndError, setBreakEndError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -51,6 +57,10 @@ export function SaloonsPage() {
   function handleOpenAdd() {
     setEditingChain(null);
     setName('');
+    setBreakStartTime('');
+    setBreakEndTime('');
+    setBreakStartError(null);
+    setBreakEndError(null);
     setIsActive(true);
     setShowForm(true);
     setError(null);
@@ -60,6 +70,10 @@ export function SaloonsPage() {
   function handleOpenEdit(c: Chain) {
     setEditingChain(c);
     setName(c.name);
+    setBreakStartTime(c.breakStartTime ? c.breakStartTime.slice(0, 5) : '');
+    setBreakEndTime(c.breakEndTime ? c.breakEndTime.slice(0, 5) : '');
+    setBreakStartError(null);
+    setBreakEndError(null);
     setIsActive(c.isActive ?? true);
     setShowForm(true);
     setError(null);
@@ -70,6 +84,10 @@ export function SaloonsPage() {
     setShowForm(false);
     setEditingChain(null);
     setName('');
+    setBreakStartTime('');
+    setBreakEndTime('');
+    setBreakStartError(null);
+    setBreakEndError(null);
     setIsActive(true);
   }
 
@@ -77,12 +95,47 @@ export function SaloonsPage() {
     e.preventDefault();
     setError(null);
     setSubmitError(null);
+    setBreakStartError(null);
+    setBreakEndError(null);
+
+    if (breakStartTime && !breakEndTime) {
+      setBreakEndError('Break End Time is required when Start Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (!breakStartTime && breakEndTime) {
+      setBreakStartError('Break Start Time is required when End Time is provided.');
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    if (breakStartTime && breakEndTime) {
+      const [sh, sm] = breakStartTime.split(':').map(Number);
+      const [eh, em] = breakEndTime.split(':').map(Number);
+      if (eh * 60 + em <= sh * 60 + sm) {
+        setBreakEndError('Break End Time must be greater than Break Start Time.');
+        setError('Please fix the validation errors below.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      const bStart = breakStartTime ? (breakStartTime.length === 5 ? `${breakStartTime}:00` : breakStartTime) : null;
+      const bEnd = breakEndTime ? (breakEndTime.length === 5 ? `${breakEndTime}:00` : breakEndTime) : null;
+
       if (editingChain) {
-        await adminCatalogApi.apiAdminCatalogChainsIdPut(editingChain.id, { name, isActive });
+        await adminCatalogApi.apiAdminCatalogChainsIdPut(editingChain.id, {
+          name,
+          breakStartTime: bStart,
+          breakEndTime: bEnd,
+          isActive,
+        });
       } else {
-        await adminCatalogApi.apiAdminCatalogChainsPost({ name });
+        await adminCatalogApi.apiAdminCatalogChainsPost({
+          name,
+          breakStartTime: bStart,
+          breakEndTime: bEnd,
+        });
       }
       handleCancelForm();
       await loadChains();
@@ -218,6 +271,29 @@ export function SaloonsPage() {
                 error={getFieldError(submitError, 'name')}
               />
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TimeInput
+                  label="Default Lunch Break Start (Optional)"
+                  value={breakStartTime}
+                  maxTime={breakEndTime || undefined}
+                  onChange={(e) => {
+                    setBreakStartTime(e.target.value);
+                    setBreakStartError(null);
+                  }}
+                  error={breakStartError ?? undefined}
+                />
+                <TimeInput
+                  label="Default Lunch Break End (Optional)"
+                  value={breakEndTime}
+                  minTime={breakStartTime || undefined}
+                  onChange={(e) => {
+                    setBreakEndTime(e.target.value);
+                    setBreakEndError(null);
+                  }}
+                  error={breakEndError ?? undefined}
+                />
+              </div>
+
               {editingChain && (
                 <div className="flex items-center gap-3">
                   <input
@@ -266,6 +342,7 @@ export function SaloonsPage() {
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3.5">ID</th>
                   <th className="px-6 py-3.5">Saloon Chain Name</th>
+                  <th className="px-6 py-3.5">Default Lunch Break</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5 text-right whitespace-nowrap">Actions</th>
                 </tr>
@@ -275,6 +352,15 @@ export function SaloonsPage() {
                   <tr key={c.id} className="hover:bg-accent/40 transition">
                     <td className="px-6 py-4 font-mono text-muted-foreground">#{c.id}</td>
                     <td className="px-6 py-4 font-semibold text-foreground">{c.name}</td>
+                    <td className="px-6 py-4 font-mono text-muted-foreground">
+                      {c.breakStartTime && c.breakEndTime ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">
+                          {c.breakStartTime.slice(0, 5)} - {c.breakEndTime.slice(0, 5)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/60 italic">Not set</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       <Badge status={c.isActive !== false ? 'Active' : 'Inactive'} />
                     </td>
