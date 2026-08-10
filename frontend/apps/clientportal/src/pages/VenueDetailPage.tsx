@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Chain, Location, Treatment } from '../api/types';
 import { routes } from '../routes';
+import { TreatmentDetailsModal } from '../features/booking/TreatmentDetailsModal';
 
 interface Specialist {
   id: number;
@@ -26,6 +27,7 @@ export function VenueDetailPage() {
   const [specialists, setSpecialists] = useState<Specialist[]>(SAMPLE_SPECIALISTS);
   const [activeTab, setActiveTab] = useState<'services' | 'team' | 'reviews' | 'about'>('services');
   const [loading, setLoading] = useState(true);
+  const [detailsTreatment, setDetailsTreatment] = useState<Treatment | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -57,9 +59,9 @@ export function VenueDetailPage() {
         setSpecialists(SAMPLE_SPECIALISTS);
       } catch {
         setTreatments([
-          { id: 101, categoryId: 1, categoryName: 'Hair & Styling', name: 'Signature Haircut & Blowdry', price: 45, durationSlots: 2 },
-          { id: 102, categoryId: 1, categoryName: 'Hair & Styling', name: 'Full Balayage & Toning', price: 120, durationSlots: 4 },
-          { id: 103, categoryId: 2, categoryName: 'Nails', name: 'Gel Manicure & Hand Care', price: 35, durationSlots: 2 },
+          { id: 101, categoryId: 1, categoryName: 'Hair & Styling', name: 'Signature Haircut & Blowdry', price: 45, durationSlots: 2, preTimeMinutes: 0 },
+          { id: 102, categoryId: 1, categoryName: 'Hair & Styling', name: 'Full Balayage & Toning', price: 120, durationSlots: 4, preTimeMinutes: 0 },
+          { id: 103, categoryId: 2, categoryName: 'Nails', name: 'Gel Manicure & Hand Care', price: 35, durationSlots: 2, preTimeMinutes: 0 },
         ]);
         setLocation({
           id: targetLocId || 1,
@@ -188,7 +190,14 @@ export function VenueDetailPage() {
                         </p>
                       </div>
 
-                      <div className="mt-4 flex items-center justify-end">
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDetailsTreatment(treatment)}
+                          className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                        >
+                          View more
+                        </button>
                         <button
                           type="button"
                           onClick={() => navigate(routes.book.new(locationId))}
@@ -254,6 +263,10 @@ export function VenueDetailPage() {
             <p className="text-muted-foreground">Monday - Sunday: 09:00 AM - 08:00 PM</p>
           </div>
         </div>
+      )}
+
+      {detailsTreatment && (
+        <TreatmentDetailsModal treatment={detailsTreatment} onClose={() => setDetailsTreatment(null)} />
       )}
     </div>
   );

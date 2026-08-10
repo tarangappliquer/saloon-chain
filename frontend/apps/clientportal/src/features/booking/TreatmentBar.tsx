@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import Select, { type SingleValue } from 'react-select';
 import type { BookingTreatmentLine, Treatment } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { TreatmentDetailsModal } from './TreatmentDetailsModal';
 
 interface Props {
   treatments: Treatment[]; // full catalog, for the "add" dropdown
@@ -17,6 +19,7 @@ function fmtTime(iso: string) {
 // Persistent strip shown alongside the schedule/summary steps so a treatment can be added or
 // dropped without leaving the page.
 export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Props) {
+  const [detailsTreatment, setDetailsTreatment] = useState<Treatment | null>(null);
   const selectedIds = new Set(lines.map((l) => l.treatmentId));
   const addable = treatments.filter((t) => !selectedIds.has(t.id));
 
@@ -30,6 +33,17 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
           <span className="text-gray-900 dark:text-gray-100">{line.treatmentName}</span>
           <span className="font-semibold text-gray-700 dark:text-gray-300">${line.price.toFixed(2)}</span>
           <span className="text-gray-400">{line.startTime ? fmtTime(line.startTime) : 'no time yet'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const full = treatments.find((t) => t.id === line.treatmentId);
+              if (full) setDetailsTreatment(full);
+            }}
+            aria-label={`View details for ${line.treatmentName}`}
+            className="text-gray-400 hover:text-primary"
+          >
+            View more
+          </button>
           <button
             type="button"
             disabled={loading}
@@ -54,6 +68,10 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
           unstyled
           classNames={selectClassNames('rounded-full border border-dashed border-gray-300 bg-transparent px-3 py-1 text-sm text-gray-500 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400')}
         />
+      )}
+
+      {detailsTreatment && (
+        <TreatmentDetailsModal treatment={detailsTreatment} onClose={() => setDetailsTreatment(null)} />
       )}
     </div>
   );

@@ -48,6 +48,16 @@ internal static class CatalogEndpoints
             .Produces<IEnumerable<TreatmentDto>>()
             .WithDescription("List the treatments a location offers, optionally filtered by category.");
 
+        group.MapGet("/treatments/{id:int}/prices", async (int id, CatalogRepository repo) =>
+            Results.Ok(await repo.GetTreatmentPricesAsync(id)))
+            .Produces<IEnumerable<TreatmentPriceDto>>()
+            .WithDescription("List a treatment's full price history (past and scheduled future), newest effective date first.");
+
+        group.MapGet("/treatments/{id:int}/durations", async (int id, CatalogRepository repo) =>
+            Results.Ok(await repo.GetTreatmentDurationsAsync(id)))
+            .Produces<IEnumerable<TreatmentDurationDto>>()
+            .WithDescription("List a treatment's full duration history (past and scheduled future), newest effective date first.");
+
         group.MapGet("/search", async (string? q, CatalogRepository repo) =>
             Results.Ok(await repo.SearchVenuesAsync(q)))
             .Produces<IEnumerable<VenueSearchResultDto>>()

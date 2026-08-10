@@ -55,7 +55,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatments
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Description, cp.Price, cd.DurationSlots
+    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Description, cp.Price, cd.DurationSlots, cd.PreTimeMinutes
     FROM dbo.Treatments t
         JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
         CROSS APPLY (
@@ -65,7 +65,7 @@ BEGIN
             ORDER BY tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
-            SELECT TOP 1 td.DurationSlots
+            SELECT TOP 1 td.DurationSlots, td.PreTimeMinutes
             FROM dbo.TreatmentDurations td
             WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
             ORDER BY td.EffectiveFrom DESC
@@ -1237,7 +1237,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetTreatments
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Description, cp.Price, cd.DurationSlots, t.EffectiveFrom, t.IsActive
+    SELECT t.Id, t.CategoryId, tc.Name AS CategoryName, t.Name, t.Description, cp.Price, cd.DurationSlots, cd.PreTimeMinutes, t.EffectiveFrom, t.IsActive
     FROM dbo.Treatments t
         JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId
         OUTER APPLY (
@@ -1247,7 +1247,7 @@ BEGIN
             ORDER BY tp.EffectiveFrom DESC
         ) cp
         OUTER APPLY (
-            SELECT TOP 1 td.DurationSlots
+            SELECT TOP 1 td.DurationSlots, td.PreTimeMinutes
             FROM dbo.TreatmentDurations td
             WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
             ORDER BY td.EffectiveFrom DESC
@@ -1432,6 +1432,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateTreatment
     @Name          NVARCHAR(200),
     @Description   NVARCHAR(2000) = NULL,
     @DurationSlots SMALLINT,
+    @PreTimeMinutes SMALLINT = 0,
     @EffectiveFrom DATE,
     @Price         DECIMAL(10,2),
     @CreatedBy     INT,
@@ -1452,8 +1453,8 @@ BEGIN
     INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom, CreatedBy)
     VALUES (@Id, @Price, CAST(GETUTCDATE() AS DATE), @CreatedBy);
 
-    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, EffectiveFrom, CreatedBy)
-    VALUES (@Id, @DurationSlots, CAST(GETUTCDATE() AS DATE), @CreatedBy);
+    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, PreTimeMinutes, EffectiveFrom, CreatedBy)
+    VALUES (@Id, @DurationSlots, @PreTimeMinutes, CAST(GETUTCDATE() AS DATE), @CreatedBy);
 
     COMMIT TRANSACTION;
 END
@@ -1552,6 +1553,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AddTreatmentDuration
     @TreatmentId   INT,
     @DurationSlots SMALLINT,
+    @PreTimeMinutes SMALLINT = 0,
     @EffectiveFrom DATE,
     @CreatedBy     INT,
     @Id            INT OUTPUT
@@ -1581,8 +1583,8 @@ BEGIN
     )
         THROW 50028, 'Cannot schedule this duration change -- a booking already exists on or after that date.', 1;
 
-    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, EffectiveFrom, CreatedBy)
-    VALUES (@TreatmentId, @DurationSlots, @EffectiveFrom, @CreatedBy);
+    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, PreTimeMinutes, EffectiveFrom, CreatedBy)
+    VALUES (@TreatmentId, @DurationSlots, @PreTimeMinutes, @EffectiveFrom, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1590,6 +1592,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateTreatmentDuration
     @Id            INT,
     @DurationSlots SMALLINT,
+    @PreTimeMinutes SMALLINT = 0,
     @UpdatedBy     INT
 AS
 BEGIN
@@ -1607,7 +1610,7 @@ BEGIN
         THROW 50027, 'Cannot edit this duration -- it has already been used by a booking.', 1;
 
     UPDATE dbo.TreatmentDurations
-    SET DurationSlots = @DurationSlots, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    SET DurationSlots = @DurationSlots, PreTimeMinutes = @PreTimeMinutes, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id;
 END
 GO
@@ -1617,10 +1620,47 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatmentDurations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, DurationSlots, EffectiveFrom
+    SELECT Id, DurationSlots, PreTimeMinutes, EffectiveFrom
     FROM dbo.TreatmentDurations
     WHERE TreatmentId = @TreatmentId AND IsDelete = 0
     ORDER BY EffectiveFrom DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_DeleteTreatmentDuration
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @TreatmentId INT, @EffectiveFrom DATE;
+    SELECT @TreatmentId = TreatmentId, @EffectiveFrom = EffectiveFrom
+    FROM dbo.TreatmentDurations WHERE Id = @Id AND IsDelete = 0;
+
+    IF @TreatmentId IS NULL
+        THROW 50023, 'Treatment duration not found.', 1;
+
+    -- Only a not-yet-effective row can be removed -- past and currently-effective durations stay,
+    -- since they already governed (or are governing) real appointments.
+    IF @EffectiveFrom <= CAST(GETUTCDATE() AS DATE)
+        THROW 50030, 'Cannot delete a duration that is already in effect.', 1;
+
+    -- Same "effective date zone" guard as sp_Catalog_AddTreatmentDuration -- any non-cancelled
+    -- (Draft/temp-held or Confirmed) booking on or after this row's date means the window it would
+    -- govern is already spoken for.
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) >= @EffectiveFrom
+    )
+        THROW 50029, 'Cannot delete this duration -- a booking already exists on or after that date.', 1;
+
+    UPDATE dbo.TreatmentDurations
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id;
 END
 GO
 

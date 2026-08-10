@@ -15,7 +15,7 @@ function today() {
 }
 
 function emptyTreatmentForm() {
-  return { categoryId: '', name: '', durationSlots: '', effectiveFrom: today(), price: '' };
+  return { categoryId: '', name: '', description: '', durationSlots: '', preTimeMinutes: '0', effectiveFrom: today(), price: '' };
 }
 
 export function TreatmentsPage() {
@@ -101,7 +101,9 @@ export function TreatmentsPage() {
     setTreatmentForm({
       categoryId: String(t.categoryId),
       name: t.name,
+      description: t.description ?? '',
       durationSlots: '',
+      preTimeMinutes: '0',
       effectiveFrom: t.effectiveFrom,
       price: '',
     });
@@ -127,6 +129,7 @@ export function TreatmentsPage() {
         await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(editingTreatment.id, {
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
+          description: treatmentForm.description || null,
           effectiveFrom: treatmentForm.effectiveFrom,
           isActive: editingTreatment.isActive !== false,
         });
@@ -136,7 +139,9 @@ export function TreatmentsPage() {
           locationId,
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
+          description: treatmentForm.description || null,
           durationSlots: Number(treatmentForm.durationSlots),
+          preTimeMinutes: Number(treatmentForm.preTimeMinutes),
           effectiveFrom: treatmentForm.effectiveFrom,
           price: Number(treatmentForm.price),
         });
@@ -157,6 +162,7 @@ export function TreatmentsPage() {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(t.id, {
         categoryId: t.categoryId,
         name: t.name,
+        description: t.description ?? null,
         effectiveFrom: t.effectiveFrom,
         isActive: !t.isActive,
       });
@@ -247,6 +253,21 @@ export function TreatmentsPage() {
               onChange={(e) => setTreatmentForm({ ...treatmentForm, name: e.target.value })}
               error={getFieldError(treatmentSubmitError, 'name')}
             />
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Shown to clients on the booking page."
+                value={treatmentForm.description}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, description: e.target.value })}
+                className="flex w-full rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              />
+              {getFieldError(treatmentSubmitError, 'description') && (
+                <p className="mt-1 text-xs font-medium text-destructive">{getFieldError(treatmentSubmitError, 'description')}</p>
+              )}
+            </div>
             {!editingTreatment && (
               <Input
                 required
@@ -256,6 +277,18 @@ export function TreatmentsPage() {
                 value={treatmentForm.durationSlots}
                 onChange={(e) => setTreatmentForm({ ...treatmentForm, durationSlots: e.target.value })}
                 error={getFieldError(treatmentSubmitError, 'durationSlots')}
+              />
+            )}
+            {!editingTreatment && (
+              <Input
+                required
+                type="number"
+                label="Pre-time (arrival buffer, minutes)"
+                helperText="Minutes the customer must arrive before the appointment. 0 = none."
+                placeholder="0"
+                value={treatmentForm.preTimeMinutes}
+                onChange={(e) => setTreatmentForm({ ...treatmentForm, preTimeMinutes: e.target.value })}
+                error={getFieldError(treatmentSubmitError, 'preTimeMinutes')}
               />
             )}
             <DateInput

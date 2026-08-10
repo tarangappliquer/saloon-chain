@@ -4,8 +4,8 @@ import type { BookingTreatmentLine, Treatment } from '../../api/types';
 
 describe('TreatmentBar Component Test', () => {
   const treatments: Treatment[] = [
-    { id: 101, categoryId: 1, categoryName: 'Hair Care', name: 'Haircut & Style', durationSlots: 6, price: 35.00 },
-    { id: 102, categoryId: 1, categoryName: 'Hair Care', name: 'Hair Wash & Blowdry', durationSlots: 4, price: 20.00 },
+    { id: 101, categoryId: 1, categoryName: 'Hair Care', name: 'Haircut & Style', durationSlots: 6, preTimeMinutes: 0, price: 35.00 },
+    { id: 102, categoryId: 1, categoryName: 'Hair Care', name: 'Hair Wash & Blowdry', durationSlots: 4, preTimeMinutes: 0, price: 20.00 },
   ];
 
   const lines: BookingTreatmentLine[] = [

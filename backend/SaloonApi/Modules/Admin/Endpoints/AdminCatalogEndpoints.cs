@@ -207,7 +207,7 @@ internal static class AdminCatalogEndpoints
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
             return Results.Ok(new IdResponse(
-                await repo.CreateTreatmentAsync(req.LocationId, req.CategoryId, req.Name, req.DurationSlots, req.EffectiveFrom, req.Price)));
+                await repo.CreateTreatmentAsync(req.LocationId, req.CategoryId, req.Name, req.Description, req.DurationSlots, req.PreTimeMinutes, req.EffectiveFrom, req.Price)));
         }).WithValidation<TreatmentRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -224,7 +224,7 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.EffectiveFrom, req.IsActive);
+            await repo.UpdateTreatmentAsync(id, req.CategoryId, req.Name, req.Description, req.EffectiveFrom, req.IsActive);
             return Results.NoContent();
         }).WithValidation<TreatmentUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
@@ -309,7 +309,7 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            return Results.Ok(new IdResponse(await repo.AddTreatmentDurationAsync(id, req.DurationSlots, req.EffectiveFrom)));
+            return Results.Ok(new IdResponse(await repo.AddTreatmentDurationAsync(id, req.DurationSlots, req.PreTimeMinutes, req.EffectiveFrom)));
         }).WithValidation<TreatmentDurationRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -330,13 +330,32 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            await repo.UpdateTreatmentDurationAsync(durationId, req.DurationSlots);
+            await repo.UpdateTreatmentDurationAsync(durationId, req.DurationSlots, req.PreTimeMinutes);
             return Results.NoContent();
         }).WithValidation<TreatmentDurationUpdateRequest>()
           .Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Correct a scheduled duration's slot count, if no booking has used it yet.");
+
+        // Soft-deletes a scheduled duration -- blocked with a 409 while a non-cancelled (Draft/
+        // Confirmed) booking has already used this exact row, same guard as the PUT above.
+        group.MapDelete("/treatments/{id:int}/durations/{durationId:int}", async (
+            int id, int durationId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId is { } locationId)
+            {
+                var mine = await repo.GetTreatmentsForAdminAsync(locationId);
+                if (!mine.Any(t => t.Id == id))
+                    return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            await repo.DeleteTreatmentDurationAsync(durationId);
+            return Results.NoContent();
+        }).Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Delete a scheduled duration, if no booking has used it yet.");
 
         // Same clamp-not-reject convention as GET /chains -- SuperAdmin/Admin only ever see their own
         // chain's therapists, Manager only their own location's. Previously unscoped: any AdminAccess
@@ -458,12 +477,12 @@ internal sealed record TreatmentCategoryRequest(int LocationId, string Name);
 internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive);
 
 internal sealed record TreatmentRequest(
-    int LocationId, int CategoryId, string Name, short DurationSlots, DateOnly EffectiveFrom, decimal Price);
-internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, DateOnly EffectiveFrom, bool IsActive);
+    int LocationId, int CategoryId, string Name, string? Description, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, decimal Price);
+internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, string? Description, DateOnly EffectiveFrom, bool IsActive);
 internal sealed record TreatmentPriceRequest(decimal Price, DateOnly EffectiveFrom);
 internal sealed record TreatmentPriceUpdateRequest(decimal Price);
-internal sealed record TreatmentDurationRequest(short DurationSlots, DateOnly EffectiveFrom);
-internal sealed record TreatmentDurationUpdateRequest(short DurationSlots);
+internal sealed record TreatmentDurationRequest(short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom);
+internal sealed record TreatmentDurationUpdateRequest(short DurationSlots, short PreTimeMinutes);
 
 internal sealed record TherapistRequest(string Name);
 internal sealed record TherapistUpdateRequest(string Name, bool IsActive);
@@ -525,7 +544,9 @@ internal sealed class TreatmentRequestValidator : AbstractValidator<TreatmentReq
         RuleFor(x => x.LocationId).GreaterThan(0);
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Description).MaximumLength(2000);
         RuleFor(x => x.DurationSlots).GreaterThan((short)0);
+        RuleFor(x => x.PreTimeMinutes).GreaterThanOrEqualTo((short)0);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
         RuleFor(x => x.Price).GreaterThan(0);
     }
@@ -537,6 +558,7 @@ internal sealed class TreatmentUpdateRequestValidator : AbstractValidator<Treatm
     {
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Description).MaximumLength(2000);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
     }
 }
@@ -560,13 +582,18 @@ internal sealed class TreatmentDurationRequestValidator : AbstractValidator<Trea
     public TreatmentDurationRequestValidator()
     {
         RuleFor(x => x.DurationSlots).GreaterThan((short)0);
+        RuleFor(x => x.PreTimeMinutes).GreaterThanOrEqualTo((short)0);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
     }
 }
 
 internal sealed class TreatmentDurationUpdateRequestValidator : AbstractValidator<TreatmentDurationUpdateRequest>
 {
-    public TreatmentDurationUpdateRequestValidator() => RuleFor(x => x.DurationSlots).GreaterThan((short)0);
+    public TreatmentDurationUpdateRequestValidator()
+    {
+        RuleFor(x => x.DurationSlots).GreaterThan((short)0);
+        RuleFor(x => x.PreTimeMinutes).GreaterThanOrEqualTo((short)0);
+    }
 }
 
 internal sealed class TherapistRequestValidator : AbstractValidator<TherapistRequest>

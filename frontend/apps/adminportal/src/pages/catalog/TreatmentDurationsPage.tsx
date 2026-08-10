@@ -15,7 +15,7 @@ function today() {
 }
 
 function emptyDurationForm() {
-  return { durationSlots: '', effectiveFrom: today() };
+  return { durationSlots: '', preTimeMinutes: '0', effectiveFrom: today() };
 }
 
 export function TreatmentDurationsPage() {
@@ -43,8 +43,11 @@ export function TreatmentDurationsPage() {
 
   const [editingDurationId, setEditingDurationId] = useState<number | null>(null);
   const [editDurationValue, setEditDurationValue] = useState('');
+  const [editPreTimeValue, setEditPreTimeValue] = useState('0');
   const [savingEditDuration, setSavingEditDuration] = useState(false);
   const [editDurationError, setEditDurationError] = useState<unknown>(null);
+
+  const [deletingDurationId, setDeletingDurationId] = useState<number | null>(null);
 
   useEffect(() => {
     adminCatalogApi
@@ -119,6 +122,7 @@ export function TreatmentDurationsPage() {
   function handleStartEditDuration(d: TreatmentDuration) {
     setEditingDurationId(d.id);
     setEditDurationValue(String(d.durationSlots));
+    setEditPreTimeValue(String(d.preTimeMinutes ?? 0));
     setEditDurationError(null);
   }
 
@@ -136,6 +140,7 @@ export function TreatmentDurationsPage() {
     try {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdDurationsDurationIdPut(treatmentId, editingDurationId, {
         durationSlots: Number(editDurationValue),
+        preTimeMinutes: Number(editPreTimeValue),
       });
       setEditingDurationId(null);
       await loadDurationHistory(treatmentId);
@@ -145,6 +150,22 @@ export function TreatmentDurationsPage() {
       setError(err instanceof ApiError ? err.message : 'Failed to update duration');
     } finally {
       setSavingEditDuration(false);
+    }
+  }
+
+  async function handleDeleteDuration(d: TreatmentDuration) {
+    if (treatmentId === null) return;
+    if (!window.confirm(`Delete the duration scheduled from ${d.effectiveFrom}?`)) return;
+    setError(null);
+    setDeletingDurationId(d.id);
+    try {
+      await adminCatalogApi.apiAdminCatalogTreatmentsIdDurationsDurationIdDelete(treatmentId, d.id);
+      await loadDurationHistory(treatmentId);
+      if (locationId !== null) await loadTreatments(locationId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to delete duration');
+    } finally {
+      setDeletingDurationId(null);
     }
   }
 
@@ -185,6 +206,7 @@ export function TreatmentDurationsPage() {
     try {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdDurationsPost(treatmentId, {
         durationSlots: Number(durationForm.durationSlots),
+        preTimeMinutes: Number(durationForm.preTimeMinutes),
         effectiveFrom: durationForm.effectiveFrom,
       });
       setDurationForm(emptyDurationForm());
@@ -298,7 +320,17 @@ export function TreatmentDurationsPage() {
                               value={editDurationValue}
                               onChange={(e) => setEditDurationValue(e.target.value)}
                               error={getFieldError(editDurationError, 'durationSlots')}
-                              className="w-20"
+                              className="w-16"
+                              title="Duration (15-min slots)"
+                            />
+                            <Input
+                              required
+                              type="number"
+                              value={editPreTimeValue}
+                              onChange={(e) => setEditPreTimeValue(e.target.value)}
+                              error={getFieldError(editDurationError, 'preTimeMinutes')}
+                              className="w-16"
+                              title="Pre-time (arrival buffer, minutes)"
                             />
                             <span className="text-muted-foreground shrink-0">from {d.effectiveFrom}</span>
                             <Button type="submit" size="sm" disabled={savingEditDuration}>
@@ -308,7 +340,7 @@ export function TreatmentDurationsPage() {
                               Cancel
                             </Button>
                           </form>
-                          {editDurationError instanceof ApiError && !getFieldError(editDurationError, 'durationSlots') && (
+                          {editDurationError instanceof ApiError && !getFieldError(editDurationError, 'durationSlots') && !getFieldError(editDurationError, 'preTimeMinutes') && (
                             <p className="mt-1 text-xs font-medium text-destructive">{editDurationError.message}</p>
                           )}
                         </li>
@@ -316,13 +348,31 @@ export function TreatmentDurationsPage() {
                     }
                     return (
                       <li key={d.id} className="flex items-center justify-between py-2.5">
-                        <span className="font-mono font-semibold text-foreground">{d.durationSlots * 15} mins</span>
+                        <span className="font-mono font-semibold text-foreground">
+                          {d.durationSlots * 15} mins
+                          {d.preTimeMinutes > 0 && (
+                            <span className="ml-1.5 font-sans font-normal text-muted-foreground">
+                              (arrive {d.preTimeMinutes} min early)
+                            </span>
+                          )}
+                        </span>
                         <span className="text-muted-foreground flex items-center gap-1.5">
                           from {d.effectiveFrom}
                           {isFuture && <Badge status="Inactive" className="text-[10px] py-0 px-1.5" />}
                           <Button variant="ghost" size="sm" onClick={() => handleStartEditDuration(d)}>
                             Edit
                           </Button>
+                          {isFuture && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteDuration(d)}
+                              disabled={deletingDurationId === d.id}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              {deletingDurationId === d.id ? 'Deleting...' : 'Delete'}
+                            </Button>
+                          )}
                         </span>
                       </li>
                     );
@@ -346,6 +396,16 @@ export function TreatmentDurationsPage() {
                   value={durationForm.durationSlots}
                   onChange={(e) => setDurationForm({ ...durationForm, durationSlots: e.target.value })}
                   error={getFieldError(durationSubmitError, 'durationSlots')}
+                />
+                <Input
+                  required
+                  type="number"
+                  label="Pre-time (arrival buffer, minutes)"
+                  helperText="Minutes the customer must arrive before the appointment. 0 = none."
+                  placeholder="0"
+                  value={durationForm.preTimeMinutes}
+                  onChange={(e) => setDurationForm({ ...durationForm, preTimeMinutes: e.target.value })}
+                  error={getFieldError(durationSubmitError, 'preTimeMinutes')}
                 />
                 <DateInput
                   required

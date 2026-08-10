@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { paymentApi } from '../../api/client';
+import { catalogApi, paymentApi } from '../../api/client';
+import type { Treatment } from '../../api/types';
 import { routes } from '../../routes';
 import { useAuth } from '../auth/AuthContext';
 import { BookingSummary } from './BookingSummary';
@@ -19,6 +20,15 @@ export function PaymentStep() {
   const flow = useBookingFlow(Number(bookingId));
   const { state, allCovered } = flow;
   const { booking } = state;
+
+  // Scoped to the booking's own location (see ScheduleStep for why this isn't the BookPage
+  // context's `treatments`).
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const locationId = booking?.locationId ?? null;
+  useEffect(() => {
+    if (!locationId) return;
+    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data as unknown as Treatment[]));
+  }, [locationId]);
 
   const [selectedProvider, setSelectedProvider] = useState<PaymentProviderType>('Stripe');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -240,6 +250,7 @@ export function PaymentStep() {
 
         <BookingSummary
           lines={booking.treatments}
+          treatments={treatments}
           onConfirm={handlePaymentAndConfirm}
           onEdit={() => navigate(routes.book.schedule(bookingId!))}
           loading={state.loading || isProcessing}

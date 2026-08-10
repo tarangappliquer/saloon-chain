@@ -126,6 +126,9 @@ CREATE TABLE dbo.TreatmentDurations (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
     TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
     DurationSlots  SMALLINT NOT NULL CHECK (DurationSlots > 0),
+    -- Minutes the customer must arrive before the appointment's actual start time. 0 (default) means
+    -- no arrival buffer -- most treatments don't need one.
+    PreTimeMinutes SMALLINT NOT NULL DEFAULT 0 CHECK (PreTimeMinutes >= 0),
     EffectiveFrom  DATE NOT NULL,
     IsDelete       BIT NOT NULL DEFAULT 0,
     CreatedBy      INT NULL,

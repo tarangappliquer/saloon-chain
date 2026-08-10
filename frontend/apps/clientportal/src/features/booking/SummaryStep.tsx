@@ -48,6 +48,7 @@ export function SummaryStep() {
 
       <BookingSummary
         lines={booking.treatments}
+        treatments={treatments}
         onConfirm={handleProceedToPayment}
         onEdit={() => navigate(routes.book.schedule(bookingId!))}
         loading={state.loading}

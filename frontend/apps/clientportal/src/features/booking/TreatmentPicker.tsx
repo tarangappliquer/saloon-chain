@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Badge, Button } from '@saloon/ui';
 import type { Treatment } from '../../api/types';
+import { TreatmentDetailsModal } from './TreatmentDetailsModal';
 
 interface Props {
   treatments: Treatment[];
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export function TreatmentPicker({ treatments, selectedIds, onToggle, onNext, loading }: Props) {
+  const [detailsTreatment, setDetailsTreatment] = useState<Treatment | null>(null);
   const grouped = new Map<string, Treatment[]>();
   for (const t of treatments) {
     const list = grouped.get(t.categoryName);
@@ -46,6 +49,29 @@ export function TreatmentPicker({ treatments, selectedIds, onToggle, onNext, loa
                     <span>{t.durationSlots * 15} mins</span>
                     <span className="font-mono font-semibold text-primary">${t.price.toFixed(2)}</span>
                   </div>
+                  {t.preTimeMinutes > 0 && (
+                    <span className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                      Arrive {t.preTimeMinutes} min early
+                    </span>
+                  )}
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailsTreatment(t);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setDetailsTreatment(t);
+                      }
+                    }}
+                    className="mt-2 self-start text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                  >
+                    View more
+                  </span>
                 </button>
               );
             })}
@@ -63,6 +89,10 @@ export function TreatmentPicker({ treatments, selectedIds, onToggle, onNext, loa
           {loading ? 'Loading dates...' : `Continue with ${selectedIds.length} treatment${selectedIds.length === 1 ? '' : 's'}`}
         </Button>
       </div>
+
+      {detailsTreatment && (
+        <TreatmentDetailsModal treatment={detailsTreatment} onClose={() => setDetailsTreatment(null)} />
+      )}
     </div>
   );
 }

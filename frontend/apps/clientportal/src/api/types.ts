@@ -19,8 +19,23 @@ export interface Treatment {
   categoryId: number;
   categoryName: string;
   name: string;
+  description?: string | null;
   price: number;
   durationSlots: number;
+  preTimeMinutes: number;
+}
+
+export interface TreatmentPrice {
+  id: number;
+  price: number;
+  effectiveFrom: string;
+}
+
+export interface TreatmentDuration {
+  id: number;
+  durationSlots: number;
+  preTimeMinutes: number;
+  effectiveFrom: string;
 }
 
 export interface AvailableSlot {

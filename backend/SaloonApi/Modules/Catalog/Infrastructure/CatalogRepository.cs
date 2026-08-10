@@ -16,7 +16,7 @@ internal sealed record VenueSearchResultDto(
     TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
 
 internal sealed record TreatmentDto(
-    int Id, int CategoryId, string CategoryName, string Name, decimal Price, short DurationSlots);
+    int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes);
 
 internal sealed record LocationHolidayRow(DateTime HolidayDate, string? Reason);
 
@@ -35,20 +35,20 @@ internal sealed record AdminLocationDto(
 // Price is nullable only for a treatment whose sole price row is future-dated (created with an
 // EffectiveFrom later than today) -- not yet purchasable, but still visible to admins managing it.
 internal sealed record AdminTreatmentDto(
-    int Id, int CategoryId, string CategoryName, string Name, decimal? Price, short DurationSlots,
+    int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal? Price, short DurationSlots, short PreTimeMinutes,
     DateOnly EffectiveFrom, bool IsActive);
 
 // Dapper's constructor-based materialization doesn't handle DateOnly (see LocationHolidayRow above
 // for the same workaround) -- query into this DateTime-typed row, then convert to the DateOnly DTO.
 internal sealed record AdminTreatmentRow(
-    int Id, int CategoryId, string CategoryName, string Name, decimal? Price, short DurationSlots,
+    int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal? Price, short DurationSlots, short PreTimeMinutes,
     DateTime EffectiveFrom, bool IsActive);
 
 internal sealed record TreatmentPriceDto(int Id, decimal Price, DateOnly EffectiveFrom);
 internal sealed record TreatmentPriceRow(int Id, decimal Price, DateTime EffectiveFrom);
 
-internal sealed record TreatmentDurationDto(int Id, short DurationSlots, DateOnly EffectiveFrom);
-internal sealed record TreatmentDurationRow(int Id, short DurationSlots, DateTime EffectiveFrom);
+internal sealed record TreatmentDurationDto(int Id, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom);
+internal sealed record TreatmentDurationRow(int Id, short DurationSlots, short PreTimeMinutes, DateTime EffectiveFrom);
 
 internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
@@ -108,7 +108,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<AdminTreatmentRow>("dbo.sp_Admin_GetTreatments", new { LocationId = locationId });
         return rows.Select(r => new AdminTreatmentDto(
-            r.Id, r.CategoryId, r.CategoryName, r.Name, r.Price, r.DurationSlots, DateOnly.FromDateTime(r.EffectiveFrom), r.IsActive));
+            r.Id, r.CategoryId, r.CategoryName, r.Name, r.Description, r.Price, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom), r.IsActive));
     }
 
     public async Task<int> CreateChainAsync(string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime)
@@ -219,14 +219,16 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     }
 
     public async Task<int> CreateTreatmentAsync(
-        int locationId, int categoryId, string name, short durationSlots, DateOnly effectiveFrom, decimal price)
+        int locationId, int categoryId, string name, string? description, short durationSlots, short preTimeMinutes, DateOnly effectiveFrom, decimal price)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
         p.Add("@LocationId", locationId);
         p.Add("@CategoryId", categoryId);
         p.Add("@Name", name);
+        p.Add("@Description", description);
         p.Add("@DurationSlots", durationSlots);
+        p.Add("@PreTimeMinutes", preTimeMinutes);
         p.Add("@EffectiveFrom", effectiveFrom);
         p.Add("@Price", price);
         p.Add("@CreatedBy", currentUser.RequireUserId());
@@ -236,7 +238,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     }
 
     public async Task UpdateTreatmentAsync(
-        int id, int categoryId, string name, DateOnly effectiveFrom, bool isActive)
+        int id, int categoryId, string name, string? description, DateOnly effectiveFrom, bool isActive)
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatment", new
@@ -244,6 +246,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
             Id = id,
             CategoryId = categoryId,
             Name = name,
+            Description = description,
             EffectiveFrom = effectiveFrom,
             IsActive = isActive,
             UpdatedBy = currentUser.RequireUserId()
@@ -281,15 +284,16 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<TreatmentDurationRow>("dbo.sp_Catalog_GetTreatmentDurations", new { TreatmentId = treatmentId });
-        return rows.Select(r => new TreatmentDurationDto(r.Id, r.DurationSlots, DateOnly.FromDateTime(r.EffectiveFrom)));
+        return rows.Select(r => new TreatmentDurationDto(r.Id, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom)));
     }
 
-    public async Task<int> AddTreatmentDurationAsync(int treatmentId, short durationSlots, DateOnly effectiveFrom)
+    public async Task<int> AddTreatmentDurationAsync(int treatmentId, short durationSlots, short preTimeMinutes, DateOnly effectiveFrom)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
         p.Add("@TreatmentId", treatmentId);
         p.Add("@DurationSlots", durationSlots);
+        p.Add("@PreTimeMinutes", preTimeMinutes);
         p.Add("@EffectiveFrom", effectiveFrom);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
@@ -297,11 +301,18 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return p.Get<int>("@Id");
     }
 
-    public async Task UpdateTreatmentDurationAsync(int id, short durationSlots)
+    public async Task UpdateTreatmentDurationAsync(int id, short durationSlots, short preTimeMinutes)
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatmentDuration", new
-        { Id = id, DurationSlots = durationSlots, UpdatedBy = currentUser.RequireUserId() });
+        { Id = id, DurationSlots = durationSlots, PreTimeMinutes = preTimeMinutes, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task DeleteTreatmentDurationAsync(int id)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteTreatmentDuration", new
+        { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<TherapistDto>> GetTherapistsAsync(int? chainId = null, int? locationId = null)
