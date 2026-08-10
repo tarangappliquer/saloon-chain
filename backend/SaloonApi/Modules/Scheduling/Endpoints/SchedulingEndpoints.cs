@@ -1,4 +1,5 @@
 using FluentValidation;
+using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Scheduling.Infrastructure;
 using SaloonApi.Shared.Auth;
@@ -28,7 +29,7 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Get a location's therapist shifts and room openings for a date.");
 
-        group.MapPost("/therapist-shifts", async (AssignTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapPost("/therapist-shifts", async (AssignTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, BookingService bookingSvc) =>
         {
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != req.LocationId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
@@ -39,15 +40,14 @@ internal static class SchedulingEndpoints
 
             var id = await repo.AssignTherapistShiftAsync(
                 req.LocationId, req.TherapistId, req.RoomId, req.ShiftType, req.WorkDate, req.StartTime, req.EndTime);
-            await cache.InvalidateAsync(req.LocationId, req.WorkDate);
-            sse.Publish(req.LocationId, req.WorkDate, "slot-changed");
+            await bookingSvc.SyncAndNotifyAsync(req.LocationId, req.WorkDate);
             return Results.Ok(new IdResponse(id));
         }).WithValidation<AssignTherapistShiftRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Assign a therapist to a shift at a location/date.");
 
-        group.MapDelete("/therapist-shifts/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapDelete("/therapist-shifts/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
         {
             var shift = await repo.GetShiftDetailsAsync(id);
             if (shift is null) return Results.NotFound();
@@ -60,15 +60,14 @@ internal static class SchedulingEndpoints
 
             await repo.RemoveTherapistShiftAsync(id);
             var workDate = DateOnly.FromDateTime(shift.WorkDate);
-            await cache.InvalidateAsync(shift.LocationId, workDate);
-            sse.Publish(shift.LocationId, workDate, "slot-changed");
+            await bookingSvc.SyncAndNotifyAsync(shift.LocationId, workDate);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Remove a therapist's shift assignment.");
 
-        group.MapPost("/room-openings", async (OpenRoomRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapPost("/room-openings", async (OpenRoomRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, BookingService bookingSvc) =>
         {
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId is { } locationId)
             {
@@ -88,8 +87,7 @@ internal static class SchedulingEndpoints
             var roomLocId = roomOpening?.LocationId ?? currentUser.LocationId ?? 0;
             if (roomLocId > 0)
             {
-                await cache.InvalidateAsync(roomLocId, req.WorkDate);
-                sse.Publish(roomLocId, req.WorkDate, "slot-changed");
+                await bookingSvc.SyncAndNotifyAsync(roomLocId, req.WorkDate);
             }
             return Results.Ok(new IdResponse(id));
         }).WithValidation<OpenRoomRequest>()
@@ -98,7 +96,7 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Open a room for a treatment category during a shift/date.");
 
-        group.MapDelete("/room-openings/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapDelete("/room-openings/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
         {
             var opening = await repo.GetRoomOpeningDetailsAsync(id);
             if (opening is null) return Results.NotFound();
@@ -111,15 +109,14 @@ internal static class SchedulingEndpoints
                 return Results.Problem("Cannot close room; existing bookings exist for this room.", statusCode: StatusCodes.Status400BadRequest);
 
             await repo.CloseRoomAsync(id);
-            await cache.InvalidateAsync(opening.LocationId, workDate);
-            sse.Publish(opening.LocationId, workDate, "slot-changed");
+            await bookingSvc.SyncAndNotifyAsync(opening.LocationId, workDate);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Close a room opening.");
 
-        group.MapPost("/blocked-slots", async (BlockSlotRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapPost("/blocked-slots", async (BlockSlotRequest req, ICurrentUser currentUser, SchedulingRepository repo, CatalogRepository catalogRepo, BookingService bookingSvc) =>
         {
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId is { } locationId)
             {
@@ -142,8 +139,7 @@ internal static class SchedulingEndpoints
             var roomLocId = blocked?.LocationId ?? currentUser.LocationId ?? 0;
             if (roomLocId > 0)
             {
-                await cache.InvalidateAsync(roomLocId, req.WorkDate);
-                sse.Publish(roomLocId, req.WorkDate, "slot-changed");
+                await bookingSvc.SyncAndNotifyAsync(roomLocId, req.WorkDate);
             }
             return Results.Ok(new IdResponse(id));
         }).WithValidation<BlockSlotRequest>()
@@ -152,7 +148,7 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Block a room/time slot for a reason (lunch break, therapist leave, etc). Fails if the slot already has a booking.");
 
-        group.MapDelete("/blocked-slots/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, SaloonApi.Shared.Realtime.SseBroadcaster sse, SaloonApi.Shared.Caching.IAvailabilityCache cache) =>
+        group.MapDelete("/blocked-slots/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
         {
             var blocked = await repo.GetBlockedSlotDetailsAsync(id);
             if (blocked is null) return Results.NotFound();
@@ -162,8 +158,7 @@ internal static class SchedulingEndpoints
 
             await repo.UnblockSlotAsync(id);
             var workDate = DateOnly.FromDateTime(blocked.WorkDate);
-            await cache.InvalidateAsync(blocked.LocationId, workDate);
-            sse.Publish(blocked.LocationId, workDate, "slot-changed");
+            await bookingSvc.SyncAndNotifyAsync(blocked.LocationId, workDate);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)

@@ -23,8 +23,14 @@ public class AvailabilityCacheTests
         var getResult = await cache.GetAsync(1, date, [10]);
         Assert.Null(getResult);
 
+        var getDatesResult = await cache.GetDatesAsync(1, [10]);
+        Assert.Null(getDatesResult);
+
         var setException = await Record.ExceptionAsync(() => cache.SetAsync(1, date, [10], "[]", TimeSpan.FromMinutes(5)));
         Assert.Null(setException);
+
+        var setDatesException = await Record.ExceptionAsync(() => cache.SetDatesAsync(1, [10], "[]", TimeSpan.FromMinutes(5)));
+        Assert.Null(setDatesException);
 
         var invalidateException = await Record.ExceptionAsync(() => cache.InvalidateAsync(1, date));
         Assert.Null(invalidateException);
@@ -48,8 +54,14 @@ public class AvailabilityCacheTests
         var getResult = await cache.GetAsync(1, date, [10]);
         Assert.Null(getResult);
 
+        var getDatesResult = await cache.GetDatesAsync(1, [10]);
+        Assert.Null(getDatesResult);
+
         var setException = await Record.ExceptionAsync(() => cache.SetAsync(1, date, [10], "[]", TimeSpan.FromMinutes(5)));
         Assert.Null(setException);
+
+        var setDatesException = await Record.ExceptionAsync(() => cache.SetDatesAsync(1, [10], "[]", TimeSpan.FromMinutes(5)));
+        Assert.Null(setDatesException);
 
         var invalidateException = await Record.ExceptionAsync(() => cache.InvalidateAsync(1, date));
         Assert.Null(invalidateException);

@@ -199,6 +199,7 @@ try
 
     builder.Services.AddHostedService<HoldExpirySweepService>();
     builder.Services.AddHostedService<EmailQueueBackgroundService>();
+    builder.Services.AddHostedService<SaloonApi.Modules.Booking.BackgroundJobs.AvailabilitySyncStartupHostedService>();
 
     builder.Services.AddHealthChecks();
     builder.Services.AddAntiforgery();

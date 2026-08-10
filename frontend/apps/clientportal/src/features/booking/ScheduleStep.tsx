@@ -94,7 +94,7 @@ export function ScheduleStep() {
     const tIds = booking.treatments.map((t) => t.treatmentId);
     loadDates(locationId, tIds, Number(bookingId));
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.restoring, booking, locationId, treatmentIdsKey, loadDates, bookingId]);
+  }, [state.restoring, locationId, treatmentIdsKey, loadDates, bookingId]);
 
   useEffect(() => {
     if (!booking || !locationId || !date) return;

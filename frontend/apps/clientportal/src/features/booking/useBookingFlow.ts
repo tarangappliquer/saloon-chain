@@ -99,6 +99,7 @@ export function useBookingFlow(bookingId: number) {
   // is set synchronously, before either the dispatch or the await, so the second call in the same
   // tick sees it immediately and bails.
   const inFlight = useRef(false);
+  const lastDatesReq = useRef<string>('');
 
   const allCovered = useMemo(
     () =>
@@ -124,22 +125,28 @@ export function useBookingFlow(bookingId: number) {
 
   const loadDates = useCallback(
     async (locationId: number, treatmentIds: number[], bookingId?: number, fromDate?: string, toDate?: string) => {
+      const now = new Date();
+      const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const defaultToDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
+      const defaultTo = `${defaultToDate.getFullYear()}-${String(defaultToDate.getMonth() + 1).padStart(2, '0')}-${String(defaultToDate.getDate()).padStart(2, '0')}`;
+      const from = fromDate || defaultFrom;
+      const to = toDate || defaultTo;
+      const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
+
+      const reqKey = `${locationId}:${tIdsStr}:${from}:${to}:${bookingId}`;
+      if (lastDatesReq.current === reqKey && state.datesFetched) return;
+      lastDatesReq.current = reqKey;
+
       dispatch({ type: 'LOADING' });
       try {
-        const now = new Date();
-        const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const defaultToDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
-        const defaultTo = `${defaultToDate.getFullYear()}-${String(defaultToDate.getMonth() + 1).padStart(2, '0')}-${String(defaultToDate.getDate()).padStart(2, '0')}`;
-        const from = fromDate || defaultFrom;
-        const to = toDate || defaultTo;
-        const tIdsStr = treatmentIds.length > 0 ? treatmentIds.join(',') : undefined;
         const { data } = await bookingApi.apiBookingAvailableDatesGet(locationId, from, to, tIdsStr, bookingId);
         dispatch({ type: 'DATES_LOADED', dates: data });
       } catch (err) {
+        lastDatesReq.current = '';
         dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to load available dates') });
       }
     },
-    [],
+    [state.datesFetched],
   );
 
   const loadSlots = useCallback(async (locationId: number, date: string, treatmentIds: number[]) => {

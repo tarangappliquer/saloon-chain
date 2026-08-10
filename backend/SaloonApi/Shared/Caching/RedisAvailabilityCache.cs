@@ -17,6 +17,14 @@ internal sealed class RedisAvailabilityCache(IRedisConnectionProvider connection
     // cleared instead of accumulating stale entries until their own TTL happens to expire.
     private static string IndexKey(int locationId, DateOnly date) => $"{DateKey(locationId, date)}:keys";
 
+    private static string DatesKey(int locationId, IReadOnlyList<int>? treatmentIds)
+    {
+        var ids = treatmentIds is { Count: > 0 } ? string.Join(",", treatmentIds.OrderBy(id => id)) : "all";
+        return $"avail:dates:{locationId}:{ids}";
+    }
+
+    private static string DatesIndexKey(int locationId) => $"avail:dates:{locationId}:keys";
+
     public async Task<string?> GetAsync(int locationId, DateOnly date, IReadOnlyList<int> treatmentIds)
     {
         IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
@@ -56,6 +64,45 @@ internal sealed class RedisAvailabilityCache(IRedisConnectionProvider connection
 #pragma warning restore CA1031
     }
 
+    public async Task<string?> GetDatesAsync(int locationId, IReadOnlyList<int>? treatmentIds)
+    {
+        IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
+        if (redis is null) return null;
+
+#pragma warning disable CA1031
+        try
+        {
+            RedisValue value = await redis.GetDatabase().StringGetAsync(DatesKey(locationId, treatmentIds));
+            return value.IsNullOrEmpty ? null : value.ToString();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Redis availability dates cache read failed for location {LocationId}. Falling back to database.", locationId);
+            return null;
+        }
+#pragma warning restore CA1031
+    }
+
+    public async Task SetDatesAsync(int locationId, IReadOnlyList<int>? treatmentIds, string json, TimeSpan ttl)
+    {
+        IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
+        if (redis is null) return;
+
+#pragma warning disable CA1031
+        try
+        {
+            IDatabase db = redis.GetDatabase();
+            string key = DatesKey(locationId, treatmentIds);
+            await db.StringSetAsync(key, json, ttl);
+            await db.SetAddAsync(DatesIndexKey(locationId), key);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Redis availability dates cache write failed for location {LocationId}.", locationId);
+        }
+#pragma warning restore CA1031
+    }
+
     public async Task InvalidateAsync(int locationId, DateOnly date)
     {
         IConnectionMultiplexer? redis = connectionProvider.GetMultiplexer();
@@ -70,6 +117,12 @@ internal sealed class RedisAvailabilityCache(IRedisConnectionProvider connection
             if (keys.Length > 0)
                 await db.KeyDeleteAsync(Array.ConvertAll(keys, k => (RedisKey)k.ToString()));
             await db.KeyDeleteAsync(indexKey);
+
+            string datesIndexKey = DatesIndexKey(locationId);
+            RedisValue[] datesKeys = await db.SetMembersAsync(datesIndexKey);
+            if (datesKeys.Length > 0)
+                await db.KeyDeleteAsync(Array.ConvertAll(datesKeys, k => (RedisKey)k.ToString()));
+            await db.KeyDeleteAsync(datesIndexKey);
         }
         catch (Exception ex)
         {

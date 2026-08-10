@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Payment.Infrastructure;
@@ -11,7 +13,14 @@ using SaloonApi.Shared.Realtime;
 namespace SaloonApi.Modules.Booking.Application;
 
 internal sealed class BookingService(
-    BookingRepository repo, CatalogRepository catalog, IAvailabilityCache cache, SseBroadcaster sse, IBackgroundEmailQueue emailQueue, PaymentRepository paymentRepo)
+    BookingRepository repo,
+    CatalogRepository catalog,
+    IAvailabilityCache cache,
+    SseBroadcaster sse,
+    IBackgroundEmailQueue emailQueue,
+    PaymentRepository paymentRepo,
+    IServiceScopeFactory scopeFactory,
+    ILogger<BookingService> logger)
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(
         int locationId, DateOnly from, DateOnly to, IReadOnlyList<int>? treatmentIds = null, int? excludeBookingId = null)
@@ -20,12 +29,29 @@ internal sealed class BookingService(
         if (from < today) from = today;
         if (to < from) return [];
 
-        var data = await repo.GetAvailabilityDataAsync(locationId, [], from);
-        var mask = (data.Location?.WorkingDaysMask ?? 0) == 0 ? 127 : data.Location!.WorkingDaysMask;
-        var holidays = (await catalog.GetHolidayDatesAsync(locationId, from, to)).ToHashSet();
+        var cached = await cache.GetDatesAsync(locationId, treatmentIds);
+        if (cached is not null)
+        {
+            var cachedDates = JsonSerializer.Deserialize<List<DateOnly>>(cached)!;
+            return cachedDates.Where(d => d >= from && d <= to).ToList();
+        }
 
-        var hasRoomOpenings = await repo.HasLocationRoomOpeningsAsync(locationId);
-        var openDates = hasRoomOpenings ? await repo.GetLocationOpenDatesAsync(locationId, from, to) : null;
+        // Query date range tasks in parallel to minimize latency on cache misses
+        var holidaysTask = catalog.GetHolidayDatesAsync(locationId, from, to);
+        var hasRoomOpeningsTask = repo.HasLocationRoomOpeningsAsync(locationId);
+        var openDatesTask = repo.GetLocationOpenDatesAsync(locationId, from, to);
+        var rangeDataTask = repo.GetAvailabilityDataRangeAsync(locationId, treatmentIds ?? [], from, to, excludeBookingId);
+
+        await Task.WhenAll(holidaysTask, hasRoomOpeningsTask, openDatesTask, rangeDataTask);
+
+        var holidays = (await holidaysTask).ToHashSet();
+        var hasRoomOpenings = await hasRoomOpeningsTask;
+        var openDates = hasRoomOpenings ? await openDatesTask : null;
+        var rangeData = await rangeDataTask;
+
+        if (rangeData.Location is null) return [];
+
+        var mask = (rangeData.Location.WorkingDaysMask == 0) ? (byte)127 : rangeData.Location.WorkingDaysMask;
 
         var candidates = new List<DateOnly>();
         for (var d = from; d <= to; d = d.AddDays(1))
@@ -40,50 +66,64 @@ internal sealed class BookingService(
             candidates.Add(d);
         }
 
-        if (treatmentIds is not { Count: > 0 } || candidates.Count == 0) return candidates;
-
-        // A date only counts as available if EVERY requested treatment, checked separately, has its
-        // own open slot that day (matches GetAvailableSlotsAsync being called once per treatment id --
-        // see useBookingFlow.ts's loadSlots -- not once for the combined duration of all of them).
-        // One range query per treatment covers every candidate day in a single round trip, instead of
-        // one round trip per (day, treatment) pair -- a 90-day range x 2 treatments used to mean up to
-        // 180 sequential DB calls; now it's 2, each spanning the whole range via
-        // sp_Booking_GetAvailabilityDataRange.
-        var rangeFrom = candidates[0];
-        var rangeTo = candidates[^1];
-        var perTreatmentAvailableDates = await Task.WhenAll(treatmentIds.Select(async tid =>
+        if (treatmentIds is not { Count: > 0 } || candidates.Count == 0)
         {
-            var data = await repo.GetAvailabilityDataRangeAsync(locationId, [tid], rangeFrom, rangeTo, excludeBookingId);
-            var treatment = data.Treatments.FirstOrDefault(t => t.Id == tid);
-            if (data.Location is null || treatment is null) return [];
-
-            var pairsByDate = data.EligiblePairs
-                .GroupBy(p => p.WorkDate)
-                .ToDictionary(g => g.Key, IReadOnlyList<EligiblePair> (g) =>
-                    [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd))]);
-            var bookingsByDate = data.ExistingBookings
-                .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
-                .ToDictionary(g => g.Key, IReadOnlyList<ExistingBooking> (g) =>
-                    [.. g.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft"))]);
-            var blockedByDate = data.BlockedRanges
-                .GroupBy(b => b.WorkDate)
-                .ToDictionary(g => g.Key, IReadOnlyList<BlockedRange> (g) =>
-                    [.. g.Select(b => new BlockedRange(b.RoomId, b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime))))]);
-
-            var openDatesForTreatment = new HashSet<DateOnly>();
-            foreach (var d in candidates)
+            if (excludeBookingId is null)
             {
-                var pairs = pairsByDate.GetValueOrDefault(d, []);
-                var bookings = bookingsByDate.GetValueOrDefault(d, []);
-                var blocked = blockedByDate.GetValueOrDefault(d, []);
-                var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, data.Location.OpenTime, data.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked);
-                if (slots.Count > 0) openDatesForTreatment.Add(d);
+                await cache.SetDatesAsync(locationId, treatmentIds, JsonSerializer.Serialize(candidates), TimeSpan.FromMinutes(60));
             }
-            return openDatesForTreatment;
-        }));
+            return candidates;
+        }
 
-        return candidates.Where(d => perTreatmentAvailableDates.All(set => set.Contains(d))).ToList();
+        if (rangeData.Treatments.Count == 0) return [];
+
+        var pairsByDate = rangeData.EligiblePairs
+            .GroupBy(p => p.WorkDate)
+            .ToDictionary(g => g.Key, IReadOnlyList<EligiblePair> (g) =>
+                [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd))]);
+
+        var bookingsByDate = rangeData.ExistingBookings
+            .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
+            .ToDictionary(g => g.Key, IReadOnlyList<ExistingBooking> (g) =>
+                [.. g.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft"))]);
+
+        var blockedByDate = rangeData.BlockedRanges
+            .GroupBy(b => b.WorkDate)
+            .ToDictionary(g => g.Key, IReadOnlyList<BlockedRange> (g) =>
+                [.. g.Select(b => new BlockedRange(b.RoomId, b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime))))]);
+
+        var availableDates = new List<DateOnly>();
+        foreach (var d in candidates)
+        {
+            var pairs = pairsByDate.GetValueOrDefault(d, []);
+            var bookings = bookingsByDate.GetValueOrDefault(d, []);
+            var blocked = blockedByDate.GetValueOrDefault(d, []);
+
+            var allTreatmentsHaveSlot = true;
+            foreach (var treatment in rangeData.Treatments)
+            {
+                var slots = SlotCalculator.ComputeAvailableSlots(
+                    d, rangeData.Location.OpenTime, rangeData.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked);
+
+                if (slots.Count == 0)
+                {
+                    allTreatmentsHaveSlot = false;
+                    break;
+                }
+            }
+
+            if (allTreatmentsHaveSlot)
+            {
+                availableDates.Add(d);
+            }
+        }
+
+        if (excludeBookingId is null)
+        {
+            await cache.SetDatesAsync(locationId, treatmentIds, JsonSerializer.Serialize(availableDates), TimeSpan.FromMinutes(60));
+        }
+
+        return availableDates;
     }
 
     public async Task<IReadOnlyList<AvailableSlot>> GetAvailableSlotsAsync(int locationId, IReadOnlyList<int> treatmentIds, DateOnly date, int? excludeBookingId = null)
@@ -126,14 +166,14 @@ internal sealed class BookingService(
     {
         var freed = await repo.RemoveTreatmentAsync(bookingId, customerId, treatmentId);
         if (freed is not null)
-            await InvalidateAndNotifyAsync(freed.LocationId, DateOnly.FromDateTime(freed.WorkDate));
+            _ = SyncAndNotifyAsync(freed.LocationId, DateOnly.FromDateTime(freed.WorkDate));
     }
 
     public async Task<DateTime> ScheduleTreatmentAsync(
         int bookingId, int customerId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         var (expiresAt, locationId) = await repo.ScheduleTreatmentAsync(bookingId, customerId, treatmentId, roomId, therapistId, start, end);
-        await InvalidateAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
+        _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
         return expiresAt;
     }
 
@@ -143,7 +183,7 @@ internal sealed class BookingService(
     {
         var affected = await repo.ConfirmAsync(bookingId, customerId);
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
-            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+            _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
         if (details is not null)
@@ -244,7 +284,7 @@ internal sealed class BookingService(
         }
 
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
-            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+            _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
             emailQueue.Enqueue(BuildCancellationEmail(details));
@@ -264,7 +304,7 @@ internal sealed class BookingService(
         }
 
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
-            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+            _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
             emailQueue.Enqueue(BuildCancellationEmail(details));
@@ -276,12 +316,39 @@ internal sealed class BookingService(
     {
         var affected = await repo.ExpireStaleHoldsAsync();
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
-            await InvalidateAndNotifyAsync(group.LocationId, group.WorkDate);
+            _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
     }
 
-    private async Task InvalidateAndNotifyAsync(int locationId, DateOnly date)
+    public async Task SyncAndNotifyAsync(int locationId, DateOnly date)
     {
         await cache.InvalidateAsync(locationId, date);
         sse.Publish(locationId, date, "slot-changed");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var catalogRepo = scope.ServiceProvider.GetRequiredService<CatalogRepository>();
+                var bookingService = scope.ServiceProvider.GetRequiredService<BookingService>();
+
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                var to = today.AddDays(90);
+
+                await bookingService.GetAvailableDatesAsync(locationId, today, to);
+
+                var treatments = await catalogRepo.GetTreatmentsAsync(locationId, null);
+                foreach (var t in treatments)
+                {
+                    await bookingService.GetAvailableSlotsAsync(locationId, [t.Id], date);
+                }
+            }
+#pragma warning disable CA1031
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Background Redis availability sync failed for location {LocationId}, date {Date}", locationId, date);
+            }
+#pragma warning restore CA1031
+        });
     }
 }
