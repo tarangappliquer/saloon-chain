@@ -90,12 +90,29 @@ function generateTimeSlots(startStr: string, endStr: string, stepMinutes = 15): 
   return slots;
 }
 
+function getStatusCardStyle(colorHex?: string | null) {
+  const normalized = colorHex?.trim();
+  const safeColor = normalized && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized) ? normalized : '#99D9EA';
+
+  const hex = safeColor.replace('#', '');
+  const expanded = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+  const r = Number.parseInt(expanded.slice(0, 2), 16);
+  const g = Number.parseInt(expanded.slice(2, 4), 16);
+  const b = Number.parseInt(expanded.slice(4, 6), 16);
+
+  return {
+    borderColor: safeColor,
+    backgroundColor: `rgba(${r}, ${g}, ${b}, 0.18)`,
+    color: safeColor,
+  } as const;
+}
 
 interface FlatTreatmentSlot {
   bookingId: number;
   customerName: string;
   customerEmail: string;
   status: string;
+  appointmentStatusColorHex?: string | null;
   treatmentName: string;
   therapistName: string | null;
   roomId: number | null;
@@ -177,6 +194,7 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
           customerName: b.customerName,
           customerEmail: b.customerEmail,
           status: b.status,
+          appointmentStatusColorHex: b.appointmentStatusColorHex,
           treatmentName: t.treatmentName,
           therapistName: t.therapistName,
           roomId: t.roomId ?? null,
@@ -766,7 +784,7 @@ function ScheduleGridView({
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs">
             <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className="h-2.5 w-2.5 rounded-full bg-gray-500" />
               Available Open Slot
             </span>
             <span className="flex items-center gap-1.5">
@@ -917,7 +935,8 @@ function ScheduleGridView({
                         {matchedTreatment ? (
                             /* FRESHA SKY-BLUE BOOKED APPOINTMENT CARD */
                             <div
-                              className="rounded-xl border border-sky-400/60 bg-[#99D9EA] dark:bg-sky-900/70 p-2.5 text-sky-950 dark:text-sky-100 shadow-2xs cursor-pointer hover:brightness-95 transition space-y-0.5"
+                              className="rounded-xl border p-2.5 shadow-2xs cursor-pointer hover:brightness-95 transition space-y-0.5"
+                              style={getStatusCardStyle(matchedTreatment.appointmentStatusColorHex)}
                               onClick={() => onOpenBookingDetail(matchedTreatment.bookingId)}
                               title={`Booking #${matchedTreatment.bookingId}: ${matchedTreatment.treatmentName} — ${matchedTreatment.customerName}`}
                             >
@@ -985,7 +1004,7 @@ function ScheduleGridView({
                           ) : isStaffed ? (
                             /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
                             <div
-                              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs cursor-pointer hover:bg-emerald-500/20 transition"
+                              className="rounded-lg border border-gray-500/30 bg-gray-500/10 p-2 space-y-1 shadow-2xs cursor-pointer hover:bg-gray-500/20 transition"
                               onClick={(e) => {
                                 setPopover({
                                   isOpen: true,
@@ -999,13 +1018,13 @@ function ScheduleGridView({
                                 <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                                   Available
                                 </span>
-                                <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-27.5" title={opening?.categoryName}>
+                                <span className="text-[10px] font-semibold text-gray-800 dark:text-gray-200 truncate max-w-27.5" title={opening?.categoryName}>
                                   {opening?.categoryName}
                                 </span>
                               </div>
                               <div className="text-[11px] font-medium text-foreground/90 flex items-center gap-1 pt-0.5">
                                 <span className="text-muted-foreground text-[10px] uppercase font-bold">Staff:</span>
-                                <span className="font-semibold text-emerald-700 dark:text-emerald-300 truncate">
+                                <span className="font-semibold text-gray-700 dark:text-gray-300 truncate">
                                   {activeTherapists.map((t) => t.therapistName).join(', ')}
                                 </span>
                               </div>
