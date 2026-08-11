@@ -24,9 +24,10 @@ export const routes = {
   myLocation: '/my-location',
   bookings: '/bookings',
   customers: '/customers',
-  pos: '/pos',
+  customerProfile: (id: Id) => `/customers/${id}`,
   scheduling: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
     withQuery('/scheduling', params),
+  calendar: '/calendar',
   catalog: {
     saloons: '/catalog/saloons',
     saloonUsers: (chainId?: Id | null) => withQuery('/catalog/saloons/users', { chainId }),

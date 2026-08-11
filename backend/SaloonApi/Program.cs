@@ -21,6 +21,8 @@ using SaloonApi.Modules.Payment.Endpoints;
 using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Modules.Profile.Endpoints;
 using SaloonApi.Modules.Profile.Infrastructure;
+using SaloonApi.Modules.Review.Endpoints;
+using SaloonApi.Modules.Review.Infrastructure;
 using SaloonApi.Modules.Scheduling.Endpoints;
 using SaloonApi.Modules.Scheduling.Infrastructure;
 using SaloonApi.Shared.Auth;
@@ -175,6 +177,7 @@ try
     builder.Services.AddScoped<BookingService>();
     builder.Services.AddScoped<SchedulingRepository>();
     builder.Services.AddScoped<ProfileRepository>();
+    builder.Services.AddScoped<ReviewRepository>();
     builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
     builder.Services.AddScoped<IPaymentGateway, CashPaymentGateway>();
     builder.Services.AddScoped<IPaymentGateway, InHousePaymentGateway>();
@@ -261,6 +264,7 @@ try
     app.MapAdminDashboardEndpoints();
     app.MapSchedulingEndpoints();
     app.MapProfileEndpoints();
+    app.MapReviewEndpoints();
 
     await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
 

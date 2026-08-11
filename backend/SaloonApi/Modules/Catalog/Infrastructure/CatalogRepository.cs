@@ -13,7 +13,8 @@ internal sealed record LocationDto(
 
 internal sealed record VenueSearchResultDto(
     int Id, int ChainId, string ChainName, string Name, string? Address,
-    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId);
+    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId,
+    decimal? AverageRating = null, int? ReviewCount = null);
 
 internal sealed record TreatmentDto(
     int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes);

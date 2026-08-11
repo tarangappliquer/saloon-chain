@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Star } from 'lucide-react';
 import { Badge, Button, Card, ConfirmDialog, LoadingFallback } from '@saloon/ui';
-import { ApiError, bookingApi } from '../api/client';
+import { ApiError, bookingApi, reviewApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
 import { routes } from '../routes';
@@ -25,18 +26,78 @@ function latestEnd(b: MyBooking): number {
   return ends.length ? Math.max(...ends) : -Infinity;
 }
 
+function ReviewForm({ bookingId, onSubmitted }: { bookingId: number; onSubmitted: () => void }) {
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (rating === 0) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await reviewApi.apiReviewsPost({ bookingId, rating, comment: comment.trim() || undefined });
+      onSubmitted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to submit review.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-accent/20 p-4 space-y-3">
+      <p className="text-xs font-semibold text-foreground">How was your visit?</p>
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            type="button"
+            onClick={() => setRating(star)}
+            onMouseEnter={() => setHoverRating(star)}
+            onMouseLeave={() => setHoverRating(0)}
+            className="cursor-pointer"
+            aria-label={`${star} star${star > 1 ? 's' : ''}`}
+          >
+            <Star
+              className={`h-6 w-6 transition-colors ${
+                star <= (hoverRating || rating) ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground'
+              }`}
+            />
+          </button>
+        ))}
+      </div>
+      <textarea
+        placeholder="Add a comment (optional)"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        rows={2}
+        className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
+      />
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Button size="sm" disabled={rating === 0 || submitting} onClick={submit}>
+        {submitting ? 'Submitting...' : 'Submit Review'}
+      </Button>
+    </div>
+  );
+}
+
 function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [justReviewed, setJustReviewed] = useState(false);
 
   const totalCost = b.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
 
   const startMs = earliestStart(b);
   const isWithin48h = startMs !== Infinity && startMs - Date.now() <= FORTY_EIGHT_HOURS_MS;
   const canCancel = b.status === 'Confirmed' && !isWithin48h;
+  const canReview = b.status === 'Confirmed' && isPast(b, Date.now()) && !b.hasReview && !justReviewed;
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -192,6 +253,10 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
                 </li>
               ))}
             </ul>
+
+            {canReview && (
+              <ReviewForm bookingId={b.id} onSubmitted={() => setJustReviewed(true)} />
+            )}
 
             {/* Cancellation Action Footer */}
             {canCancel && (

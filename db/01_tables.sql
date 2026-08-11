@@ -428,6 +428,78 @@ CREATE TABLE dbo.CustomerProfiles (
     UpdatedDate  DATETIME2 NULL
 );
 
+-- Many-to-many: which locations a customer actually belongs to. Bound automatically the moment a
+-- booking is confirmed there (sp_Booking_Confirm) or staff add a note/tag for them there (below) --
+-- staff never bind this by hand. This is the source of truth for "is this customer mine" scoping:
+-- replaces the old ad-hoc Bookings-JOIN-Locations EXISTS check in sp_Admin_SearchCustomers/
+-- sp_Admin_GetCustomers's CanEmulate column and the customer list's chain/location filtering.
+CREATE TABLE dbo.CustomerLocations (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    CustomerId   INT NOT NULL REFERENCES dbo.Users(Id),
+    LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE UNIQUE INDEX UX_CustomerLocations_CustomerId_LocationId ON dbo.CustomerLocations(CustomerId, LocationId) WHERE IsDelete = 0;
+
+-- Notes and tags are scoped to exactly one of ChainId (saloon-wide, set by SuperAdmin/Admin who
+-- have no single location) or LocationId (one location, set by Manager/Receptionist) -- never
+-- both, never neither. A customer's record at one saloon chain shouldn't leak private staff notes
+-- to an unrelated chain; a saloon-level note is visible at every location in that chain.
+CREATE TABLE dbo.CustomerNotes (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    CustomerId   INT NOT NULL REFERENCES dbo.Users(Id),
+    ChainId      INT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId   INT NULL REFERENCES dbo.Locations(Id),
+    Note         NVARCHAR(MAX) NOT NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL,
+    CONSTRAINT CK_CustomerNotes_ScopeExactlyOne CHECK (
+        (ChainId IS NOT NULL AND LocationId IS NULL) OR (ChainId IS NULL AND LocationId IS NOT NULL)
+    )
+);
+CREATE INDEX IX_CustomerNotes_CustomerId ON dbo.CustomerNotes(CustomerId) INCLUDE (ChainId, LocationId, CreatedDate) WHERE IsDelete = 0;
+
+CREATE TABLE dbo.CustomerTags (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    CustomerId   INT NOT NULL REFERENCES dbo.Users(Id),
+    ChainId      INT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId   INT NULL REFERENCES dbo.Locations(Id),
+    Tag          NVARCHAR(100) NOT NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL,
+    CONSTRAINT CK_CustomerTags_ScopeExactlyOne CHECK (
+        (ChainId IS NOT NULL AND LocationId IS NULL) OR (ChainId IS NULL AND LocationId IS NOT NULL)
+    )
+);
+CREATE INDEX IX_CustomerTags_CustomerId ON dbo.CustomerTags(CustomerId) INCLUDE (ChainId, LocationId) WHERE IsDelete = 0;
+
+-- One review per booking (a customer reviews the visit, not the treatment line), only ever
+-- writable once the booking is Confirmed and every treatment's EndTime has passed -- see
+-- sp_Review_Create for the exact eligibility check, re-derived server-side from the same
+-- Confirmed+EndTime<now logic MyBookingsPage already uses client-side to show the "past" tab.
+CREATE TABLE dbo.Reviews (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    BookingId    INT NOT NULL REFERENCES dbo.Bookings(Id),
+    CustomerId   INT NOT NULL REFERENCES dbo.Users(Id),
+    LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
+    Rating       TINYINT NOT NULL CHECK (Rating BETWEEN 1 AND 5),
+    Comment      NVARCHAR(1000) NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE UNIQUE INDEX UX_Reviews_BookingId ON dbo.Reviews(BookingId) WHERE IsDelete = 0;
+CREATE INDEX IX_Reviews_LocationId ON dbo.Reviews(LocationId) INCLUDE (Rating) WHERE IsDelete = 0;
+
 CREATE TABLE dbo.Payments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
     BookingId      INT NOT NULL REFERENCES dbo.Bookings(Id) ON DELETE CASCADE,

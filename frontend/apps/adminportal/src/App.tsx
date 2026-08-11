@@ -28,9 +28,10 @@ const StaffPage = lazy(() => import('./pages/staff/StaffPage').then((m) => ({ de
 const TherapistsPage = lazy(() => import('./pages/staff/TherapistsPage').then((m) => ({ default: m.TherapistsPage })));
 const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ default: m.RoomsPage })));
 const BookingsPage = lazy(() => import('./pages/bookings/BookingsPage').then((m) => ({ default: m.BookingsPage })));
-const PosPage = lazy(() => import('./pages/pos/PosPage').then((m) => ({ default: m.PosPage })));
 const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })));
+const ClientProfilePage = lazy(() => import('./pages/customers/ClientProfilePage').then((m) => ({ default: m.ClientProfilePage })));
 const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
+const AppointmentCalendarPage = lazy(() => import('./pages/calendar/AppointmentCalendarPage').then((m) => ({ default: m.AppointmentCalendarPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -188,6 +189,14 @@ function AppRoutes() {
               }
             />
             <Route
+              path={routes.calendar}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <AppointmentCalendarPage />
+                </RequireRole>
+              }
+            />
+            <Route
               path={routes.bookings}
               element={
                 <RequireRole roles={STAFF_ACCESS}>
@@ -196,18 +205,18 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.pos}
+              path={routes.customers}
               element={
                 <RequireRole roles={POS_ACCESS}>
-                  <PosPage />
+                  <CustomersPage />
                 </RequireRole>
               }
             />
             <Route
-              path={routes.customers}
+              path={routes.customerProfile(':id')}
               element={
-                <RequireRole roles={ADMIN_ACCESS}>
-                  <CustomersPage />
+                <RequireRole roles={POS_ACCESS}>
+                  <ClientProfilePage />
                 </RequireRole>
               }
             />

@@ -109,6 +109,7 @@ export interface MyBooking {
   paymentStatus?: string | null;
   isPaid?: boolean;
   treatments: MyBookingTreatment[];
+  hasReview?: boolean;
 }
 
 export interface Profile {

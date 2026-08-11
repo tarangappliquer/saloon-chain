@@ -157,6 +157,8 @@ export interface AdminBookingTreatment {
   endTime: string | null;
   slotCount: number;
   price: number;
+  treatmentId: number;
+  therapistId?: number | null;
 }
 
 export interface AdminBooking {

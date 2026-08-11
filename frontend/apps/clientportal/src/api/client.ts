@@ -1,5 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { AuthApi, BookingApi, CatalogApi, ConfigApi, Configuration, PaymentApi, ProfileApi } from '@saloon/api-client';
+import { AuthApi, BookingApi, CatalogApi, ConfigApi, Configuration, PaymentApi, ProfileApi, ReviewApi } from '@saloon/api-client';
 import { appConfig } from '../config';
 
 export const API_BASE: string = appConfig.apiBaseUrl;
@@ -135,5 +135,6 @@ export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance)
 export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
+export const reviewApi = new ReviewApi(configuration, API_BASE, axiosInstance);
 
 

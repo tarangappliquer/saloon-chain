@@ -629,6 +629,88 @@ BEGIN
 END
 GO
 
+-- Admin-side drag-to-reschedule on the appointment calendar: moves one treatment line of an
+-- already-Confirmed booking to a new room/therapist/time. sp_Booking_ScheduleTreatment can't be
+-- reused for this -- it hard-filters to Status = 'Draft' and stamps a 5-minute ExpiresAt hold,
+-- neither of which applies to a real, already-paid appointment being moved. Same conflict check and
+-- paired room-then-therapist applock ordering as sp_Booking_ScheduleTreatment (avoids the deadlock
+-- that ordering exists to prevent). No @CustomerId param -- caller identity/location-ownership is
+-- checked by the admin endpoint before this runs, same as sp_Booking_CancelAsAdmin.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_RescheduleConfirmed
+    @BookingId   INT,
+    @TreatmentId INT,
+    @RoomId      INT,
+    @TherapistId INT,
+    @StartTime   DATETIME2,
+    @EndTime     DATETIME2,
+    @UpdatedBy   INT = NULL,
+    @LocationId  INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @RoomLockKey NVARCHAR(100) = CONCAT('room_', @RoomId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
+    DECLARE @TherapistLockKey NVARCHAR(100) = CONCAT('therapist_', @TherapistId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
+    DECLARE @LockResult INT;
+
+    BEGIN TRANSACTION;
+
+    EXEC @LockResult = sp_getapplock @Resource = @RoomLockKey, @LockMode = 'Exclusive',
+                                      @LockOwner = 'Transaction', @LockTimeout = 5000;
+    IF @LockResult < 0
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50001, 'Could not acquire booking lock, try again.', 1;
+    END
+
+    EXEC @LockResult = sp_getapplock @Resource = @TherapistLockKey, @LockMode = 'Exclusive',
+                                      @LockOwner = 'Transaction', @LockTimeout = 5000;
+    IF @LockResult < 0
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50001, 'Could not acquire booking lock, try again.', 1;
+    END
+
+    SELECT TOP 1
+        @LocationId = b.LocationId
+    FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
+        AND b.IsDelete = 0 AND b.Status = 'Confirmed';
+
+    IF @LocationId IS NULL
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50008, 'Booking or treatment not found.', 1;
+    END
+
+    IF EXISTS (
+        SELECT 1
+    FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE (bt.RoomId = @RoomId OR bt.TherapistId = @TherapistId)
+        AND bt.IsDelete = 0 AND b.IsDelete = 0
+        AND NOT (bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId)
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+        AND bt.StartTime < @EndTime AND bt.EndTime > @StartTime
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50002, 'Slot no longer available.', 1;
+    END
+
+    UPDATE dbo.BookingTreatments
+    SET RoomId = @RoomId, TherapistId = @TherapistId, StartTime = @StartTime, EndTime = @EndTime,
+        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE BookingId = @BookingId AND TreatmentId = @TreatmentId AND IsDelete = 0;
+
+    UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy WHERE Id = @BookingId;
+
+    COMMIT TRANSACTION;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Delete
     @BookingId   INT,
     @CustomerId  INT = NULL,
@@ -695,6 +777,12 @@ BEGIN
     UPDATE dbo.Bookings
     SET Status = 'Confirmed', UpdatedBy = COALESCE(@UpdatedBy, @CustomerId), UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId;
+
+    -- A booking only ever binds the customer to the location once it's actually confirmed (Draft
+    -- never binds; Cancelled-after-confirm stays bound since this already ran at confirm time).
+    DECLARE @BoundCustomerId INT, @BoundLocationId INT, @BoundCreatedBy INT = COALESCE(@UpdatedBy, @CustomerId);
+    SELECT @BoundCustomerId = CustomerId, @BoundLocationId = LocationId FROM dbo.Bookings WHERE Id = @BookingId;
+    EXEC dbo.sp_CustomerLocation_Bind @CustomerId = @BoundCustomerId, @LocationId = @BoundLocationId, @CreatedBy = @BoundCreatedBy;
 
     UPDATE dbo.BookingTreatments
     SET ExpiresAt = NULL, UpdatedBy = COALESCE(@UpdatedBy, @CustomerId), UpdatedDate = SYSUTCDATETIME()
@@ -851,7 +939,8 @@ BEGIN
 
     -- NOLOCK: pure read, same reasoning as sp_Booking_GetById above.
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status, b.CreatedDate,
-        p.Provider AS PaymentProvider, p.Status AS PaymentStatus
+        p.Provider AS PaymentProvider, p.Status AS PaymentStatus,
+        CAST(CASE WHEN rv.Id IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS HasReview
     FROM dbo.Bookings b WITH (NOLOCK)
         JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
         LEFT JOIN (
@@ -859,6 +948,7 @@ BEGIN
             ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
         FROM dbo.Payments WITH (NOLOCK)
         ) p ON p.BookingId = b.Id AND p.rn = 1
+        LEFT JOIN dbo.Reviews rv WITH (NOLOCK) ON rv.BookingId = b.Id AND rv.IsDelete = 0
     WHERE b.CustomerId = @CustomerId
         AND (@ChainId IS NULL OR l.ChainId = @ChainId)
         AND (@LocationId IS NULL OR b.LocationId = @LocationId)
@@ -1887,17 +1977,19 @@ GO
 -- has no NOLOCK at all. Precomputing the chain's customer ids once (one set-based query) and
 -- joining that against Users, both under NOLOCK, removes the per-row lock surface entirely instead
 -- of just shrinking it.
+-- @LocationId scopes to one location (Manager/Receptionist); @ChainId scopes to every location in
+-- a chain (SuperAdmin/Admin); both NULL means unscoped (RootSuperAdmin). Backed by
+-- dbo.CustomerLocations (bound at booking-confirm/note/tag time -- see sp_CustomerLocation_Bind),
+-- not a live Bookings/Locations join, so this is a straight indexed lookup either way.
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_SearchCustomers
-    @Search NVARCHAR(200),
-    @ChainId INT = NULL
+    @Search     NVARCHAR(200),
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Same IF/ELSE split as sp_Admin_GetCustomers -- @ChainId IS NULL can't be proven false at
-    -- compile time inside a single CASE-based query, so it would still touch Bookings/Locations
-    -- per row for the common no-chain-scoping case otherwise.
-    IF @ChainId IS NULL
+    IF @ChainId IS NULL AND @LocationId IS NULL
     BEGIN
         SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone, CAST(1 AS BIT) AS CanEmulate
         FROM dbo.Users u WITH (NOLOCK)
@@ -1908,14 +2000,16 @@ BEGIN
     ELSE
     BEGIN
         SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone,
-            CASE WHEN cb.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
         FROM dbo.Users u WITH (NOLOCK)
             LEFT JOIN (
-                SELECT DISTINCT b.CustomerId
-                FROM dbo.Bookings b WITH (NOLOCK)
-                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
-                WHERE l.ChainId = @ChainId AND b.IsDelete = 0
-            ) cb ON cb.CustomerId = u.Id
+                SELECT DISTINCT c.CustomerId
+                FROM dbo.CustomerLocations c WITH (NOLOCK)
+                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = c.LocationId
+                WHERE c.IsDelete = 0
+                    AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+                    AND (@LocationId IS NULL OR c.LocationId = @LocationId)
+            ) cl ON cl.CustomerId = u.Id
         WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
             AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
         ORDER BY u.Name;
@@ -1931,6 +2025,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCustomers
     @Search      NVARCHAR(200) = NULL,
     @ChainId     INT = NULL,
+    @LocationId  INT = NULL,
     @PageSize    INT = 50,
     @CursorName  NVARCHAR(200) = NULL,
     @CursorId    INT = NULL
@@ -1940,10 +2035,11 @@ BEGIN
 
     -- Two code paths, not one query with "WHEN @ChainId IS NULL THEN 1" -- a runtime variable
     -- comparison can't be proven false at compile time, so a single plan still touches
-    -- Bookings/Locations per row even when @ChainId is NULL (the common RootSuperAdmin case, no
-    -- chain scoping at all). Splitting the CanEmulate join out entirely for that case removes the
-    -- touch, not just the row it would have matched.
-    IF @ChainId IS NULL
+    -- CustomerLocations/Locations per row even when unscoped (the common RootSuperAdmin case).
+    -- Splitting the CanEmulate join out entirely for that case removes the touch, not just the row
+    -- it would have matched. Backed by dbo.CustomerLocations (see sp_CustomerLocation_Bind), not a
+    -- live Bookings join.
+    IF @ChainId IS NULL AND @LocationId IS NULL
     BEGIN
         SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
             CAST(1 AS BIT) AS CanEmulate
@@ -1956,14 +2052,16 @@ BEGIN
     ELSE
     BEGIN
         SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
-            CASE WHEN cb.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
         FROM dbo.Users u WITH (NOLOCK)
             LEFT JOIN (
-                SELECT DISTINCT b.CustomerId
-                FROM dbo.Bookings b WITH (NOLOCK)
-                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
-                WHERE l.ChainId = @ChainId AND b.IsDelete = 0
-            ) cb ON cb.CustomerId = u.Id
+                SELECT DISTINCT c.CustomerId
+                FROM dbo.CustomerLocations c WITH (NOLOCK)
+                    JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = c.LocationId
+                WHERE c.IsDelete = 0
+                    AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+                    AND (@LocationId IS NULL OR c.LocationId = @LocationId)
+            ) cl ON cl.CustomerId = u.Id
         WHERE u.Role = 'Customer' AND u.IsDelete = 0
             AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
             AND (@CursorName IS NULL OR u.Name > @CursorName OR (u.Name = @CursorName AND u.Id > @CursorId))
@@ -2007,6 +2105,180 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50043, 'Customer not found.', 1;
+END
+GO
+
+-- Client CRM depth (Phase 2): single-scroll profile detail, a notes timeline, and tags. Each note/
+-- tag is scoped to exactly one of ChainId (saloon-wide -- set by SuperAdmin/Admin, who have no
+-- single location) or LocationId (one location -- set by Manager/Receptionist); see
+-- CK_CustomerNotes_ScopeExactlyOne / CK_CustomerTags_ScopeExactlyOne. @ChainId/@LocationId read
+-- filters below mirror sp_Booking_GetMine's convention (SuperAdmin/Admin pass @ChainId,
+-- Manager/Receptionist pass @LocationId, RootSuperAdmin passes neither) but additionally resolve a
+-- caller's @LocationId to its chain so a saloon-wide note is still visible at every one of that
+-- chain's locations, not just to chain-scoped callers.
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCustomerProfile
+    @CustomerId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate
+    FROM dbo.Users u WITH (NOLOCK)
+    WHERE u.Id = @CustomerId AND u.IsDelete = 0 AND u.Role = 'Customer';
+END
+GO
+
+-- Idempotent upsert -- called from sp_Booking_Confirm (a real visit) and sp_CustomerNote_Create/
+-- sp_CustomerTag_Add when they're location-scoped (staff engaged with this customer at this
+-- location without a booking yet, e.g. added them ahead of a walk-in). Never called directly by
+-- staff, and never called for a saloon-wide (ChainId-scoped) note/tag -- there's no single location
+-- to bind in that case.
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerLocation_Bind
+    @CustomerId INT,
+    @LocationId INT,
+    @CreatedBy  INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM dbo.CustomerLocations WHERE CustomerId = @CustomerId AND LocationId = @LocationId AND IsDelete = 0)
+        INSERT INTO dbo.CustomerLocations (CustomerId, LocationId, CreatedBy) VALUES (@CustomerId, @LocationId, @CreatedBy);
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerNote_Create
+    @CustomerId INT,
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL,
+    @Note       NVARCHAR(MAX),
+    @CreatedBy  INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF (CASE WHEN @ChainId IS NOT NULL THEN 1 ELSE 0 END) + (CASE WHEN @LocationId IS NOT NULL THEN 1 ELSE 0 END) <> 1
+        THROW 50048, 'A note must have exactly one of ChainId or LocationId.', 1;
+
+    IF @LocationId IS NOT NULL
+        EXEC dbo.sp_CustomerLocation_Bind @CustomerId = @CustomerId, @LocationId = @LocationId, @CreatedBy = @CreatedBy;
+
+    INSERT INTO dbo.CustomerNotes (CustomerId, ChainId, LocationId, Note, CreatedBy)
+    VALUES (@CustomerId, @ChainId, @LocationId, @Note, @CreatedBy);
+
+    SELECT CAST(SCOPE_IDENTITY() AS INT);
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerNote_GetForCustomer
+    @CustomerId INT,
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ResolvedChainId INT = @ChainId;
+    IF @LocationId IS NOT NULL AND @ResolvedChainId IS NULL
+        SELECT @ResolvedChainId = ChainId FROM dbo.Locations WHERE Id = @LocationId;
+
+    SELECT n.Id, n.Note, n.ChainId, sc.Name AS ChainName, n.LocationId, l.Name AS LocationName,
+        n.CreatedDate, creator.Name AS CreatedByName
+    FROM dbo.CustomerNotes n WITH (NOLOCK)
+        LEFT JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = n.LocationId
+        LEFT JOIN dbo.SaloonChains sc WITH (NOLOCK) ON sc.Id = COALESCE(n.ChainId, l.ChainId)
+        LEFT JOIN dbo.Users creator WITH (NOLOCK) ON creator.Id = n.CreatedBy
+    WHERE n.CustomerId = @CustomerId AND n.IsDelete = 0
+        AND (
+            @ResolvedChainId IS NULL -- RootSuperAdmin: unrestricted
+            OR n.ChainId = @ResolvedChainId -- saloon-wide note in caller's chain
+            OR (l.ChainId = @ResolvedChainId AND (@LocationId IS NULL OR n.LocationId = @LocationId))
+        )
+    ORDER BY n.CreatedDate DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerNote_Delete
+    @Id        INT,
+    @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.CustomerNotes
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50045, 'Note not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerTag_Add
+    @CustomerId INT,
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL,
+    @Tag        NVARCHAR(100),
+    @CreatedBy  INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF (CASE WHEN @ChainId IS NOT NULL THEN 1 ELSE 0 END) + (CASE WHEN @LocationId IS NOT NULL THEN 1 ELSE 0 END) <> 1
+        THROW 50048, 'A tag must have exactly one of ChainId or LocationId.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.CustomerTags
+        WHERE CustomerId = @CustomerId AND Tag = @Tag AND IsDelete = 0
+            AND ((@ChainId IS NOT NULL AND ChainId = @ChainId) OR (@LocationId IS NOT NULL AND LocationId = @LocationId))
+    )
+        THROW 50046, 'That tag already exists for this customer at this scope.', 1;
+
+    IF @LocationId IS NOT NULL
+        EXEC dbo.sp_CustomerLocation_Bind @CustomerId = @CustomerId, @LocationId = @LocationId, @CreatedBy = @CreatedBy;
+
+    INSERT INTO dbo.CustomerTags (CustomerId, ChainId, LocationId, Tag, CreatedBy)
+    VALUES (@CustomerId, @ChainId, @LocationId, @Tag, @CreatedBy);
+
+    SELECT CAST(SCOPE_IDENTITY() AS INT);
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerTag_GetForCustomer
+    @CustomerId INT,
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ResolvedChainId INT = @ChainId;
+    IF @LocationId IS NOT NULL AND @ResolvedChainId IS NULL
+        SELECT @ResolvedChainId = ChainId FROM dbo.Locations WHERE Id = @LocationId;
+
+    SELECT t.Id, t.Tag, t.ChainId, sc.Name AS ChainName, t.LocationId, l.Name AS LocationName
+    FROM dbo.CustomerTags t WITH (NOLOCK)
+        LEFT JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = t.LocationId
+        LEFT JOIN dbo.SaloonChains sc WITH (NOLOCK) ON sc.Id = COALESCE(t.ChainId, l.ChainId)
+    WHERE t.CustomerId = @CustomerId AND t.IsDelete = 0
+        AND (
+            @ResolvedChainId IS NULL
+            OR t.ChainId = @ResolvedChainId
+            OR (l.ChainId = @ResolvedChainId AND (@LocationId IS NULL OR t.LocationId = @LocationId))
+        )
+    ORDER BY t.Tag;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_CustomerTag_Delete
+    @Id        INT,
+    @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.CustomerTags
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50047, 'Tag not found.', 1;
 END
 GO
 
@@ -2554,11 +2826,17 @@ BEGIN
 
     SELECT DISTINCT
         l.Id, l.ChainId, c.Name AS ChainName, l.Name, l.Address,
-        l.OpenTime, l.CloseTime, l.WorkingDaysMask, l.TimeZoneId
+        l.OpenTime, l.CloseTime, l.WorkingDaysMask, l.TimeZoneId,
+        r.AverageRating, r.ReviewCount
     FROM dbo.Locations l
         JOIN dbo.SaloonChains c ON c.Id = l.ChainId
         LEFT JOIN dbo.Treatments t ON t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
         LEFT JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId AND tc.IsDelete = 0 AND tc.IsActive = 1
+        LEFT JOIN (
+            SELECT LocationId, AVG(CAST(Rating AS DECIMAL(3,2))) AS AverageRating, COUNT(*) AS ReviewCount
+            FROM dbo.Reviews WHERE IsDelete = 0
+            GROUP BY LocationId
+        ) r ON r.LocationId = l.Id
     WHERE l.IsDelete = 0 AND l.IsActive = 1 AND c.IsDelete = 0 AND c.IsActive = 1
         AND (
             @Search IS NULL OR TRIM(@Search) = '' OR
@@ -2570,6 +2848,40 @@ BEGIN
         )
     ORDER BY l.Name;
 END;
+GO
+
+-- One review per booking -- eligibility (Confirmed, every treatment's EndTime already passed) is
+-- re-derived here, not trusted from the client, even though MyBookingsPage's "past" tab already
+-- filters the same way (isPast in MyBookingsPage.tsx) before ever showing the "leave a review" CTA.
+CREATE OR ALTER PROCEDURE dbo.sp_Review_Create
+    @BookingId  INT,
+    @CustomerId INT,
+    @Rating     TINYINT,
+    @Comment    NVARCHAR(1000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @LocationId INT;
+    SELECT @LocationId = b.LocationId
+    FROM dbo.Bookings b
+    WHERE b.Id = @BookingId AND b.CustomerId = @CustomerId AND b.Status = 'Confirmed' AND b.IsDelete = 0
+        AND NOT EXISTS (
+            SELECT 1 FROM dbo.BookingTreatments bt
+            WHERE bt.BookingId = b.Id AND bt.IsDelete = 0 AND (bt.EndTime IS NULL OR bt.EndTime > SYSUTCDATETIME())
+        );
+
+    IF @LocationId IS NULL
+        THROW 50050, 'This booking is not eligible for a review yet.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.Reviews WHERE BookingId = @BookingId AND IsDelete = 0)
+        THROW 50051, 'This booking has already been reviewed.', 1;
+
+    INSERT INTO dbo.Reviews (BookingId, CustomerId, LocationId, Rating, Comment)
+    VALUES (@BookingId, @CustomerId, @LocationId, @Rating, @Comment);
+
+    SELECT CAST(SCOPE_IDENTITY() AS INT);
+END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetDashboardStats

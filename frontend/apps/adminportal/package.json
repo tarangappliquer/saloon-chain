@@ -13,6 +13,8 @@
     "e2e:open": "node ../../scripts/run-e2e.cjs --url http://localhost:58562 --exec 'cypress open'"
   },
   "dependencies": {
+    "@dnd-kit/helpers": "^0.5.0",
+    "@dnd-kit/react": "^0.5.0",
     "@saloon/api-client": "workspace:*",
     "@saloon/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",

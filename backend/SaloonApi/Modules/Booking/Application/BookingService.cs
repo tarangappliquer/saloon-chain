@@ -181,6 +181,14 @@ internal sealed class BookingService(
         return expiresAt;
     }
 
+    // Admin calendar drag-to-reschedule -- moves a Confirmed booking's treatment, not a Draft hold.
+    // See sp_Booking_RescheduleConfirmed for why this can't reuse ScheduleTreatmentAsync above.
+    public async Task RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
+    {
+        var locationId = await repo.RescheduleConfirmedAsync(bookingId, treatmentId, roomId, therapistId, start, end);
+        _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
+    }
+
     public Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId) => repo.GetByIdAsync(bookingId, customerId);
 
     public async Task ConfirmAsync(int bookingId, int customerId)

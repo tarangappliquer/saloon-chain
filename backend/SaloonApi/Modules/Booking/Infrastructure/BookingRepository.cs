@@ -39,7 +39,9 @@ internal sealed record BookingLocationRow(int LocationId, int RoomId, DateTime W
 
 internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
 
-internal sealed record MyBookingHeaderRow(int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider = null, string? PaymentStatus = null);
+internal sealed record MyBookingHeaderRow(
+    int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate,
+    string? PaymentProvider = null, string? PaymentStatus = null, bool HasReview = false);
 
 // One treatment line of a booking, scheduled or not (schedule fields null until picked). Used both
 // for the in-progress draft (GetById, powers refresh-restore) and directly as the API response shape.
@@ -57,7 +59,9 @@ internal sealed record MyBookingTreatmentRow(
 internal sealed record MyBookingTreatmentDto(
     string TreatmentName, string? TherapistName, DateTime? StartTime, DateTime? EndTime, short SlotCount, decimal Price);
 
-internal sealed record MyBookingDto(int Id, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider, string? PaymentStatus, bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments);
+internal sealed record MyBookingDto(
+    int Id, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider, string? PaymentStatus,
+    bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments, bool HasReview = false);
 
 internal sealed record AdminBookingHeaderRow(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status);
@@ -68,7 +72,7 @@ internal sealed record AdminBookingTreatmentRow(
 
 internal sealed record AdminBookingTreatmentDto(
     int? RoomId, string TreatmentName, string? RoomName, string? TherapistName, DateTime? StartTime, DateTime? EndTime,
-    short SlotCount, decimal Price);
+    short SlotCount, decimal Price, int TreatmentId = 0, int? TherapistId = null);
 
 internal sealed record AdminBookingDto(
     int Id, string LocationName, string CustomerName, string CustomerEmail, string Status,
@@ -208,6 +212,23 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return (DateTime.SpecifyKind(p.Get<DateTime>("@ExpiresAt"), DateTimeKind.Utc), p.Get<int>("@LocationId"));
     }
 
+    public async Task<int> RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
+    {
+        using var db = factory.Create();
+        var p = new DynamicParameters();
+        p.Add("@BookingId", bookingId);
+        p.Add("@TreatmentId", treatmentId);
+        p.Add("@RoomId", roomId);
+        p.Add("@TherapistId", therapistId);
+        p.Add("@StartTime", start);
+        p.Add("@EndTime", end);
+        p.Add("@UpdatedBy", currentUser.UserId);
+        p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+
+        await db.ExecuteSpAsync("dbo.sp_Booking_RescheduleConfirmed", p);
+        return p.Get<int>("@LocationId");
+    }
+
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();
@@ -272,7 +293,8 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
             treatments.Where(t => t.BookingId == b.Id)
                       .OrderBy(t => t.SequenceOrder)
                       .Select(t => new MyBookingTreatmentDto(t.TreatmentName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))
-                      .ToList())).ToList();
+                      .ToList(),
+            b.HasReview)).ToList();
     }
 
     public async Task<IReadOnlyList<AdminBookingDto>> GetForLocationAsync(int locationId, DateOnly date)
@@ -291,7 +313,9 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
             b.Id, b.LocationName, b.CustomerName, b.CustomerEmail, b.Status,
             treatments.Where(t => t.BookingId == b.Id)
                       .OrderBy(t => t.SequenceOrder)
-                      .Select(t => new AdminBookingTreatmentDto(t.RoomId, t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))
+                      .Select(t => new AdminBookingTreatmentDto(
+                          t.RoomId, t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price,
+                          t.TreatmentId, t.TherapistId))
                       .ToList())).ToList();
     }
 

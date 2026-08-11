@@ -24,6 +24,14 @@ internal sealed record AdminCustomerDto(int Id, string Name, string Email, strin
 internal sealed record AdminCustomersPageDto(
     IReadOnlyList<AdminCustomerDto> Items, string? NextCursorName, int? NextCursorId, bool HasMore);
 
+internal sealed record CustomerProfileDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate);
+
+internal sealed record CustomerNoteDto(
+    int Id, string Note, int? ChainId, string? ChainName, int? LocationId, string? LocationName,
+    DateTime CreatedDate, string? CreatedByName);
+
+internal sealed record CustomerTagDto(int Id, string Tag, int? ChainId, string? ChainName, int? LocationId, string? LocationName);
+
 internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
     public async Task<int> CreateAsync(
@@ -71,21 +79,22 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         return row is null ? null : ToRecord(row);
     }
 
-    public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null)
+    public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId });
+        var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId, LocationId = locationId });
         return rows.ToList();
     }
 
     public async Task<AdminCustomersPageDto> GetCustomersForAdminAsync(
-        string? search, int? chainId = null, int pageSize = 50, string? cursorName = null, int? cursorId = null)
+        string? search, int? chainId = null, int? locationId = null, int pageSize = 50, string? cursorName = null, int? cursorId = null)
     {
         using var db = factory.Create();
         var rows = (await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new
         {
             Search = search,
             ChainId = chainId,
+            LocationId = locationId,
             PageSize = pageSize,
             CursorName = cursorName,
             CursorId = cursorId
@@ -93,6 +102,54 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
 
         var last = rows.Count > 0 ? rows[^1] : null;
         return new AdminCustomersPageDto(rows, last?.Name, last?.Id, rows.Count == pageSize);
+    }
+
+    public async Task<CustomerProfileDto?> GetCustomerProfileAsync(int customerId)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<CustomerProfileDto>("dbo.sp_Admin_GetCustomerProfile", new { CustomerId = customerId });
+    }
+
+    public async Task<IReadOnlyList<CustomerNoteDto>> GetCustomerNotesAsync(int customerId, int? chainId, int? locationId)
+    {
+        using var db = factory.Create();
+        var rows = await db.QuerySpAsync<CustomerNoteDto>("dbo.sp_CustomerNote_GetForCustomer",
+            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        return rows.ToList();
+    }
+
+    public async Task<int> AddCustomerNoteAsync(int customerId, int? chainId, int? locationId, string note)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int>("dbo.sp_CustomerNote_Create",
+            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Note = note, CreatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task DeleteCustomerNoteAsync(int noteId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_CustomerNote_Delete", new { Id = noteId, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task<IReadOnlyList<CustomerTagDto>> GetCustomerTagsAsync(int customerId, int? chainId, int? locationId)
+    {
+        using var db = factory.Create();
+        var rows = await db.QuerySpAsync<CustomerTagDto>("dbo.sp_CustomerTag_GetForCustomer",
+            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        return rows.ToList();
+    }
+
+    public async Task<int> AddCustomerTagAsync(int customerId, int? chainId, int? locationId, string tag)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int>("dbo.sp_CustomerTag_Add",
+            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Tag = tag, CreatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task DeleteCustomerTagAsync(int tagId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_CustomerTag_Delete", new { Id = tagId, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)

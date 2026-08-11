@@ -1,6 +1,8 @@
+using FluentValidation;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Shared.Auth;
+using SaloonApi.Shared.Validation;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
 
@@ -43,5 +45,35 @@ internal static class AdminBookingEndpoints
           .ProducesProblem(StatusCodes.Status401Unauthorized)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Cancel a customer's booking on their behalf, process refund, send email and free its slot.");
+
+        // Drag-to-reschedule on the appointment calendar. Same Manager location-scoping as cancel
+        // above -- sp_Booking_RescheduleConfirmed has no caller-scoping of its own either.
+        group.MapPut("/{id:int}/treatments/{treatmentId:int}/reschedule", async (
+            int id, int treatmentId, RescheduleTreatmentRequest req, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            await bookingService.RescheduleConfirmedAsync(id, treatmentId, req.RoomId, req.TherapistId, req.StartTime, req.EndTime);
+            return Results.NoContent();
+        }).RequireAuthorization("AdminAccess")
+          .WithValidation<RescheduleTreatmentRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Move a Confirmed booking's treatment to a new room/therapist/time.");
+    }
+}
+
+internal sealed record RescheduleTreatmentRequest(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime);
+
+internal sealed class RescheduleTreatmentRequestValidator : AbstractValidator<RescheduleTreatmentRequest>
+{
+    public RescheduleTreatmentRequestValidator()
+    {
+        RuleFor(x => x.RoomId).GreaterThan(0);
+        RuleFor(x => x.TherapistId).GreaterThan(0);
+        RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
     }
 }

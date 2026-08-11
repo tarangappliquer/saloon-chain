@@ -7,7 +7,7 @@ import { useAuth } from '../features/auth/AuthContext';
 
 interface VenueCardData extends Location {
   chainName: string;
-  rating: number;
+  rating: number | null;
   reviewCount: number;
   imageUrl: string;
   categories: string[];
@@ -37,7 +37,9 @@ export function ExplorePage() {
       setLoading(true);
       try {
         const searchRes = await catalogApi.apiCatalogSearchGet(searchQuery.trim() || undefined);
-        let searchResults = searchRes.data as unknown as Array<Location & { chainName: string }>;
+        let searchResults = searchRes.data as unknown as Array<
+          Location & { chainName: string; averageRating: number | null; reviewCount: number | null }
+        >;
 
         // Emulated staff can only ever book at their own scope (enforced server-side too, in
         // BookingEndpoints) -- Manager/Receptionist see just their one location, SuperAdmin/Admin
@@ -78,8 +80,8 @@ export function ExplorePage() {
             return {
               ...loc,
               chainName: loc.chainName || 'Shoppey Saloon Chain',
-              rating: 4.8 + (idx % 3) * 0.1,
-              reviewCount: 45 + (loc.id * 19) % 150,
+              rating: loc.averageRating,
+              reviewCount: loc.reviewCount ?? 0,
               imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
               categories: locationCategories,
               treatmentNames: treatmentNames,
@@ -255,11 +257,13 @@ export function ExplorePage() {
                     decoding="async"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
-                  <div className="absolute top-3 right-3 rounded-full bg-card/90 px-2.5 py-1 text-xs font-bold text-foreground backdrop-blur-md flex items-center gap-1 shadow-sm">
-                    <span className="text-amber-500">★</span>
-                    <span>{venue.rating.toFixed(1)}</span>
-                    <span className="text-muted-foreground text-[10px]">({venue.reviewCount})</span>
-                  </div>
+                  {venue.rating !== null && (
+                    <div className="absolute top-3 right-3 rounded-full bg-card/90 px-2.5 py-1 text-xs font-bold text-foreground backdrop-blur-md flex items-center gap-1 shadow-sm">
+                      <span className="text-amber-500">★</span>
+                      <span>{venue.rating.toFixed(1)}</span>
+                      <span className="text-muted-foreground text-[10px]">({venue.reviewCount})</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Details Body */}
