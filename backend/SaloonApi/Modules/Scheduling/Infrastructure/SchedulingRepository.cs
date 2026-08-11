@@ -56,6 +56,20 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         return p.Get<int>("@Id");
     }
 
+    public async Task<bool> HasShiftOverlapAsync(int roomId, string shiftType, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, int excludeTherapistId)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<bool>("dbo.sp_Scheduling_HasShiftOverlap", new
+        {
+            RoomId = roomId,
+            ShiftType = shiftType,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime,
+            ExcludeTherapistId = excludeTherapistId
+        });
+    }
+
     public async Task RemoveTherapistShiftAsync(int id)
     {
         using var db = factory.Create();

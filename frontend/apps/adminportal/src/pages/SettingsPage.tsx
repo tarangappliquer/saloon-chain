@@ -581,14 +581,22 @@ export function SettingsPage() {
                 <p className="font-bold text-foreground text-sm">USD ($)</p>
               </div>
             </div>
-            {isRootOrSuperAdmin && (
-              <div className="pt-4 border-t border-border/50">
+            <div className="pt-4 border-t border-border/50 flex flex-wrap gap-3">
+              {isRootOrSuperAdmin && (
                 <Button variant="outline" size="sm" onClick={() => navigate(routes.catalog.saloons)}>
                   <Store className="h-3.5 w-3.5 mr-1" />
                   Manage Saloon Chains
                 </Button>
-              </div>
-            )}
+              )}
+              <Button variant="outline" size="sm" onClick={() => navigate(routes.blockTypes)}>
+                <Clock className="h-3.5 w-3.5 mr-1" />
+                Manage Block Types
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => navigate(routes.appointmentStatuses)}>
+                <SettingsIcon className="h-3.5 w-3.5 mr-1" />
+                Manage Appointment Statuses
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

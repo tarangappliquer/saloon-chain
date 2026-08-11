@@ -35,6 +35,8 @@ const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage').then(
 const PayrollPage = lazy(() => import('./pages/payroll/PayrollPage').then((m) => ({ default: m.PayrollPage })));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const BlockTypesPage = lazy(() => import('./pages/settings/BlockTypesPage').then((m) => ({ default: m.BlockTypesPage })));
+const AppointmentStatusesPage = lazy(() => import('./pages/settings/AppointmentStatusesPage').then((m) => ({ default: m.AppointmentStatusesPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -220,6 +222,22 @@ function AppRoutes() {
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <SettingsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.blockTypes}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <BlockTypesPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.appointmentStatuses}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <AppointmentStatusesPage />
                 </RequireRole>
               }
             />

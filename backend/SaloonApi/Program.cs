@@ -271,6 +271,8 @@ try
     app.MapAdminBookingEndpoints();
     app.MapAdminCustomersEndpoints();
     app.MapAdminBlockTypesEndpoints();
+    app.MapAdminAppointmentStatusesEndpoints();
+    app.MapAdminCancelReasonsEndpoints();
     app.MapAdminDashboardEndpoints();
     app.MapSchedulingEndpoints();
     app.MapProfileEndpoints();

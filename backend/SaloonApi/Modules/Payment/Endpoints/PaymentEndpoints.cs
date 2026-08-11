@@ -1,4 +1,6 @@
 using FluentValidation;
+using SaloonApi.Modules.Booking.Endpoints;
+using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Validation;
@@ -11,17 +13,28 @@ internal static class PaymentEndpoints
     {
         var group = app.MapGroup("/api/payments").WithTags("Payment");
 
-        group.MapPost("/create-intent", async (CreateIntentEndpointRequest req, ICurrentUser currentUser, PaymentService svc, CancellationToken ct) =>
+        group.MapPost("/create-intent", async (
+            CreateIntentEndpointRequest req, ICurrentUser currentUser, BookingRepository bookingRepo, PaymentService svc, CancellationToken ct) =>
         {
             if (!Enum.TryParse<PaymentProvider>(req.Provider, true, out var provider))
             {
                 return Results.Problem($"Invalid payment provider '{req.Provider}'.", statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var userId = currentUser.RequireUserId();
+            var customerId = currentUser.RequireUserId();
+
+            // Front-desk collecting payment for a walk-in: same staff-on-behalf-of-customer guard as
+            // the booking schedule/confirm endpoints (BookingEndpoints.AuthorizeActingOnBookingAsync).
+            if (req.CustomerId is { } targetCustomerId)
+            {
+                var error = await BookingEndpoints.AuthorizeActingOnBookingAsync(req.BookingId, currentUser, bookingRepo);
+                if (error is not null) return error;
+                customerId = targetCustomerId;
+            }
+
             var response = await svc.CreatePaymentIntentAsync(
                 bookingId: req.BookingId,
-                customerId: userId,
+                customerId: customerId,
                 provider: provider,
                 paymentMethod: req.PaymentMethod ?? "card",
                 currency: req.Currency ?? "USD",
@@ -35,6 +48,7 @@ internal static class PaymentEndpoints
           .WithValidation<CreateIntentEndpointRequest>()
           .Produces<CreatePaymentResponse>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Create a payment intent for a booking (Stripe, Cash, or InHouse terminal).");
 
         group.MapPost("/confirm-manual", async (ConfirmManualEndpointRequest req, ICurrentUser currentUser, PaymentService svc, CancellationToken ct) =>
@@ -93,7 +107,8 @@ internal sealed record CreateIntentEndpointRequest(
     string? PaymentMethod = "card",
     string? Currency = "USD",
     decimal? Amount = null,
-    decimal? TipAmount = null
+    decimal? TipAmount = null,
+    int? CustomerId = null
 );
 
 internal sealed record ConfirmManualEndpointRequest(

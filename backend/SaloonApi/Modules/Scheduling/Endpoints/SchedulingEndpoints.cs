@@ -38,6 +38,9 @@ internal static class SchedulingEndpoints
             if (!rooms.Any(r => r.Id == req.RoomId))
                 return Results.Problem("Room does not belong to this location.", statusCode: StatusCodes.Status400BadRequest);
 
+            if (await repo.HasShiftOverlapAsync(req.RoomId, req.ShiftType, req.WorkDate, req.StartTime, req.EndTime, req.TherapistId))
+                return Results.Problem("Room already has another therapist assigned during part of that time.", statusCode: StatusCodes.Status400BadRequest);
+
             var id = await repo.AssignTherapistShiftAsync(
                 req.LocationId, req.TherapistId, req.RoomId, req.ShiftType, req.WorkDate, req.StartTime, req.EndTime);
             await bookingSvc.SyncAndNotifyAsync(req.LocationId, req.WorkDate);

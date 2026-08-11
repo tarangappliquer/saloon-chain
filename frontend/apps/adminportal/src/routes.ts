@@ -32,6 +32,7 @@ export const routes = {
   reports: '/reports',
   settings: '/settings',
   blockTypes: '/settings/block-types',
+  appointmentStatuses: '/settings/appointment-statuses',
   catalog: {
     saloons: '/catalog/saloons',
     saloonUsers: (chainId?: Id | null) => withQuery('/catalog/saloons/users', { chainId }),

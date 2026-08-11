@@ -332,11 +332,11 @@ internal sealed class BookingService(
         }
     }
 
-    public async Task CancelAsAdminAsync(int bookingId)
+    public async Task CancelAsAdminAsync(int bookingId, int? cancelReasonId = null)
     {
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
 
-        var affected = await repo.CancelAsAdminAsync(bookingId);
+        var affected = await repo.CancelAsAdminAsync(bookingId, cancelReasonId);
 
         await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled by admin");
 

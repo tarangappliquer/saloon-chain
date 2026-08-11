@@ -215,14 +215,16 @@ internal static class BookingEndpoints
           .WithDescription("Server-sent events stream: notifies subscribers when a location/date's slots change.");
     }
 
-    private static bool CanActOnBehalfOfCustomer(ICurrentUser currentUser) =>
+    // internal, not private: PaymentEndpoints reuses these for the same staff-on-behalf-of-customer
+    // check when creating a payment intent for a walk-in booking.
+    internal static bool CanActOnBehalfOfCustomer(ICurrentUser currentUser) =>
         currentUser.IsInRole(UserRole.Receptionist, UserRole.Manager, UserRole.Admin, UserRole.SuperAdmin, UserRole.RootSuperAdmin);
 
     // Shared guard for every booking-scoped endpoint (add/schedule/confirm) once a staff-supplied
     // CustomerId override is present: role check plus, for location-scoped roles, an ownership
     // check against the booking's actual location (not the caller's own, which the request body
     // may not even carry past the draft step).
-    private static async Task<IResult?> AuthorizeActingOnBookingAsync(int bookingId, ICurrentUser currentUser, BookingRepository repo)
+    internal static async Task<IResult?> AuthorizeActingOnBookingAsync(int bookingId, ICurrentUser currentUser, BookingRepository repo)
     {
         if (!CanActOnBehalfOfCustomer(currentUser))
             return Results.Problem("Not authorized to modify this booking.", statusCode: StatusCodes.Status403Forbidden);

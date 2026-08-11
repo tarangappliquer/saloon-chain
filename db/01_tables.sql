@@ -292,17 +292,18 @@ CREATE TABLE dbo.ShiftAssignments (
     UpdatedDate  DATETIME2 NULL
 );
 CREATE INDEX IX_ShiftAssignments_Location_Date ON dbo.ShiftAssignments(LocationId, WorkDate);
--- Backs sp_Scheduling_AssignTherapistShift's MERGE upsert -- filtered so a soft-deleted (removed)
--- assignment doesn't block re-assigning the same therapist to the same shift/date later. RoomId is
--- NOT part of the key: a therapist works one room per shift, so re-assigning them to a different
--- room moves the existing row (updates RoomId) instead of creating a second, overlapping one.
-CREATE UNIQUE INDEX UQ_ShiftAssignments_Location_Therapist_Shift_Date
-    ON dbo.ShiftAssignments(LocationId, TherapistId, ShiftType, WorkDate) WHERE IsDelete = 0;
--- A room holds one therapist per shift -- sp_Scheduling_AssignTherapistShift bumps (soft-deletes)
--- whoever else is in the room before assigning the new therapist, so this is a backstop against a
--- concurrent double-assign, not the primary enforcement. RoomId IS NOT NULL excludes legacy rows.
-CREATE UNIQUE INDEX UQ_ShiftAssignments_Location_Room_Shift_Date
-    ON dbo.ShiftAssignments(LocationId, RoomId, ShiftType, WorkDate) WHERE IsDelete = 0 AND RoomId IS NOT NULL;
+-- A therapist can cover more than one time window in a shift (e.g. 9-2 in Room A, then 3-6 back in
+-- Room A once a proxy has covered 2-3 elsewhere), so StartTime is part of the key instead of RoomId:
+-- re-submitting the same therapist/shift/date/start updates that window in place (room, end time),
+-- while a different start time is a second, separate window for the same therapist. Filtered so a
+-- soft-deleted (removed) assignment doesn't block reusing the same window later.
+CREATE UNIQUE INDEX UQ_ShiftAssignments_Therapist_Shift_Date_Start
+    ON dbo.ShiftAssignments(LocationId, TherapistId, ShiftType, WorkDate, StartTime) WHERE IsDelete = 0;
+-- A room can now hold multiple therapists across a shift (primary + a proxy covering part of it),
+-- so there is no per-room uniqueness constraint here -- sp_Scheduling_AssignTherapistShift's caller
+-- rejects a new assignment whose time range overlaps another therapist's existing one in that room
+-- (see SchedulingRepository.HasShiftOverlapAsync), the same app-layer pattern already used for
+-- blocked-slot overlap (sp_Scheduling_HasBlockOverlap) instead of a DB constraint.
 
 CREATE TABLE dbo.RoomCategoryAssignments (
     Id                   INT IDENTITY(1,1) PRIMARY KEY,
@@ -370,6 +371,65 @@ CREATE TABLE dbo.BlockedSlots (
 );
 CREATE INDEX IX_BlockedSlots_Room_Date ON dbo.BlockedSlots(RoomId, WorkDate) WHERE IsDelete = 0;
 
+-- Saloon-defined progress labels for a Confirmed booking (Arrived, Started, Complete, etc) --
+-- independent of Bookings.Status below, which is the fixed booking lifecycle (Draft/Confirmed/
+-- Cancelled/NoShow). Same Chain/Location scoping and colour-badge shape as dbo.BlockTypes above.
+CREATE TABLE dbo.AppointmentStatuses (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    Name         NVARCHAR(50) NOT NULL,
+    ChainId      INT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId   INT NULL REFERENCES dbo.Locations(Id),
+    ColorHex     NVARCHAR(10) NOT NULL DEFAULT '#3B82F6',
+    SortOrder    SMALLINT NOT NULL DEFAULT 0,
+    -- The one seeded global 'Complete' row below -- fixed terminal status, always sorts last
+    -- regardless of SortOrder (sp_Admin_GetAppointmentStatuses orders IsSystem last) and can't be
+    -- edited or deleted (sp_Admin_UpdateAppointmentStatus/sp_Admin_DeleteAppointmentStatus reject it).
+    IsSystem     BIT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL,
+    CONSTRAINT CK_AppointmentStatuses_Scope CHECK (
+        (ChainId IS NULL AND LocationId IS NULL) OR
+        (ChainId IS NOT NULL AND LocationId IS NULL) OR
+        (LocationId IS NOT NULL)
+    )
+);
+CREATE INDEX IX_AppointmentStatuses_Chain ON dbo.AppointmentStatuses(ChainId) WHERE IsDelete = 0;
+CREATE INDEX IX_AppointmentStatuses_Location ON dbo.AppointmentStatuses(LocationId) WHERE IsDelete = 0;
+
+-- Two global rows (ChainId/LocationId both NULL) are visible to every saloon via the same
+-- global-default clause sp_Admin_GetAppointmentStatuses already uses for BlockTypes. SortOrder at
+-- the SMALLINT extremes pins Arrived first and Complete last -- sp_Admin_GetAppointmentStatuses
+-- orders by plain SortOrder, so every custom status a saloon adds (SortOrder starting at 0) always
+-- lands between them without any IsSystem-aware sort logic.
+INSERT INTO dbo.AppointmentStatuses (Name, ChainId, LocationId, ColorHex, SortOrder, IsSystem)
+VALUES
+    ('Arrived', NULL, NULL, '#8B5CF6', -32768, 1),
+    ('Complete', NULL, NULL, '#10B981', 32767, 1);
+
+-- Master lookup of cancellation reasons, offered when staff cancel a booking (sp_Booking_CancelAsAdmin).
+-- Global only, no chain/location scoping -- unlike BlockTypes/AppointmentStatuses, this is a fixed
+-- reference list, not something a saloon customizes.
+CREATE TABLE dbo.CancelReasons (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    Name         NVARCHAR(200) NOT NULL,
+    SortOrder    SMALLINT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+INSERT INTO dbo.CancelReasons (Name, SortOrder) VALUES
+    ('No Reason Provided', 0),
+    ('Duplicate appointment', 1),
+    ('Appointment made by mistake', 2),
+    ('Client not available', 3);
+
 -- A booking is a draft/cart container for one or more treatments booked in the same checkout.
 -- It carries no schedule itself -- each treatment is scheduled (room/therapist/time) independently
 -- on its own BookingTreatments row, so treatments can be picked at different times. 'Draft' covers
@@ -383,6 +443,16 @@ CREATE TABLE dbo.Bookings (
     -- passed with no check-in -- distinct from Cancelled (a staff/customer decision made ahead of
     -- time) so no-show-rate reporting (sp_Report_NoShowRate) isn't polluted by ordinary cancellations.
     Status       VARCHAR(10) NOT NULL CHECK (Status IN ('Draft','Confirmed','Cancelled','NoShow')),
+    -- Computed, not stored state -- always in lockstep with Status (no separate write path to drift
+    -- out of sync), just exposed as queryable/filterable flag columns for callers that want
+    -- WHERE IsCancelled = 1 / WHERE IsNoShow = 1 instead of a string comparison against Status.
+    IsCancelled  AS (CASE WHEN Status = 'Cancelled' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
+    IsNoShow     AS (CASE WHEN Status = 'NoShow' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
+    -- Saloon-defined progress label (Arrived/Started/Complete...) -- only meaningful once Status =
+    -- 'Confirmed'; set/cleared via sp_Booking_SetAppointmentStatus, never implied by Status itself.
+    AppointmentStatusId INT NULL REFERENCES dbo.AppointmentStatuses(Id),
+    -- Only set by sp_Booking_CancelAsAdmin when Status transitions to 'Cancelled'; NULL otherwise.
+    CancelReasonId INT NULL REFERENCES dbo.CancelReasons(Id),
     RowVersion   ROWVERSION,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,

@@ -16,6 +16,7 @@ const badgeVariants = cva(
         warning: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
         danger: "border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400",
         info: "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+        neutral: "border-slate-500/20 bg-slate-500/10 text-slate-600 dark:text-slate-400",
       },
     },
     defaultVariants: {
@@ -50,6 +51,7 @@ function BadgeBase({
     if (["confirmed", "active", "completed"].includes(s)) resolvedVariant = "success";
     else if (["draft", "pending", "in-progress"].includes(s)) resolvedVariant = "warning";
     else if (["cancelled", "inactive", "failed"].includes(s)) resolvedVariant = "danger";
+    else if (["noshow", "no-show", "no show"].includes(s)) resolvedVariant = "neutral";
     else resolvedVariant = "secondary";
   }
 
@@ -58,6 +60,7 @@ function BadgeBase({
     warning: "bg-amber-500",
     danger: "bg-rose-500",
     info: "bg-sky-500",
+    neutral: "bg-slate-500",
     primary: "bg-primary",
     default: "bg-primary",
     secondary: "bg-muted-foreground",

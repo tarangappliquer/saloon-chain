@@ -64,7 +64,11 @@ internal sealed record MyBookingDto(
     bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments, bool HasReview = false);
 
 internal sealed record AdminBookingHeaderRow(
-    int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status);
+    int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status,
+    bool IsCancelled = false, bool IsNoShow = false,
+    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
+    int? CancelReasonId = null, string? CancelReasonName = null,
+    string? PaymentProvider = null, string? PaymentStatus = null);
 
 internal sealed record AdminBookingTreatmentRow(
     int BookingId, int TreatmentId, string TreatmentName, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName,
@@ -76,7 +80,12 @@ internal sealed record AdminBookingTreatmentDto(
 
 internal sealed record AdminBookingDto(
     int Id, string LocationName, string CustomerName, string CustomerEmail, string Status,
-    IReadOnlyList<AdminBookingTreatmentDto> Treatments);
+    IReadOnlyList<AdminBookingTreatmentDto> Treatments,
+    int CustomerId = 0,
+    bool IsCancelled = false, bool IsNoShow = false,
+    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
+    int? CancelReasonId = null, string? CancelReasonName = null,
+    bool IsPaid = false, string? ModeOfPayment = null);
 
 internal sealed record ConfirmationHeaderRow(int Id, string CustomerName, string CustomerEmail, string LocationName);
 
@@ -331,7 +340,12 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
                       .Select(t => new AdminBookingTreatmentDto(
                           t.RoomId, t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price,
                           t.TreatmentId, t.TherapistId))
-                      .ToList())).ToList();
+                      .ToList(),
+            b.CustomerId,
+            b.IsCancelled, b.IsNoShow,
+            b.AppointmentStatusId, b.AppointmentStatusName, b.AppointmentStatusColorHex,
+            b.CancelReasonId, b.CancelReasonName,
+            b.PaymentStatus?.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) == true, b.PaymentProvider)).ToList();
     }
 
     public async Task<int?> GetLocationIdAsync(int bookingId)
@@ -340,12 +354,21 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return await db.QuerySingleSpAsync<int?>("dbo.sp_Booking_GetLocationId", new { BookingId = bookingId });
     }
 
-    public async Task<IReadOnlyList<BookingLocationRow>> CancelAsAdminAsync(int bookingId)
+    public async Task SetAppointmentStatusAsync(int bookingId, int? appointmentStatusId, int? updatedBy)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Booking_SetAppointmentStatus", new
+        {
+            BookingId = bookingId, AppointmentStatusId = appointmentStatusId, UpdatedBy = updatedBy
+        });
+    }
+
+    public async Task<IReadOnlyList<BookingLocationRow>> CancelAsAdminAsync(int bookingId, int? cancelReasonId = null)
     {
         using var db = factory.Create();
         return (await db.QuerySpAsync<BookingLocationRow>(
             "dbo.sp_Booking_CancelAsAdmin",
-            new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() })).ToList();
+            new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId(), CancelReasonId = cancelReasonId })).ToList();
     }
 
     public async Task MarkNoShowAsync(int bookingId)

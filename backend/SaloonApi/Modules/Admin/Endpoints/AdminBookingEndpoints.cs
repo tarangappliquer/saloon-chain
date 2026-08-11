@@ -34,12 +34,12 @@ internal static class AdminBookingEndpoints
         // itself has no caller-scoping (it's the "override" proc precisely because it skips the
         // owns-this-booking check sp_Booking_Cancel does for a customer), so without this a Manager
         // could cancel any booking anywhere in the system just by guessing/incrementing the id.
-        group.MapPost("/{id:int}/cancel", async (int id, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
+        group.MapPost("/{id:int}/cancel", async (int id, CancelBookingRequest? req, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
         {
             if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
                 return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
 
-            await bookingService.CancelAsAdminAsync(id);
+            await bookingService.CancelAsAdminAsync(id, req?.CancelReasonId);
             return Results.NoContent();
         }).RequireAuthorization("AdminAccess")
           .Produces(StatusCodes.Status204NoContent)
@@ -96,6 +96,23 @@ internal static class AdminBookingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Mark a Confirmed booking (past its start time) as a no-show.");
+
+        // Saloon-defined progress label (Arrived/Started/Complete...) on a Confirmed booking -- no
+        // BookingService involved, this is a single-proc write with no SSE/cache side effects to
+        // coordinate, same reasoning as the retail-line endpoints below going straight to a repo.
+        group.MapPut("/{id:int}/status", async (int id, SetAppointmentStatusRequest req, BookingRepository repo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            await repo.SetAppointmentStatusAsync(id, req.AppointmentStatusId, currentUser.UserId);
+            return Results.NoContent();
+        }).RequireAuthorization("StaffAccess")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Set (or clear, with null) a Confirmed booking's saloon-defined progress status.");
 
         // Retail line items on a Draft booking -- the POS/checkout extension point the roadmap
         // deferred until Inventory existed (see FRESHA_PARITY_ROADMAP.md Phase 1). Booking-owns-cart
@@ -162,6 +179,10 @@ internal sealed class RescheduleTreatmentRequestValidator : AbstractValidator<Re
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
     }
 }
+
+internal sealed record SetAppointmentStatusRequest(int? AppointmentStatusId);
+
+internal sealed record CancelBookingRequest(int? CancelReasonId);
 
 internal sealed record ReassignTherapistRequest(int NewTherapistId, string? Reason);
 

@@ -1,6 +1,8 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import {
+  AdminAppointmentStatusesApi,
   AdminBookingsApi,
+  AdminCancelReasonsApi,
   AdminCatalogApi,
   AdminCustomersApi,
   AdminDashboardApi,
@@ -163,4 +165,6 @@ export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance)
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
 export const adminSchedulingApi = new AdminSchedulingApi(configuration, API_BASE, axiosInstance);
+export const adminAppointmentStatusesApi = new AdminAppointmentStatusesApi(configuration, API_BASE, axiosInstance);
+export const adminCancelReasonsApi = new AdminCancelReasonsApi(configuration, API_BASE, axiosInstance);
 

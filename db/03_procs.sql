@@ -739,9 +739,7 @@ BEGIN
         AND b.IsDelete = 0 AND b.Status = 'Confirmed';
 
     IF @LocationId IS NULL
-    BEGIN
         THROW 50008, 'Booking or treatment not found or not confirmed.', 1;
-    END
 
     DECLARE @TherapistLockKey NVARCHAR(100) = CONCAT('therapist_', @NewTherapistId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
     DECLARE @LockResult INT;
@@ -1997,11 +1995,22 @@ BEGIN
 
     -- NOLOCK: scheduling-page read, same Bookings/BookingTreatments contention risk as the
     -- customer-facing reads above -- polled/refreshed often, not part of any write's correctness check.
+    -- Latest-payment join mirrors sp_Booking_GetMine's convention exactly (ROW_NUMBER over Id DESC).
     SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName,
-        c.Email AS CustomerEmail, b.Status
+        c.Email AS CustomerEmail, b.Status, b.IsCancelled, b.IsNoShow,
+        b.AppointmentStatusId, aps.Name AS AppointmentStatusName, aps.ColorHex AS AppointmentStatusColorHex,
+        b.CancelReasonId, cr.Name AS CancelReasonName,
+        p.Provider AS PaymentProvider, p.Status AS PaymentStatus
     FROM dbo.Bookings b WITH (NOLOCK)
         JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
         JOIN dbo.Users c WITH (NOLOCK) ON c.Id = b.CustomerId
+        LEFT JOIN dbo.AppointmentStatuses aps WITH (NOLOCK) ON aps.Id = b.AppointmentStatusId
+        LEFT JOIN dbo.CancelReasons cr WITH (NOLOCK) ON cr.Id = b.CancelReasonId
+        LEFT JOIN (
+            SELECT BookingId, Provider, Status,
+            ROW_NUMBER() OVER (PARTITION BY BookingId ORDER BY Id DESC) AS rn
+            FROM dbo.Payments WITH (NOLOCK)
+        ) p ON p.BookingId = b.Id AND p.rn = 1
     WHERE b.LocationId = @LocationId AND b.IsDelete = 0
         AND b.Status <> 'Cancelled'
         AND EXISTS (
@@ -2044,7 +2053,8 @@ GO
 -- Admin override: unlike sp_Booking_Cancel, does not require the caller to own the booking.
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_CancelAsAdmin
     @BookingId INT,
-    @UpdatedBy INT
+    @UpdatedBy INT,
+    @CancelReasonId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -2052,7 +2062,7 @@ BEGIN
     DECLARE @PriorStatus VARCHAR(10) = (SELECT Status FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0);
 
     UPDATE dbo.Bookings
-    SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    SET Status = 'Cancelled', CancelReasonId = @CancelReasonId, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND IsDelete = 0 AND Status IN ('Draft', 'Confirmed');
 
     IF @@ROWCOUNT = 0
@@ -2450,11 +2460,12 @@ BEGIN
 END
 GO
 
--- Upsert keyed on UQ_ShiftAssignments_Location_Therapist_Shift_Date (RoomId is NOT part of the key):
--- a therapist works one room per shift, so re-assigning them to a different room moves the existing
--- row (updates RoomId + times) instead of creating a second, overlapping assignment. Symmetrically,
--- a room holds one therapist per shift, so whoever else is already in @RoomId for this shift/date
--- gets bumped (soft-deleted) first -- see UQ_ShiftAssignments_Location_Room_Shift_Date.
+-- Upsert keyed on UQ_ShiftAssignments_Therapist_Shift_Date_Start: re-submitting the same therapist's
+-- window (same start time) updates it in place (room/end time can move); a different start time is a
+-- second, separate window for that therapist (e.g. covering a room again after a proxy took over for
+-- an interval). Does NOT touch any other therapist's rows -- the caller (SchedulingEndpoints) must
+-- call sp_Scheduling_HasShiftOverlap first and reject if the room is already covered by someone else
+-- during this time, since a room can legitimately hold multiple therapists across a shift now.
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_AssignTherapistShift
     @LocationId  INT,
     @TherapistId INT,
@@ -2469,17 +2480,13 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    UPDATE dbo.ShiftAssignments
-    SET IsDelete = 1, UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
-    WHERE LocationId = @LocationId AND RoomId = @RoomId AND ShiftType = @ShiftType AND WorkDate = @WorkDate
-        AND TherapistId <> @TherapistId AND IsDelete = 0;
-
     MERGE dbo.ShiftAssignments AS target
-    USING (SELECT @LocationId AS LocationId, @TherapistId AS TherapistId, @ShiftType AS ShiftType, @WorkDate AS WorkDate) AS src
+    USING (SELECT @LocationId AS LocationId, @TherapistId AS TherapistId, @ShiftType AS ShiftType, @WorkDate AS WorkDate, @StartTime AS StartTime) AS src
         ON target.LocationId = src.LocationId AND target.TherapistId = src.TherapistId
-        AND target.ShiftType = src.ShiftType AND target.WorkDate = src.WorkDate
+        AND target.ShiftType = src.ShiftType AND target.WorkDate = src.WorkDate AND target.StartTime = src.StartTime
+        AND target.IsDelete = 0
     WHEN MATCHED THEN
-        UPDATE SET RoomId = @RoomId, StartTime = @StartTime, EndTime = @EndTime, IsActive = 1, IsDelete = 0,
+        UPDATE SET RoomId = @RoomId, EndTime = @EndTime, IsActive = 1,
                    UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
     WHEN NOT MATCHED THEN
         INSERT (LocationId, TherapistId, RoomId, ShiftType, WorkDate, StartTime, EndTime, CreatedBy)
@@ -2487,7 +2494,32 @@ BEGIN
 
     SELECT @Id = Id
     FROM dbo.ShiftAssignments
-    WHERE LocationId = @LocationId AND TherapistId = @TherapistId AND ShiftType = @ShiftType AND WorkDate = @WorkDate;
+    WHERE LocationId = @LocationId AND TherapistId = @TherapistId AND ShiftType = @ShiftType
+        AND WorkDate = @WorkDate AND StartTime = @StartTime AND IsDelete = 0;
+END
+GO
+
+-- A room can hold multiple therapists across a shift (primary + a proxy covering part of it), but not
+-- two different therapists at the same moment -- reject a new/edited window that overlaps another
+-- therapist's existing window in the same room. @ExcludeTherapistId lets a therapist edit/extend their
+-- own window without it colliding with itself.
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_HasShiftOverlap
+    @RoomId             INT,
+    @ShiftType          VARCHAR(10),
+    @WorkDate           DATE,
+    @StartTime          TIME,
+    @EndTime            TIME,
+    @ExcludeTherapistId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.ShiftAssignments sa
+        WHERE sa.RoomId = @RoomId AND sa.ShiftType = @ShiftType AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0
+            AND sa.TherapistId <> @ExcludeTherapistId
+            AND sa.StartTime < @EndTime AND sa.EndTime > @StartTime
+    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasOverlap;
 END
 GO
 
@@ -2817,6 +2849,134 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50061, 'Block type not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetAppointmentStatuses
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Same scoping shape as sp_Admin_GetBlockTypes: global defaults plus chain/location-scoped rows.
+    -- Plain SortOrder (no IsSystem tiebreak) is enough to pin position -- the two fixed rows sit at
+    -- the SMALLINT extremes (Arrived = -32768, Complete = 32767), so every custom status (SortOrder
+    -- starting at 0) always sorts between them.
+    SELECT s.Id, s.Name, s.ChainId, c.Name AS ChainName, s.LocationId, l.Name AS LocationName,
+           s.ColorHex, s.SortOrder, s.IsSystem, s.IsActive, s.CreatedDate
+    FROM dbo.AppointmentStatuses s WITH (NOLOCK)
+        LEFT JOIN dbo.SaloonChains c WITH (NOLOCK) ON c.Id = s.ChainId AND c.IsDelete = 0
+        LEFT JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = s.LocationId AND l.IsDelete = 0
+    WHERE s.IsDelete = 0
+      AND (
+          (s.ChainId IS NULL AND s.LocationId IS NULL) OR
+          (@ChainId IS NOT NULL AND s.ChainId = @ChainId) OR
+          (@LocationId IS NOT NULL AND s.LocationId = @LocationId) OR
+          (@LocationId IS NOT NULL AND l.ChainId = (SELECT ChainId FROM dbo.Locations WITH (NOLOCK) WHERE Id = @LocationId))
+      )
+    ORDER BY s.SortOrder, s.Name;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetCancelReasons
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, Name, SortOrder
+    FROM dbo.CancelReasons WITH (NOLOCK)
+    WHERE IsDelete = 0 AND IsActive = 1
+    ORDER BY SortOrder, Name;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_CreateAppointmentStatus
+    @Name       NVARCHAR(50),
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL,
+    @ColorHex   NVARCHAR(10) = '#3B82F6',
+    @SortOrder  SMALLINT = 0,
+    @CreatedBy  INT = NULL,
+    @Id         INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.AppointmentStatuses
+        (Name, ChainId, LocationId, ColorHex, SortOrder, CreatedBy)
+    VALUES
+        (@Name, @ChainId, @LocationId, @ColorHex, @SortOrder, @CreatedBy);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateAppointmentStatus
+    @Id        INT,
+    @Name      NVARCHAR(50),
+    @ColorHex  NVARCHAR(10),
+    @SortOrder SMALLINT,
+    @IsActive  BIT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (SELECT 1 FROM dbo.AppointmentStatuses WHERE Id = @Id AND IsSystem = 1)
+        THROW 50065, 'The Complete status is fixed and cannot be edited.', 1;
+
+    UPDATE dbo.AppointmentStatuses
+    SET Name = @Name, ColorHex = @ColorHex, SortOrder = @SortOrder, IsActive = @IsActive,
+        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50062, 'Appointment status not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_DeleteAppointmentStatus
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (SELECT 1 FROM dbo.AppointmentStatuses WHERE Id = @Id AND IsSystem = 1)
+        THROW 50066, 'The Complete status is fixed and cannot be deleted.', 1;
+
+    UPDATE dbo.AppointmentStatuses
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50063, 'Appointment status not found.', 1;
+
+    -- Clear it off any booking currently wearing it -- FK has no ON DELETE action (soft-delete only
+    -- anyway), so this is the only thing that would otherwise leave a booking pointing at a dead status.
+    UPDATE dbo.Bookings SET AppointmentStatusId = NULL WHERE AppointmentStatusId = @Id;
+END
+GO
+
+-- Only a Confirmed booking can carry a progress status (Arrived/Started/Complete...) -- Draft has
+-- nothing to arrive/start yet, Cancelled/NoShow are terminal. Pass NULL to clear it back off.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_SetAppointmentStatus
+    @BookingId           INT,
+    @AppointmentStatusId INT = NULL,
+    @UpdatedBy           INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0 AND Status = 'Confirmed')
+        THROW 50003, 'Only a confirmed booking can have its appointment status changed.', 1;
+
+    IF @AppointmentStatusId IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM dbo.AppointmentStatuses WHERE Id = @AppointmentStatusId AND IsDelete = 0
+    )
+        THROW 50064, 'Appointment status not found.', 1;
+
+    UPDATE dbo.Bookings
+    SET AppointmentStatusId = @AppointmentStatusId, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @BookingId;
 END
 GO
 

@@ -22,6 +22,10 @@ interface EditBlockSlotModalProps {
   therapists?: { id: number; name: string }[];
 }
 
+// Sentinel id (real therapist ids are positive DB identities) representing "no specific therapist --
+// applies to all staff / the room default" as an explicit, selectable option.
+const ALL_STAFF_OPTION = { id: 0, name: 'All Staff' };
+
 const DURATION_OPTIONS = [
   { label: '15 Minutes', value: 15 },
   { label: '30 Minutes', value: 30 },
@@ -282,13 +286,20 @@ export function EditBlockSlotModal({
                 <label className="text-xs font-semibold text-foreground">Applicable Team Member</label>
                 <Select
                   isMulti
-                  value={therapists
-                    .filter((t) => selectedTherapistIds.includes(t.id))
-                    .map((t) => ({ value: String(t.id), label: t.name }))}
-                  onChange={(picked: MultiValue<SelectOption>) =>
-                    setSelectedTherapistIds(picked.map((o) => Number(o.value)))
+                  value={
+                    selectedTherapistIds.includes(ALL_STAFF_OPTION.id)
+                      ? [{ value: String(ALL_STAFF_OPTION.id), label: ALL_STAFF_OPTION.name }]
+                      : therapists
+                          .filter((t) => selectedTherapistIds.includes(t.id))
+                          .map((t) => ({ value: String(t.id), label: t.name }))
                   }
-                  options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
+                  onChange={(picked: MultiValue<SelectOption>) => {
+                    const ids = picked.map((o) => Number(o.value));
+                    const justPickedAllStaff = ids.includes(ALL_STAFF_OPTION.id) && !selectedTherapistIds.includes(ALL_STAFF_OPTION.id);
+                    // "All Staff" and specific picks are mutually exclusive -- picking one clears the other.
+                    setSelectedTherapistIds(justPickedAllStaff ? [ALL_STAFF_OPTION.id] : ids.filter((id) => id !== ALL_STAFF_OPTION.id));
+                  }}
+                  options={[ALL_STAFF_OPTION, ...therapists].map((t) => ({ value: String(t.id), label: t.name }))}
                   placeholder="All Staff / Room Default"
                   unstyled
                   classNames={selectClassNames('rounded-xl border border-input bg-background px-3 py-2 text-xs min-h-9')}

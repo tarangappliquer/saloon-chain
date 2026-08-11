@@ -163,11 +163,21 @@ export interface AdminBookingTreatment {
 
 export interface AdminBooking {
   id: number;
+  customerId?: number;
   locationName: string;
   customerName: string;
   customerEmail: string;
   status: string;
   treatments: AdminBookingTreatment[];
+  isCancelled?: boolean;
+  isNoShow?: boolean;
+  appointmentStatusId?: number | null;
+  appointmentStatusName?: string | null;
+  appointmentStatusColorHex?: string | null;
+  cancelReasonId?: number | null;
+  cancelReasonName?: string | null;
+  isPaid?: boolean;
+  modeOfPayment?: string | null;
 }
 
 export type ShiftType = 'Morning' | 'Evening';
