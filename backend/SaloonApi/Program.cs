@@ -270,6 +270,7 @@ try
     app.MapAdminStaffEndpoints();
     app.MapAdminBookingEndpoints();
     app.MapAdminCustomersEndpoints();
+    app.MapAdminBlockTypesEndpoints();
     app.MapAdminDashboardEndpoints();
     app.MapSchedulingEndpoints();
     app.MapProfileEndpoints();

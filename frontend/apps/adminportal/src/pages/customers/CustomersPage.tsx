@@ -11,7 +11,7 @@ import type { AdminCustomer, AdminCustomersPage, AuthResponse, CustomerSummary }
 const PAGE_SIZE = 50;
 
 function emptyForm() {
-  return { name: '', email: '', phone: '' };
+  return { name: '', email: '', phone: '', isWalkIn: false };
 }
 
 export function CustomersPage() {
@@ -141,7 +141,7 @@ export function CustomersPage() {
 
   function handleOpenEdit(c: AdminCustomer) {
     setEditingCustomer(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '' });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', isWalkIn: (c as unknown as { isWalkIn?: boolean }).isWalkIn ?? false });
     setShowForm(true);
     setSubmitError(null);
   }
@@ -167,12 +167,13 @@ export function CustomersPage() {
       } else {
         const { data } = await adminCustomersApi.apiAdminCustomersPost({
           name: form.name,
-          email: form.email,
+          email: form.email || null,
           phone: form.phone || null,
+          isWalkIn: form.isWalkIn,
         });
         if (!canManage) {
           const { id } = data as unknown as { id: number };
-          setLeanResults([{ id, name: form.name, email: form.email, phone: form.phone || null }]);
+          setLeanResults([{ id, name: form.name, email: form.email || 'Walk-in Customer', phone: form.phone || null }]);
           setLeanSearched(true);
         }
       }
@@ -278,6 +279,20 @@ export function CustomersPage() {
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+              {!editingCustomer && (
+                <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                  <input
+                    type="checkbox"
+                    id="isWalkIn"
+                    checked={form.isWalkIn}
+                    onChange={(e) => setForm({ ...form, isWalkIn: e.target.checked })}
+                    className="h-4 w-4 rounded border-amber-500/40 text-amber-600 focus:ring-amber-500"
+                  />
+                  <label htmlFor="isWalkIn" className="text-xs font-bold text-foreground cursor-pointer select-none">
+                    🚶 Mark as Walk-in Customer (Instant Onboarding)
+                  </label>
+                </div>
+              )}
               <Input
                 required
                 label="Full Name"
@@ -287,14 +302,15 @@ export function CustomersPage() {
                 error={getFieldError(submitError, 'name')}
               />
               <Input
-                required
+                required={!form.isWalkIn}
                 type="email"
                 disabled={Boolean(editingCustomer)}
-                label="Email Address"
-                placeholder="jane@example.com"
+                label={form.isWalkIn ? 'Email Address (Optional for Walk-in)' : 'Email Address'}
+                placeholder={form.isWalkIn ? 'Auto-generated if left blank' : 'jane@example.com'}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 error={getFieldError(submitError, 'email')}
+                helperText={form.isWalkIn ? 'System will generate a walk-in address if empty.' : (!editingCustomer ? "They'll receive an email to set their own password." : undefined)}
               />
               <Input
                 label="Phone"
@@ -358,7 +374,14 @@ export function CustomersPage() {
                 <tbody className="divide-y divide-border/50">
                   {customers.map((c) => (
                     <tr key={c.id} className="hover:bg-accent/40 transition">
-                      <td className="px-6 py-4 font-semibold text-foreground">{c.name}</td>
+                      <td className="px-6 py-4 font-semibold text-foreground flex items-center gap-2">
+                        <span>{c.name}</span>
+                        {(c as unknown as { isWalkIn?: boolean }).isWalkIn && (
+                          <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-500">
+                            🚶 Walk-In
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-muted-foreground">{c.email}</td>
                       <td className="px-6 py-4 text-muted-foreground">{c.phone ?? '-'}</td>
                       <td className="px-6 py-4">
@@ -377,7 +400,7 @@ export function CustomersPage() {
                               onClick={() => emulate(c)}
                               title={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : undefined}
                             >
-                              {emulatingId === c.id ? 'Opening...' : 'Start Booking'}
+                              {emulatingId === c.id ? 'Opening...' : '⚡ Emulate & Book'}
                             </Button>
                           )}
                           <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>

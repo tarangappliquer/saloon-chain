@@ -81,11 +81,11 @@ internal static class AdminCustomersEndpoints
         // CustomerManagement, not AdminAccess -- Manager may edit/delete/view a customer but not
         // create one (see Program.cs's CustomerManagement policy).
         group.MapPost("", async (CreateCustomerRequest req, AuthService auth) =>
-            Results.Ok(new IdResponse(await auth.CreateCustomerAsync(req.Name, req.Email, req.Phone))))
+            Results.Ok(new IdResponse(await auth.CreateCustomerAsync(req.Name, req.Email, req.Phone, req.IsWalkIn))))
             .WithValidation<CreateCustomerRequest>()
-            .RequireAuthorization("CustomerManagement")
+            .RequireAuthorization("StaffAccess")
             .Produces<IdResponse>()
-            .WithDescription("Create a new customer account (RootSuperAdmin/SuperAdmin/Admin only).");
+            .WithDescription("Create a new customer account or walk-in customer profile (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist).");
 
         group.MapPut("/{id:int}", async (int id, UpdateCustomerRequest req, UserRepository repo, SaloonApi.Modules.Payment.Application.StripeCustomerService stripeCustomerService) =>
         {
@@ -185,7 +185,7 @@ internal static class AdminCustomersEndpoints
 }
 
 // No Password field -- see CreateStaffRequest's equivalent comment in AdminStaffEndpoints.cs.
-internal sealed record CreateCustomerRequest(string Name, string Email, string? Phone);
+internal sealed record CreateCustomerRequest(string Name, string? Email, string? Phone, bool IsWalkIn = false);
 internal sealed record UpdateCustomerRequest(string Name, string? Phone, bool IsActive);
 
 internal sealed class CreateCustomerRequestValidator : AbstractValidator<CreateCustomerRequest>
@@ -193,7 +193,8 @@ internal sealed class CreateCustomerRequestValidator : AbstractValidator<CreateC
     public CreateCustomerRequestValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
+        RuleFor(x => x.Email).NotEmpty().When(x => !x.IsWalkIn).WithMessage("Email is required for standard registered customers.");
+        RuleFor(x => x.Email).EmailAddress().When(x => !string.IsNullOrEmpty(x.Email)).MaximumLength(256);
         RuleFor(x => x.Phone).MaximumLength(30);
     }
 }

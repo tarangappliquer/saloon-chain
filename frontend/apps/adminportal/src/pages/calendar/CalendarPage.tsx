@@ -1,26 +1,74 @@
-import { useCallback, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Select, { type SingleValue } from 'react-select';
-import CreatableSelect from 'react-select/creatable';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, MySwal, PageHeader } from '@saloon/ui';
-import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldError, schedulingApi } from '../../api/client';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader } from '@saloon/ui';
+import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, BlockedSlot, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
-import { type SelectOption, selectClassNames, selectMenuPortalStyles } from '../../components/reactSelectStyles';
-import { TimeInput } from '../../components/TimeInput';
-import { DateInput } from '../../components/DateInput';
+import { EditBlockSlotModal } from '../../components/EditBlockSlotModal';
+import { QuickActionsPopover } from '../../components/QuickActionsPopover';
 import { routes } from '../../routes';
 
-const SHIFT_TYPES: ShiftType[] = ['Morning', 'Evening'];
 
 const SHIFT_TIME_DEFAULTS: Record<ShiftType, { startTime: string; endTime: string }> = {
   Morning: { startTime: '09:00', endTime: '13:30' },
   Evening: { startTime: '13:30', endTime: '18:00' },
 };
 
+// Formats a Date using its local calendar fields -- toISOString() converts through UTC first,
+// which rolls the date back a day for any positive UTC offset (e.g. IST) once local midnight is
+// shifted forward and re-serialized.
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toDateStr(new Date());
+}
+
+function formatDateHeader(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toDateStr(d);
+}
+
+function parseDateStr(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// react-datepicker clones this into the toolbar in place of its default text input, so clicking
+// the date label opens the picker instead of showing an editable box in the pill toolbar.
+const DateHeaderButton = forwardRef<HTMLButtonElement, { label?: string; onClick?: () => void }>(
+  ({ label, onClick }, ref) => (
+    <button
+      type="button"
+      ref={ref}
+      onClick={onClick}
+      className="px-2 font-bold text-foreground min-w-24 text-center hover:text-primary transition cursor-pointer"
+    >
+      {label}
+    </button>
+  ),
+);
+DateHeaderButton.displayName = 'DateHeaderButton';
+
+
+function getInitials(name: string): string {
+  if (!name) return 'TK';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.slice(0, 2).toUpperCase();
 }
 
 function generateTimeSlots(startStr: string, endStr: string, stepMinutes = 15): string[] {
@@ -40,13 +88,6 @@ function generateTimeSlots(startStr: string, endStr: string, stepMinutes = 15): 
   return slots;
 }
 
-function addMinutesToTime(time: string, minutes: number): string {
-  const [h, m] = time.split(':').map(Number);
-  const total = h * 60 + m + minutes;
-  const hh = Math.floor(total / 60).toString().padStart(2, '0');
-  const mm = (total % 60).toString().padStart(2, '0');
-  return `${hh}:${mm}`;
-}
 
 interface FlatTreatmentSlot {
   bookingId: number;
@@ -147,7 +188,7 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
   return flat;
 }
 
-export function SchedulingPage() {
+export function CalendarPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -161,9 +202,9 @@ export function SchedulingPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [date, setDate] = useState<string>(paramDate || today());
-  const [shiftType, setShiftType] = useState<ShiftType>(paramShiftType || 'Morning');
-  const [startTime, setStartTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].startTime);
-  const [endTime, setEndTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].endTime);
+  const [shiftType] = useState<ShiftType>(paramShiftType || 'Morning');
+  const [startTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].startTime);
+  const [endTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].endTime);
 
   const [therapists, setTherapists] = useState<{ id: number; name: string }[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -171,10 +212,11 @@ export function SchedulingPage() {
   const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [], blockedSlots: [] });
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
 
+  const [selectedTherapistFilter, setSelectedTherapistFilter] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'Day' | 'Week'>('Day');
+
   const [error, setError] = useState<string | null>(null);
-  const [shiftSubmitError, setShiftSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
-  const [submittingShift, setSubmittingShift] = useState(false);
 
   const updateUrl = useCallback(
     (cId: number | null, lId: number | null, d: string, st: ShiftType) => {
@@ -201,15 +243,9 @@ export function SchedulingPage() {
     [setSearchParams],
   );
 
-  function handleShiftTypeChange(v: string) {
-    const type = v as ShiftType;
-    setShiftType(type);
-    setStartTime(SHIFT_TIME_DEFAULTS[type].startTime);
-    setEndTime(SHIFT_TIME_DEFAULTS[type].endTime);
-    updateUrl(chainId, locationId, date, type);
-  }
 
   function handleDateChange(newDate: string) {
+    console.log(newDate)
     setDate(newDate);
     updateUrl(chainId, locationId, newDate, shiftType);
   }
@@ -334,157 +370,6 @@ export function SchedulingPage() {
     };
   }, [locationId, date, loadRosterAndBookings]);
 
-  async function handleAssignShift(therapistIdValue: string, roomId: number) {
-    if (locationId === null || !therapistIdValue) return;
-    setError(null);
-    setShiftSubmitError(null);
-    if (startTime >= endTime) {
-      setError('Start time must be before end time');
-      return;
-    }
-    if ((workOpen && startTime < workOpen) || (workClose && endTime > workClose)) {
-      setError(`Shift time must be within location working hours (${workOpen}–${workClose})`);
-      return;
-    }
-    setSubmittingShift(true);
-    try {
-      await schedulingApi.apiAdminSchedulingTherapistShiftsPost({
-        locationId,
-        therapistId: Number(therapistIdValue),
-        roomId,
-        shiftType,
-        workDate: date,
-        startTime,
-        endTime,
-      });
-      await loadRosterAndBookings(true);
-    } catch (err) {
-      setShiftSubmitError(err);
-      setError(err instanceof ApiError ? err.message : 'Failed to assign shift');
-    } finally {
-      setSubmittingShift(false);
-    }
-  }
-
-  async function handleRemoveShift(id: number) {
-    setError(null);
-    try {
-      await schedulingApi.apiAdminSchedulingTherapistShiftsIdDelete(id);
-      await loadRosterAndBookings(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to remove shift');
-    }
-  }
-
-  // How much free time actually remains in this room from startTime -- the earliest of location
-  // close time, the room's next booking, or the room's next existing block. Caps the duration
-  // dropdown so it never offers a choice that would silently collide with something already there.
-  function getMaxBlockMinutes(roomId: number, startTime: string): number {
-    const candidates: string[] = [];
-    if (workClose) candidates.push(workClose);
-    for (const t of flatTreatments) {
-      if (t.roomId === roomId && t.startTimeStr > startTime) candidates.push(t.startTimeStr);
-    }
-    for (const b of roster.blockedSlots) {
-      const bStart = b.startTime.slice(0, 5);
-      if (b.roomId === roomId && bStart > startTime) candidates.push(bStart);
-    }
-    const cutoff = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : '23:59';
-    const [sh, sm] = startTime.split(':').map(Number);
-    const [ch, cm] = cutoff.split(':').map(Number);
-    return Math.max(0, ch * 60 + cm - (sh * 60 + sm));
-  }
-
-  async function handleBlockSlot(roomId: number, startTime: string) {
-    const maxMinutes = getMaxBlockMinutes(roomId, startTime);
-    if (maxMinutes < 5) {
-      setError('No free time remains in this room to block from this slot.');
-      return;
-    }
-    // react-select's own dark-theme styling (via selectClassNames, same as every other dropdown in
-    // this page) instead of a plain <select> whose OS-rendered popup kept fighting the theme. It's
-    // Creatable so typing a value not in the generated list still works, up to maxMinutes -- whatever
-    // that is. sweetalert2-react-content mounts `html` as a real React tree, so react-select works
-    // interactively here, but preConfirm can't read its value via getElementById like a plain input
-    // -- onChange below writes into this closure variable instead.
-    const durationOptions = Array.from({ length: Math.floor(maxMinutes / 15) }, (_, i) => {
-      const mins = (i + 1) * 15;
-      return { value: String(mins), label: `${mins} min` };
-    });
-    let selectedDuration = Math.min(15, maxMinutes);
-
-    const { value } = await MySwal.fire({
-      title: 'Block time slot',
-      html: (
-        <div className="space-y-3 text-left">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-muted-foreground">
-              Duration (minutes) <span className="font-normal normal-case text-muted-foreground/70">— up to {maxMinutes} min free</span>
-            </label>
-            <CreatableSelect
-              defaultValue={{ value: String(selectedDuration), label: `${selectedDuration} min` }}
-              options={durationOptions}
-              onChange={(picked) => {
-                const n = Number(picked?.value);
-                if (Number.isFinite(n)) selectedDuration = n;
-              }}
-              formatCreateLabel={(input) => `${input} min`}
-              isValidNewOption={(input) => /^\d+$/.test(input) && Number(input) >= 15 && Number(input) <= maxMinutes}
-              placeholder="Pick or type minutes..."
-              unstyled
-              classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
-              menuPortalTarget={document.body}
-              styles={selectMenuPortalStyles}
-            />
-          </div>
-          <div>
-            <label htmlFor="swal-block-reason" className="mb-1 block text-xs font-semibold text-muted-foreground">
-              Reason
-            </label>
-            <input
-              id="swal-block-reason"
-              className="swal2-input"
-              style={{ width: '100%', margin: 0 }}
-              placeholder="e.g. Lunch break, staff leave"
-            />
-          </div>
-        </div>
-      ) as any,
-      showCancelButton: true,
-      confirmButtonText: 'Block',
-      reverseButtons: true,
-      focusConfirm: false,
-      preConfirm: () => {
-        const reasonEl = document.getElementById('swal-block-reason') as HTMLInputElement | null;
-        const reason = reasonEl?.value.trim();
-        if (!reason) {
-          MySwal.showValidationMessage('Reason is required');
-          return false;
-        }
-        if (!Number.isFinite(selectedDuration) || selectedDuration < 15 || selectedDuration > maxMinutes) {
-          MySwal.showValidationMessage(`Duration must be between 15 and ${maxMinutes} minutes`);
-          return false;
-        }
-        return { duration: Math.round(selectedDuration / 15) * 15, reason };
-      },
-    });
-    if (!value) return;
-
-    setError(null);
-    try {
-      await schedulingApi.apiAdminSchedulingBlockedSlotsPost({
-        roomId,
-        workDate: date,
-        startTime,
-        endTime: addMinutesToTime(startTime, value.duration),
-        reason: value.reason,
-      });
-      await loadRosterAndBookings(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to block slot');
-    }
-  }
-
   async function handleUnblockSlot(id: number) {
     if (id <= 0) {
       setError('Saloon-level break configured at saloon level cannot be unblocked here.');
@@ -529,17 +414,19 @@ export function SchedulingPage() {
     ? 'Must be before end time'
     : workOpen && startTime < workOpen
       ? `Location opens at ${workOpen}`
-      : getFieldError(shiftSubmitError, 'startTime');
+      : null;
   const endTimeError = startTime >= endTime
     ? 'Must be after start time'
     : workClose && endTime > workClose
       ? `Location closes at ${workClose}`
-      : getFieldError(shiftSubmitError, 'endTime');
+      : null;
+  void startTimeError;
+  void endTimeError;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={selectedChain ? `${selectedChain.name} — Roster & Shift Scheduling` : 'Roster & Shift Scheduling'}
+        title={selectedChain ? `${selectedChain.name} — Calendar` : 'Calendar'}
         description="View room schedule grid with booked slots and manage therapist shifts and room openings."
         action={
           paramLocationId ? (
@@ -562,59 +449,111 @@ export function SchedulingPage() {
         </div>
       )}
 
-      {/* Control bar: Location, Date, Shift Type & Time Window */}
-      <Card>
-        <CardContent className="py-3">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Location</span>
-              <Select
-                isClearable
-                isDisabled={currentUser?.role === 'Manager'}
-                value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === String(locationId ?? '')) ?? null}
-                onChange={(picked: SingleValue<SelectOption>) => changeLocation(picked?.value ?? '')}
-                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                unstyled
-                classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[160px]')}
-              />
-            </div>
-            <DateInput
-              label="Date"
-              value={date}
-              onChange={(e) => handleDateChange(e.target.value)}
-              className="min-w-full"
+      {/* Fresha-Style Top Pill Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-2.5 shadow-xs">
+        {/* Left Group: Today, < Date >, Saloon ▾, Scheduled team ▾, Filter button */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleDateChange(today())}
+            className="rounded-full border border-border bg-background px-3.5 py-1 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer"
+          >
+            Today
+          </button>
+
+          <div className="flex items-center rounded-full border border-border bg-background px-2 py-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => handleDateChange(shiftDate(date, -1))}
+              className="rounded-full px-1.5 py-0.5 hover:bg-accent text-muted-foreground hover:text-foreground cursor-pointer font-bold"
+            >
+              ‹
+            </button>
+            <DatePicker
+              selected={parseDateStr(date)}
+              onChange={(d: Date | null) => d && handleDateChange(toDateStr(d))}
+              customInput={<DateHeaderButton label={formatDateHeader(date)} />}
             />
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift Type</span>
-              <Select
-                value={SHIFT_TYPES.map((s) => ({ value: s, label: s })).find((o) => o.value === shiftType) ?? null}
-                onChange={(picked: SingleValue<SelectOption>) => handleShiftTypeChange(picked?.value ?? shiftType)}
-                options={SHIFT_TYPES.map((s) => ({ value: s, label: s }))}
-                unstyled
-                classNames={selectClassNames('h-8 rounded-lg border border-input bg-card px-3 py-1 text-xs text-foreground min-w-[130px]')}
-              />
-            </div>
-            <TimeInput
-              required
-              label="Start Time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              error={startTimeError}
-              className="w-full"
-              incrementMinutes={15}
-            />
-            <TimeInput
-              required
-              label="End Time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              error={endTimeError}
-              className="w-full"
-              incrementMinutes={15}
-            />
+            <button
+              type="button"
+              onClick={() => handleDateChange(shiftDate(date, 1))}
+              className="rounded-full px-1.5 py-0.5 hover:bg-accent text-muted-foreground hover:text-foreground cursor-pointer font-bold"
+            >
+              ›
+            </button>
           </div>
-        </CardContent>
-      </Card>
+
+          <select
+            disabled={currentUser?.role === 'Manager'}
+            value={locationId ?? ''}
+            onChange={(e) => changeLocation(e.target.value)}
+            className="rounded-full border border-border bg-background px-3.5 py-1 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer focus:outline-hidden"
+          >
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedTherapistFilter ?? ''}
+            onChange={(e) => setSelectedTherapistFilter(e.target.value ? Number(e.target.value) : null)}
+            className="rounded-full border border-border bg-background px-3.5 py-1 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer focus:outline-hidden"
+          >
+            <option value="">Scheduled team</option>
+            {therapists.map((t) => (
+              <option key={t.id} value={t.id}>
+                👤 {t.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            className="flex items-center justify-center h-7 w-7 rounded-full border border-border bg-background text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer"
+            title="Filter schedule"
+          >
+            🎛️
+          </button>
+        </div>
+
+        {/* Right Group: Settings, Refresh, View Mode, + Add */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer"
+            title="Settings"
+          >
+            ⚙️
+          </button>
+
+          <button
+            type="button"
+            onClick={() => loadRosterAndBookings(true)}
+            className="flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer text-sm"
+            title="Refresh Schedule"
+          >
+            🔄
+          </button>
+
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as 'Day' | 'Week')}
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer focus:outline-hidden"
+          >
+            <option value="Day">Day</option>
+            <option value="Week">Week</option>
+          </select>
+
+          <button
+            type="button"
+            className="rounded-full bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 text-xs font-extrabold hover:opacity-90 transition cursor-pointer shadow-xs"
+          >
+            Add ▾
+          </button>
+        </div>
+      </div>
 
       {loading ? (
         <LoadingFallback />
@@ -628,12 +567,13 @@ export function SchedulingPage() {
           flatTreatments={flatTreatments}
           categories={categories}
           therapists={therapists}
-          submittingShift={submittingShift}
-          handleAssignShift={handleAssignShift}
-          handleRemoveShift={handleRemoveShift}
           changeRoomStatus={changeRoomStatus}
-          handleBlockSlot={handleBlockSlot}
           handleUnblockSlot={handleUnblockSlot}
+          navigate={navigate}
+          chainId={chainId}
+          locationId={locationId}
+          loadRosterAndBookings={loadRosterAndBookings}
+          workClose={workClose}
         />
       )}
     </div>
@@ -649,12 +589,13 @@ interface ScheduleGridViewProps {
   flatTreatments: FlatTreatmentSlot[];
   categories: TreatmentCategory[];
   therapists: { id: number; name: string }[];
-  submittingShift: boolean;
-  handleAssignShift: (therapistId: string, roomId: number) => void;
-  handleRemoveShift: (id: number) => void;
   changeRoomStatus: (room: Room, opening: RoomOpening | undefined, categoryValue: string) => void;
-  handleBlockSlot: (roomId: number, startTime: string) => void;
   handleUnblockSlot: (id: number) => void;
+  navigate: ReturnType<typeof useNavigate>;
+  chainId: number | null;
+  locationId: number | null;
+  loadRosterAndBookings: (force?: boolean) => void;
+  workClose: string | undefined;
 }
 
 function ScheduleGridView({
@@ -666,14 +607,37 @@ function ScheduleGridView({
   flatTreatments,
   categories,
   therapists,
-  submittingShift,
-  handleAssignShift,
-  handleRemoveShift,
   changeRoomStatus,
-  handleBlockSlot,
   handleUnblockSlot,
+  navigate,
+  chainId,
+  locationId,
+  loadRosterAndBookings,
+  workClose,
 }: ScheduleGridViewProps) {
   const blockSpans = computeBlockSpans(rooms, roster.blockedSlots || [], timeSlots);
+
+  const [popover, setPopover] = useState<{
+    isOpen: boolean;
+    position: { x: number; y: number } | null;
+    roomId: number;
+    startTime: string;
+  } | null>(null);
+
+  const [blockModalState, setBlockModalState] = useState<{
+    isOpen: boolean;
+    roomId: number;
+    roomName?: string;
+    startTime: string;
+    maxMinutes: number;
+    existingBlock?: BlockedSlot | null;
+  }>({
+    isOpen: false,
+    roomId: 0,
+    startTime: '09:00',
+    maxMinutes: 30,
+    existingBlock: null,
+  });
 
   const [contextMenu, setContextMenu] = useState<
     | { x: number; y: number; kind: 'block'; roomId: number; startTime: string }
@@ -703,6 +667,38 @@ function ScheduleGridView({
   function openUnblockMenu(e: React.MouseEvent, blocks: BlockedSlot[]) {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, kind: 'unblock', blocks });
+  }
+
+  // Compute free minutes from startTime until next booking/block/close
+  function getMaxBlockMinutes(roomId: number, startTime: string): number {
+    const candidates: string[] = [];
+    if (workClose) candidates.push(workClose);
+    for (const t of flatTreatments) {
+      if (t.roomId === roomId && t.startTimeStr > startTime) candidates.push(t.startTimeStr);
+    }
+    for (const b of roster.blockedSlots) {
+      const bStart = b.startTime.slice(0, 5);
+      if (b.roomId === roomId && bStart > startTime) candidates.push(bStart);
+    }
+    const cutoff = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : '23:59';
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [ch, cm] = cutoff.split(':').map(Number);
+    return Math.max(0, ch * 60 + cm - (sh * 60 + sm));
+  }
+
+  function handleBlockSlot(roomId: number, slotTime: string) {
+    const maxMinutes = getMaxBlockMinutes(roomId, slotTime);
+    if (maxMinutes < 5) return;
+    const rm = rooms.find((r) => r.id === roomId);
+    setBlockModalState({ isOpen: true, roomId, roomName: rm?.name, startTime: slotTime, maxMinutes, existingBlock: null });
+  }
+
+  function handleEditBlockSlot(block: BlockedSlot) {
+    if (block.id <= 0) return;
+    const rm = rooms.find((r) => r.id === block.roomId);
+    const slotTime = block.startTime.slice(0, 5);
+    const maxMinutes = getMaxBlockMinutes(block.roomId, slotTime);
+    setBlockModalState({ isOpen: true, roomId: block.roomId, roomName: rm?.name, startTime: slotTime, maxMinutes, existingBlock: block });
   }
 
   return (
@@ -767,18 +763,32 @@ function ScheduleGridView({
                 {rooms.map((room) => {
                   const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
                   const assignedShift = roster.therapistShifts.find((s) => s.roomId === room.id);
+                  const assignedTherapistName = assignedShift ? therapists.find((t) => t.id === assignedShift.therapistId)?.name || 'Staff' : room.name;
 
                   const isOpen = !!opening;
                   const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
+                  void hasBooking;
 
                   return (
                     <div
                       key={room.id}
                       role="columnheader"
-                      className="border-r border-b border-border/60 bg-accent/40 p-3 font-semibold align-top"
+                      className="border-r border-b border-border bg-card p-3 font-semibold text-center flex flex-col items-center justify-center sticky top-0 z-10"
                     >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
+                      {/* Fresha Staff Avatar Icon */}
+                      <div className="h-10 w-10 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-sm shadow-2xs">
+                        {getInitials(assignedTherapistName)}
+                      </div>
+
+                      <div className="mt-1.5 text-xs font-bold text-foreground truncate max-w-36">
+                        {assignedTherapistName}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate max-w-32">
+                        {room.name}
+                      </div>
+
+                      <div className="mt-2 w-full space-y-1">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
                             role="switch"
@@ -786,46 +796,12 @@ function ScheduleGridView({
                             aria-label={`${room.name} open`}
                             disabled={categories.length === 0}
                             onClick={() => changeRoomStatus(room, opening, opening ? '' : String(categories[0]?.id ?? ''))}
-                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-emerald-500 bg-emerald-500' : 'border-border-strong bg-muted'}`}
+                            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isOpen ? 'border-emerald-500 bg-emerald-500' : 'border-border-strong bg-muted'}`}
                           >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition-transform ${isOpen ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
                           </button>
-                          <span className="text-foreground text-sm font-bold">{room.name}</span>
+                          <span className="text-[10px] font-semibold text-muted-foreground">{isOpen ? 'Open' : 'Closed'}</span>
                         </div>
-                        {isOpen && (
-                          <Select
-                            isClearable
-                            isDisabled={hasBooking}
-                            value={categories.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === String(opening?.treatmentCategoryId ?? '')) ?? null}
-                            onChange={(picked: SingleValue<SelectOption>) => changeRoomStatus(room, opening, picked?.value ?? '')}
-                            placeholder="Category..."
-                            options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
-                            unstyled
-                            classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
-                          />
-                        )}
-                        {isOpen && hasBooking && (
-                          <p className="text-[10px] italic text-muted-foreground">Category locked (room has a booking today)</p>
-                        )}
-                        {isOpen && (
-                          <Select
-                            isClearable
-                            isDisabled={submittingShift}
-                            value={therapists.map((t) => ({ value: String(t.id), label: t.name })).find((o) => o.value === String(assignedShift?.therapistId ?? '')) ?? null}
-                            onChange={(picked: SingleValue<SelectOption>) => {
-                              const v = picked?.value ?? '';
-                              if (v) {
-                                handleAssignShift(v, room.id);
-                              } else if (assignedShift) {
-                                handleRemoveShift(assignedShift.id);
-                              }
-                            }}
-                            placeholder="Select..."
-                            options={therapists.map((t) => ({ value: String(t.id), label: t.name }))}
-                            unstyled
-                            classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
-                          />
-                        )}
                       </div>
                     </div>
                   );
@@ -857,6 +833,7 @@ function ScheduleGridView({
                     });
 
                     const isTempBooked = matchedTreatment?.status === 'Draft';
+                    void isTempBooked;
 
                     const activeTherapists = (roster.therapistShifts || []).filter((s) => {
                       if (s.roomId !== room.id) return false;
@@ -873,35 +850,21 @@ function ScheduleGridView({
                         className={`border-r border-b border-border/40 hover:bg-accent/10 transition-colors ${blockCell ? 'px-2 py-0' : 'p-2'}`}
                       >
                         {matchedTreatment ? (
-                            /* BOOKED / TEMP BOOKED SLOT CARD WITH BOOKING ID & CUSTOMER INFO */
-                            <div className={`rounded-lg border p-2.5 space-y-1.5 shadow-2xs ${isTempBooked
-                              ? 'border-amber-500/40 bg-amber-500/10'
-                              : 'border-primary/30 bg-primary/10'
-                              }`}>
-                              <div className="flex items-center justify-between gap-1">
-                                <span className={`font-mono text-xs font-bold ${isTempBooked ? 'text-amber-700 dark:text-amber-300' : 'text-primary'
-                                  }`}>
-                                  Booking #{matchedTreatment.bookingId}
-                                </span>
-                                {isTempBooked ? (
-                                  <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-200">
-                                    Temp Booked
-                                  </span>
-                                ) : (
-                                  <Badge status={matchedTreatment.status} className="text-[10px] py-0 px-1.5" />
-                                )}
+                            /* FRESHA SKY-BLUE BOOKED APPOINTMENT CARD */
+                            <div
+                              className="rounded-xl border border-sky-400/60 bg-[#99D9EA] dark:bg-sky-900/70 p-2.5 text-sky-950 dark:text-sky-100 shadow-2xs cursor-pointer hover:brightness-95 transition space-y-0.5"
+                              onClick={() => navigate(routes.bookings)}
+                              title={`Booking #${matchedTreatment.bookingId}: ${matchedTreatment.treatmentName} — ${matchedTreatment.customerName}`}
+                            >
+                              <div className="text-xs font-extrabold flex items-center justify-between gap-1">
+                                <span>{matchedTreatment.startTimeStr} – {matchedTreatment.endTimeStr}</span>
+                                <span className="text-[10px] font-bold opacity-75">#{matchedTreatment.bookingId}</span>
                               </div>
-                              <div className="font-medium text-foreground text-xs">
+                              <div className="text-xs font-bold truncate">
                                 {matchedTreatment.treatmentName}
                               </div>
-                              <div className="text-[11px] text-muted-foreground space-y-0.5">
-                                <p className="font-semibold text-foreground/90">{matchedTreatment.customerName}</p>
-                                <p className="truncate">{matchedTreatment.customerEmail}</p>
-                                {matchedTreatment.therapistName && (
-                                  <p className={isTempBooked ? 'text-amber-700 dark:text-amber-300 font-medium' : 'text-primary/90 font-medium'}>
-                                    Therapist: {matchedTreatment.therapistName}
-                                  </p>
-                                )}
+                              <div className="text-[11px] font-medium opacity-90 truncate">
+                                👤 {matchedTreatment.customerName}
                               </div>
                             </div>
                           ) : blockCell ? (
@@ -910,7 +873,7 @@ function ScheduleGridView({
                                first row and border-b/rounded-b only on its last stitch the individual
                                rows into one rectangle outline for the whole group. */
                             <div
-                              className={`h-full border-l border-r border-violet-500/40 bg-violet-500/10 p-2 space-y-1.5 shadow-2xs ${blockCell.position === 'only'
+                              className={`h-full border-l border-r border-violet-500/40 bg-violet-500/10 p-2 space-y-1.5 shadow-2xs cursor-pointer hover:bg-violet-500/20 transition ${blockCell.position === 'only'
                                 ? 'rounded-lg border-t border-b'
                                 : blockCell.position === 'first'
                                   ? 'rounded-t-lg border-t'
@@ -918,7 +881,8 @@ function ScheduleGridView({
                                     ? 'rounded-b-lg border-b'
                                     : ''
                                 }`}
-                              title={blockCell.blocks.length === 1 ? blockCell.blocks[0].reason : `${blockCell.blocks.length} overlapping blocked ranges`}
+                              title={blockCell.blocks.length === 1 ? `Click to edit: ${blockCell.blocks[0].reason}` : `${blockCell.blocks.length} overlapping blocked ranges`}
+                              onClick={() => blockCell.blocks.length > 0 && handleEditBlockSlot(blockCell.blocks[0])}
                               onContextMenu={(e) => openUnblockMenu(e, blockCell.blocks)}
                             >
                               {blockCell.blocks.map((block) => (
@@ -957,7 +921,15 @@ function ScheduleGridView({
                           ) : isStaffed ? (
                             /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
                             <div
-                              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs"
+                              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 space-y-1 shadow-2xs cursor-pointer hover:bg-emerald-500/20 transition"
+                              onClick={(e) => {
+                                setPopover({
+                                  isOpen: true,
+                                  position: { x: e.clientX, y: e.clientY },
+                                  roomId: room.id,
+                                  startTime: slot,
+                                });
+                              }}
                               onContextMenu={(e) => openBlockMenu(e, room.id, slot)}
                             >
                               <div className="flex items-center justify-between gap-1">
@@ -974,35 +946,24 @@ function ScheduleGridView({
                                   {activeTherapists.map((t) => t.therapistName).join(', ')}
                                 </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleBlockSlot(room.id, slot)}
-                                className="text-[10px] font-medium text-muted-foreground underline hover:text-foreground"
-                              >
-                                Block
-                              </button>
                             </div>
                           ) : (
-                            /* CLOSED OR UNSTAFFED ROOM SLOT -- a closed room (no room opening at all)
-                               isn't blockable, there's no bookable capacity there to carve out. An
-                               open-but-unstaffed room still is, e.g. to reserve time ahead of a shift
-                               assignment. */
+                            /* CLOSED OR UNSTAFFED ROOM SLOT */
                             <div
-                              className="rounded-md bg-muted/15 p-2 text-center space-y-1"
+                              className={`rounded-md bg-muted/15 p-2 text-center space-y-1 ${isOpen ? 'cursor-pointer hover:bg-muted/30 transition' : ''}`}
+                              onClick={isOpen ? (e) => {
+                                setPopover({
+                                  isOpen: true,
+                                  position: { x: e.clientX, y: e.clientY },
+                                  roomId: room.id,
+                                  startTime: slot,
+                                });
+                              } : undefined}
                               onContextMenu={isOpen ? (e) => openBlockMenu(e, room.id, slot) : undefined}
                             >
                               <p className="text-[10px] text-muted-foreground/40 italic">
                                 {isOpen ? 'No Staff Assigned' : 'Closed'}
                               </p>
-                              {isOpen && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleBlockSlot(room.id, slot)}
-                                  className="text-[10px] font-medium text-muted-foreground underline hover:text-foreground"
-                                >
-                                  Block
-                                </button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -1051,6 +1012,35 @@ function ScheduleGridView({
         )}
       </div>
     )}
+
+    <QuickActionsPopover
+      isOpen={popover?.isOpen ?? false}
+      onClose={() => setPopover(null)}
+      position={popover?.position ?? null}
+      timeDisplay={popover?.startTime ?? ''}
+      onAddAppointment={() => navigate(routes.bookings)}
+      onAddGroupAppointment={() => navigate(routes.bookings)}
+      onAddBlockedTime={() => {
+        if (popover) {
+          handleBlockSlot(popover.roomId, popover.startTime);
+        }
+      }}
+    />
+
+    <EditBlockSlotModal
+      isOpen={blockModalState.isOpen}
+      onClose={() => setBlockModalState((prev) => ({ ...prev, isOpen: false }))}
+      onSuccess={() => loadRosterAndBookings(true)}
+      chainId={chainId}
+      locationId={locationId}
+      roomId={blockModalState.roomId}
+      roomName={blockModalState.roomName}
+      workDate={date}
+      startTime={blockModalState.startTime}
+      maxMinutes={blockModalState.maxMinutes}
+      existingBlock={blockModalState.existingBlock}
+      therapists={therapists}
+    />
     </>
   );
 }

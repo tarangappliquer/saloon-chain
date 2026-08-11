@@ -65,6 +65,23 @@ internal static class AdminBookingEndpoints
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Move a Confirmed booking's treatment to a new room/therapist/time.");
 
+        // Assign proxy / alternate therapist when original staff is away/unavailable.
+        group.MapPost("/{id:int}/treatments/{treatmentId:int}/reassign-therapist", async (
+            int id, int treatmentId, ReassignTherapistRequest req, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            await bookingService.ReassignTherapistAsync(id, treatmentId, req.NewTherapistId, req.Reason);
+            return Results.NoContent();
+        }).RequireAuthorization("AdminAccess")
+          .WithValidation<ReassignTherapistRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Assign proxy / alternate therapist for a treatment line when original therapist is away.");
+
         // No-show, like cancel/reschedule above, has no caller-scoping in the proc itself.
         group.MapPost("/{id:int}/no-show", async (int id, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
         {
@@ -143,5 +160,16 @@ internal sealed class RescheduleTreatmentRequestValidator : AbstractValidator<Re
         RuleFor(x => x.RoomId).GreaterThan(0);
         RuleFor(x => x.TherapistId).GreaterThan(0);
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
+    }
+}
+
+internal sealed record ReassignTherapistRequest(int NewTherapistId, string? Reason);
+
+internal sealed class ReassignTherapistRequestValidator : AbstractValidator<ReassignTherapistRequest>
+{
+    public ReassignTherapistRequestValidator()
+    {
+        RuleFor(x => x.NewTherapistId).GreaterThan(0);
+        RuleFor(x => x.Reason).MaximumLength(500);
     }
 }

@@ -252,7 +252,7 @@ export function LocationsPage() {
   }
 
   function handleNavigateToSchedule(loc: Location) {
-    navigate(routes.scheduling({ chainId: loc.chainId ?? chainId, locationId: loc.id }));
+    navigate(routes.calendar({ chainId: loc.chainId ?? chainId, locationId: loc.id }));
   }
 
   const activeChain = chains.find((c) => c.id === (formChainId ?? chainId));

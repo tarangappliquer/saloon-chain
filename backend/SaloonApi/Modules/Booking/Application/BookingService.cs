@@ -189,6 +189,12 @@ internal sealed class BookingService(
         _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
     }
 
+    public async Task ReassignTherapistAsync(int bookingId, int treatmentId, int newTherapistId, string? reason)
+    {
+        var locationId = await repo.ReassignTherapistAsync(bookingId, treatmentId, newTherapistId, reason);
+        _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(DateTime.UtcNow));
+    }
+
     public Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId) => repo.GetByIdAsync(bookingId, customerId);
 
     public async Task ConfirmAsync(int bookingId, int customerId)

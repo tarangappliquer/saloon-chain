@@ -14,9 +14,9 @@ internal sealed record StaffUserDto(
     int Id, string Name, string Email, string? Phone, UserRole Role,
     int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateTime CreatedDate);
 
-internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone, bool CanEmulate = true);
+internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone, bool CanEmulate = true, bool IsWalkIn = false);
 
-internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool CanEmulate = true);
+internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool CanEmulate = true, bool IsWalkIn = false);
 
 // Keyset pagination, not page-number/offset -- see sp_Admin_GetCustomers' own comment for why.
 // NextCursorName/NextCursorId are the last item's own Name/Id, echoed straight back by the caller
@@ -24,7 +24,7 @@ internal sealed record AdminCustomerDto(int Id, string Name, string Email, strin
 internal sealed record AdminCustomersPageDto(
     IReadOnlyList<AdminCustomerDto> Items, string? NextCursorName, int? NextCursorId, bool HasMore);
 
-internal sealed record CustomerProfileDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate);
+internal sealed record CustomerProfileDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool IsWalkIn = false);
 
 internal sealed record CustomerNoteDto(
     int Id, string Note, int? ChainId, string? ChainName, int? LocationId, string? LocationName,
@@ -37,7 +37,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<int> CreateAsync(
         string name, string email, byte[] hash, byte[] salt, string? phone,
         UserRole role = UserRole.Customer, int? chainId = null, int? locationId = null, int? therapistId = null,
-        bool isEmulator = false, bool isEmailVerified = false)
+        bool isEmulator = false, bool isEmailVerified = false, bool isWalkIn = false)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
@@ -51,6 +51,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         p.Add("@LocationId", locationId);
         p.Add("@TherapistId", therapistId);
         p.Add("@IsEmulator", isEmulator);
+        p.Add("@IsWalkIn", isWalkIn);
         // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
         p.Add("@CreatedBy", currentUser.UserId);
         // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal

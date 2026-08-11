@@ -136,7 +136,7 @@ export function DashboardPage() {
                     <p className="text-xs text-muted-foreground">Manage appointment schedule and therapist room availability.</p>
                   </div>
                   <Link
-                    to={routes.scheduling({ view: 'grid' })}
+                    to={routes.calendar({ view: 'grid' })}
                     className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-primary/90 transition"
                   >
                     Open Schedule Grid →

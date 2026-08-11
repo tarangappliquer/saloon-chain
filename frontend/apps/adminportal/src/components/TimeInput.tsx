@@ -11,6 +11,7 @@ interface TimeInputProps {
   error?: string;
   onErrorChange?: (error: string | null) => void;
   required?: boolean;
+  disabled?: boolean;
   className?: string;
   incrementMinutes?: number | undefined;
 }
@@ -30,6 +31,7 @@ function TimeInputBase({
   error: externalError,
   onErrorChange,
   required,
+  disabled,
   className,
   incrementMinutes,
 }: TimeInputProps) {
@@ -77,6 +79,7 @@ function TimeInputBase({
       <Timepicker
         id={inputId}
         required={required}
+        disabled={disabled}
         value={value}
         options={options}
         onConfirm={({ hour, minutes }) => {

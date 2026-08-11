@@ -167,11 +167,12 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         });
     }
 
-    public async Task<int> BlockSlotAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, string reason)
+    public async Task<int> BlockSlotAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId = null)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
         p.Add("@RoomId", roomId);
+        p.Add("@BlockTypeId", blockTypeId);
         p.Add("@WorkDate", workDate.ToDateTime(TimeOnly.MinValue));
         p.Add("@StartTime", startTime);
         p.Add("@EndTime", endTime);
@@ -186,6 +187,20 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Scheduling_UnblockSlot", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+    }
+
+    public async Task UpdateBlockedSlotAsync(int id, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId = null)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Scheduling_UpdateBlockedSlot", new
+        {
+            Id = id,
+            BlockTypeId = blockTypeId,
+            StartTime = startTime,
+            EndTime = endTime,
+            Reason = reason,
+            UpdatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task<BlockedSlotDetailsDto?> GetBlockedSlotDetailsAsync(int id)

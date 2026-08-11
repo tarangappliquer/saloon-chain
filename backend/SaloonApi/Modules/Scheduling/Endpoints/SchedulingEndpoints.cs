@@ -134,7 +134,7 @@ internal static class SchedulingEndpoints
             if (await repo.HasBlockOverlapAsync(req.RoomId, req.WorkDate, req.StartTime, req.EndTime))
                 return Results.Problem("Cannot block slot; it overlaps an existing blocked slot.", statusCode: StatusCodes.Status400BadRequest);
 
-            var id = await repo.BlockSlotAsync(req.RoomId, req.WorkDate, req.StartTime, req.EndTime, req.Reason);
+            var id = await repo.BlockSlotAsync(req.RoomId, req.WorkDate, req.StartTime, req.EndTime, req.Reason, req.BlockTypeId);
             var blocked = await repo.GetBlockedSlotDetailsAsync(id);
             var roomLocId = blocked?.LocationId ?? currentUser.LocationId ?? 0;
             if (roomLocId > 0)
@@ -175,7 +175,7 @@ internal static class SchedulingEndpoints
             {
                 if (!await repo.HasBlockOverlapAsync(roomId, req.WorkDate, req.StartTime, req.EndTime))
                 {
-                    var id = await repo.BlockSlotAsync(roomId, req.WorkDate, req.StartTime, req.EndTime, req.Reason);
+                    var id = await repo.BlockSlotAsync(roomId, req.WorkDate, req.StartTime, req.EndTime, req.Reason, req.BlockTypeId);
                     createdIds.Add(id);
                 }
             }
@@ -208,6 +208,25 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("Unblock a previously blocked room/time slot.");
+
+        group.MapPut("/blocked-slots/{id:int}", async (int id, UpdateBlockedSlotRequest req, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
+        {
+            var blocked = await repo.GetBlockedSlotDetailsAsync(id);
+            if (blocked is null)
+                return Results.Problem("Blocked slot not found.", statusCode: StatusCodes.Status404NotFound);
+
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && blocked.LocationId != currentUser.LocationId)
+                return Results.Problem("Not authorized for this blocked slot.", statusCode: StatusCodes.Status403Forbidden);
+
+            await repo.UpdateBlockedSlotAsync(id, req.StartTime, req.EndTime, req.Reason, req.BlockTypeId);
+            var workDate = DateOnly.FromDateTime(blocked.WorkDate);
+            await bookingSvc.SyncAndNotifyAsync(blocked.LocationId, workDate);
+            return Results.NoContent();
+        }).WithValidation<UpdateBlockedSlotRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status404NotFound)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Update an existing blocked room/time slot.");
     }
 }
 
@@ -220,9 +239,20 @@ internal sealed record AssignTherapistShiftRequest(
 
 internal sealed record OpenRoomRequest(int RoomId, int TreatmentCategoryId, string ShiftType, DateOnly WorkDate);
 
-internal sealed record BlockSlotRequest(int RoomId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+internal sealed record BlockSlotRequest(int RoomId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason, int? BlockTypeId = null);
 
-internal sealed record BlockLocationSlotRequest(int LocationId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+internal sealed record BlockLocationSlotRequest(int LocationId, DateOnly WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason, int? BlockTypeId = null);
+
+internal sealed record UpdateBlockedSlotRequest(TimeSpan StartTime, TimeSpan EndTime, string Reason, int? BlockTypeId = null);
+
+internal sealed class UpdateBlockedSlotRequestValidator : AbstractValidator<UpdateBlockedSlotRequest>
+{
+    public UpdateBlockedSlotRequestValidator()
+    {
+        RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(200);
+    }
+}
 
 internal sealed class AssignTherapistShiftRequestValidator : AbstractValidator<AssignTherapistShiftRequest>
 {

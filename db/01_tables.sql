@@ -204,6 +204,7 @@ CREATE TABLE dbo.Users (
     TherapistId   INT NULL REFERENCES dbo.TherapistProfile(Id),
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
+    IsWalkIn      BIT NOT NULL DEFAULT 0, -- flagged when created as a walk-in customer by staff
     StripeCustomerId NVARCHAR(200) NULL,
     IsEmailVerified BIT NOT NULL DEFAULT 0, -- proven only by clicking a change-email confirmation link (sp_Auth_ConfirmEmailChange); no signup-time verification exists yet.
     IsDelete      BIT NOT NULL DEFAULT 0,
@@ -322,6 +323,31 @@ CREATE INDEX IX_RoomCategoryAssignments_Room_Date ON dbo.RoomCategoryAssignments
 CREATE UNIQUE INDEX UQ_RoomCategoryAssignments_Room_Shift_Date
     ON dbo.RoomCategoryAssignments(RoomId, ShiftType, WorkDate) WHERE IsDelete = 0;
 
+-- Configurable block types for scheduling non-booking time ranges (Lunch Break, Team Meeting, etc.) --
+-- scoped to ChainId (saloon-wide), LocationId (location-specific), or NULL/NULL (system default).
+CREATE TABLE dbo.BlockTypes (
+    Id                     INT IDENTITY(1,1) PRIMARY KEY,
+    Name                   NVARCHAR(100) NOT NULL,
+    ChainId                INT NULL REFERENCES dbo.SaloonChains(Id),
+    LocationId             INT NULL REFERENCES dbo.Locations(Id),
+    IsPaid                 BIT NOT NULL DEFAULT 0, -- Paid vs Unpaid time block
+    DefaultDurationMinutes INT NOT NULL DEFAULT 30, -- Default length in minutes (e.g. 15, 30, 45, 60)
+    ColorHex               NVARCHAR(10) NOT NULL DEFAULT '#F59E0B',
+    IsActive               BIT NOT NULL DEFAULT 1,
+    IsDelete               BIT NOT NULL DEFAULT 0,
+    CreatedBy              INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate            DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy              INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate            DATETIME2 NULL,
+    CONSTRAINT CK_BlockTypes_Scope CHECK (
+        (ChainId IS NULL AND LocationId IS NULL) OR
+        (ChainId IS NOT NULL AND LocationId IS NULL) OR
+        (LocationId IS NOT NULL)
+    )
+);
+CREATE INDEX IX_BlockTypes_Chain ON dbo.BlockTypes(ChainId) WHERE IsDelete = 0;
+CREATE INDEX IX_BlockTypes_Location ON dbo.BlockTypes(LocationId) WHERE IsDelete = 0;
+
 -- Admin-initiated block on a room/time range (lunch break, therapist emergency leave, etc) --
 -- distinct from RoomCategoryAssignments (whole room open/closed for a shift) since a block covers
 -- an arbitrary sub-range of an otherwise-open, staffed room. Enforced not-overlapping any live
@@ -330,6 +356,7 @@ CREATE UNIQUE INDEX UQ_RoomCategoryAssignments_Room_Shift_Date
 CREATE TABLE dbo.BlockedSlots (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     RoomId       INT NOT NULL REFERENCES dbo.Rooms(Id),
+    BlockTypeId  INT NULL REFERENCES dbo.BlockTypes(Id),
     WorkDate     DATE NOT NULL,
     StartTime    TIME NOT NULL,
     EndTime      TIME NOT NULL,

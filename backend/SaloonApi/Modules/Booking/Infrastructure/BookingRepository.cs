@@ -229,6 +229,21 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return p.Get<int>("@LocationId");
     }
 
+    public async Task<int> ReassignTherapistAsync(int bookingId, int treatmentId, int newTherapistId, string? reason)
+    {
+        using var db = factory.Create();
+        var p = new DynamicParameters();
+        p.Add("@BookingId", bookingId);
+        p.Add("@TreatmentId", treatmentId);
+        p.Add("@NewTherapistId", newTherapistId);
+        p.Add("@Reason", reason);
+        p.Add("@UpdatedBy", currentUser.UserId);
+        p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+
+        await db.ExecuteSpAsync("dbo.sp_Booking_ReassignTherapist", p);
+        return p.Get<int>("@LocationId");
+    }
+
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();

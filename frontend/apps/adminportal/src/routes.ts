@@ -25,12 +25,13 @@ export const routes = {
   bookings: '/bookings',
   customers: '/customers',
   customerProfile: (id: Id) => `/customers/${id}`,
-  scheduling: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
-    withQuery('/scheduling', params),
-  calendar: '/calendar',
+  calendar: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
+    withQuery('/calendar', params),
   inventory: '/inventory',
   payroll: '/payroll',
   reports: '/reports',
+  settings: '/settings',
+  blockTypes: '/settings/block-types',
   catalog: {
     saloons: '/catalog/saloons',
     saloonUsers: (chainId?: Id | null) => withQuery('/catalog/saloons/users', { chainId }),
@@ -50,7 +51,7 @@ export const routes = {
     therapists: '/staff/therapists',
     rooms: (chainId?: Id | null, locationId?: Id | null) => withQuery('/staff/rooms', { chainId, locationId }),
   },
-  // Shared "← Back" target used across every catalog/staff/scheduling sub-page: Managers (who are
+  // Shared "← Back" target used across every catalog/staff/calendar sub-page: Managers (who are
   // scoped to one location) go home to My Location, everyone else goes back up to the location
   // list they drilled in from (or the saloon list if no chain is selected yet).
   catalogBack(isManager: boolean, chainId?: Id | null): string {

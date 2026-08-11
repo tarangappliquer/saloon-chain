@@ -154,7 +154,7 @@ export function RoomsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(routes.scheduling({ chainId, locationId }))}
+                onClick={() => navigate(routes.calendar({ chainId, locationId }))}
               >
                 <Calendar className="h-3.5 w-3.5 mr-1" />
                 Schedule Rooms

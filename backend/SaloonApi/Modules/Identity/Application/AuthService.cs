@@ -81,12 +81,19 @@ internal sealed class AuthService(
         return id;
     }
 
-    public async Task<int> CreateCustomerAsync(string name, string email, string? phone)
+    public async Task<int> CreateCustomerAsync(string name, string? email, string? phone, bool isWalkIn = false)
     {
+        var finalEmail = string.IsNullOrWhiteSpace(email)
+            ? $"walkin-{RandomNumberGenerator.GetInt32(100000, 999999)}-{DateTime.UtcNow.Ticks}@saloon.local"
+            : email;
+
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
-        var id = await repo.CreateAsync(name, email, hash, salt, phone, UserRole.Customer);
-        await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email, phone);
-        await SendSetPasswordEmailAsync(id, name, email, portalUrls.CurrentValue.ClientPortalUrl);
+        var id = await repo.CreateAsync(name, finalEmail, hash, salt, phone, UserRole.Customer, isWalkIn: isWalkIn);
+        if (!isWalkIn)
+        {
+            await stripeCustomerService.GetOrCreateCustomerAsync(id, name, finalEmail, phone);
+            await SendSetPasswordEmailAsync(id, name, finalEmail, portalUrls.CurrentValue.ClientPortalUrl);
+        }
         return id;
     }
 

@@ -30,11 +30,11 @@ const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ de
 const BookingsPage = lazy(() => import('./pages/bookings/BookingsPage').then((m) => ({ default: m.BookingsPage })));
 const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })));
 const ClientProfilePage = lazy(() => import('./pages/customers/ClientProfilePage').then((m) => ({ default: m.ClientProfilePage })));
-const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
-const AppointmentCalendarPage = lazy(() => import('./pages/calendar/AppointmentCalendarPage').then((m) => ({ default: m.AppointmentCalendarPage })));
+const CalendarPage = lazy(() => import('./pages/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage').then((m) => ({ default: m.InventoryPage })));
 const PayrollPage = lazy(() => import('./pages/payroll/PayrollPage').then((m) => ({ default: m.PayrollPage })));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -57,12 +57,12 @@ function RequireRole({ roles, children }: { roles: UserRole[]; children: ReactNo
 // visitor happens to already hold a session (e.g. a verify-email link opened while logged in).
 function AuthedLayout() {
   return (
-    <>
+    <div className="flex h-screen overflow-hidden bg-background">
       <Nav />
-      <main className="mx-auto max-w-7xl px-6 py-6 min-h-[max(100%,calc(99vh-50px))]">
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto px-4 py-6 md:px-8 md:py-8">
         <Outlet />
       </main>
-    </>
+    </div>
   );
 }
 
@@ -184,18 +184,10 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.scheduling()}
+              path={routes.calendar()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
-                  <SchedulingPage />
-                </RequireRole>
-              }
-            />
-            <Route
-              path={routes.calendar}
-              element={
-                <RequireRole roles={ADMIN_ACCESS}>
-                  <AppointmentCalendarPage />
+                  <CalendarPage />
                 </RequireRole>
               }
             />
@@ -220,6 +212,14 @@ function AppRoutes() {
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <ReportsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.settings}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <SettingsPage />
                 </RequireRole>
               }
             />

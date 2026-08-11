@@ -16,6 +16,7 @@ import {
   ProfileApi,
   ReportsApi,
   SchedulingApi,
+  AdminSchedulingApi,
 } from '@saloon/api-client';
 import { appConfig } from '../config';
 
@@ -161,4 +162,5 @@ export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);
+export const adminSchedulingApi = new AdminSchedulingApi(configuration, API_BASE, axiosInstance);
 

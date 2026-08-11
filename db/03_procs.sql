@@ -711,6 +711,76 @@ BEGIN
 END
 GO
 
+-- Reassign a proxy / alternate therapist for a confirmed booking treatment line (e.g. when staff is unavailable)
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_ReassignTherapist
+    @BookingId      INT,
+    @TreatmentId    INT,
+    @NewTherapistId INT,
+    @Reason         NVARCHAR(500) = NULL,
+    @UpdatedBy      INT = NULL,
+    @LocationId     INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @StartTime DATETIME2;
+    DECLARE @EndTime DATETIME2;
+    DECLARE @OldTherapistId INT;
+
+    SELECT TOP 1
+        @LocationId = b.LocationId,
+        @StartTime = bt.StartTime,
+        @EndTime = bt.EndTime,
+        @OldTherapistId = bt.TherapistId
+    FROM dbo.BookingTreatments bt
+        JOIN dbo.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
+        AND b.IsDelete = 0 AND b.Status = 'Confirmed';
+
+    IF @LocationId IS NULL
+    BEGIN
+        THROW 50008, 'Booking or treatment not found or not confirmed.', 1;
+    END
+
+    DECLARE @TherapistLockKey NVARCHAR(100) = CONCAT('therapist_', @NewTherapistId, '_', CONVERT(VARCHAR(10), @StartTime, 23));
+    DECLARE @LockResult INT;
+
+    BEGIN TRANSACTION;
+
+    EXEC @LockResult = sp_getapplock @Resource = @TherapistLockKey, @LockMode = 'Exclusive',
+                                      @LockOwner = 'Transaction', @LockTimeout = 5000;
+    IF @LockResult < 0
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50001, 'Could not acquire therapist lock, try again.', 1;
+    END
+
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        WHERE bt.TherapistId = @NewTherapistId
+            AND bt.IsDelete = 0 AND b.IsDelete = 0
+            AND NOT (bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId)
+            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > SYSUTCDATETIME()))
+            AND bt.StartTime < @EndTime AND bt.EndTime > @StartTime
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50002, 'Alternate therapist is not available for this time slot.', 1;
+    END
+
+    UPDATE dbo.BookingTreatments
+    SET TherapistId = @NewTherapistId, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE BookingId = @BookingId AND TreatmentId = @TreatmentId AND IsDelete = 0;
+
+    UPDATE dbo.Bookings SET UpdatedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy WHERE Id = @BookingId;
+
+    COMMIT TRANSACTION;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Delete
     @BookingId   INT,
     @CustomerId  INT = NULL,
@@ -1020,6 +1090,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
     -- True only for AdminSeeder's server-configured bootstrap account -- never for self-registration
     -- or admin-created staff/customers, who still go through the normal email-verification flow.
     @IsEmailVerified  BIT = 0,
+    @IsWalkIn         BIT = 0,
     @UserId           INT OUTPUT
 AS
 BEGIN
@@ -1032,11 +1103,12 @@ BEGIN
     -- Defense in depth alongside AdminStaffEndpoints' C#-side clamp -- IsEmulator only ever applies
     -- to RootSuperAdmin/SuperAdmin/Admin, same restriction as sp_Admin_UpdateUser below.
     INSERT INTO dbo.Users
-        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, CreatedBy, IsEmailVerified)
+        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, IsWalkIn, CreatedBy, IsEmailVerified)
     VALUES
         (
             @Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId,
             CASE WHEN @Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE CAST(0 AS BIT) END,
+            @IsWalkIn,
             @CreatedBy, @IsEmailVerified);
 
     SET @UserId = SCOPE_IDENTITY();
@@ -2031,7 +2103,7 @@ BEGIN
 
     IF @ChainId IS NULL AND @LocationId IS NULL
     BEGIN
-        SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone, CAST(1 AS BIT) AS CanEmulate
+        SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone, CAST(1 AS BIT) AS CanEmulate, u.IsWalkIn
         FROM dbo.Users u WITH (NOLOCK)
         WHERE u.Role = 'Customer' AND u.IsDelete = 0 AND u.IsActive = 1
             AND (u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
@@ -2040,7 +2112,8 @@ BEGIN
     ELSE
     BEGIN
         SELECT TOP (20) u.Id, u.Name, u.Email, u.Phone,
-            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate,
+            u.IsWalkIn
         FROM dbo.Users u WITH (NOLOCK)
             LEFT JOIN (
                 SELECT DISTINCT c.CustomerId
@@ -2082,7 +2155,7 @@ BEGIN
     IF @ChainId IS NULL AND @LocationId IS NULL
     BEGIN
         SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
-            CAST(1 AS BIT) AS CanEmulate
+            CAST(1 AS BIT) AS CanEmulate, u.IsWalkIn
         FROM dbo.Users u WITH (NOLOCK)
         WHERE u.Role = 'Customer' AND u.IsDelete = 0
             AND (@Search IS NULL OR u.Name LIKE '%' + @Search + '%' OR u.Email LIKE '%' + @Search + '%')
@@ -2092,7 +2165,8 @@ BEGIN
     ELSE
     BEGIN
         SELECT TOP (@PageSize) u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate,
-            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate
+            CASE WHEN cl.CustomerId IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS CanEmulate,
+            u.IsWalkIn
         FROM dbo.Users u WITH (NOLOCK)
             LEFT JOIN (
                 SELECT DISTINCT c.CustomerId
@@ -2646,19 +2720,120 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_BlockSlot
-    @RoomId    INT,
-    @WorkDate  DATE,
-    @StartTime TIME,
-    @EndTime   TIME,
-    @Reason    NVARCHAR(200),
-    @CreatedBy INT,
-    @Id        INT OUTPUT
+CREATE OR ALTER PROCEDURE dbo.sp_BlockTypes_SeedDefaults
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.BlockedSlots (RoomId, WorkDate, StartTime, EndTime, Reason, CreatedBy)
-    VALUES (@RoomId, @WorkDate, @StartTime, @EndTime, @Reason, @CreatedBy);
+    IF NOT EXISTS (SELECT 1 FROM dbo.BlockTypes WHERE ChainId IS NULL AND LocationId IS NULL AND IsDelete = 0)
+    BEGIN
+        INSERT INTO dbo.BlockTypes (Name, ChainId, LocationId, IsPaid, DefaultDurationMinutes, ColorHex)
+        VALUES 
+            ('Lunch Break', NULL, NULL, 0, 30, '#F59E0B'),
+            ('Team Meeting', NULL, NULL, 1, 60, '#3B82F6'),
+            ('Personal Break', NULL, NULL, 0, 15, '#10B981'),
+            ('Training / Workshop', NULL, NULL, 1, 90, '#8B5CF6'),
+            ('Maintenance / Cleaning', NULL, NULL, 1, 45, '#6B7280');
+    END
+END
+GO
+EXEC dbo.sp_BlockTypes_SeedDefaults;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetBlockTypes
+    @ChainId    INT = NULL,
+    @LocationId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Returns global default block types (ChainId IS NULL AND LocationId IS NULL) plus
+    -- chain-scoped (if @ChainId is passed) or location-scoped (if @LocationId is passed).
+    SELECT bt.Id, bt.Name, bt.ChainId, c.Name AS ChainName, bt.LocationId, l.Name AS LocationName,
+           bt.IsPaid, bt.DefaultDurationMinutes, bt.ColorHex, bt.IsActive, bt.CreatedDate
+    FROM dbo.BlockTypes bt WITH (NOLOCK)
+        LEFT JOIN dbo.SaloonChains c WITH (NOLOCK) ON c.Id = bt.ChainId AND c.IsDelete = 0
+        LEFT JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = bt.LocationId AND l.IsDelete = 0
+    WHERE bt.IsDelete = 0
+      AND (
+          (bt.ChainId IS NULL AND bt.LocationId IS NULL) OR
+          (@ChainId IS NOT NULL AND bt.ChainId = @ChainId) OR
+          (@LocationId IS NOT NULL AND bt.LocationId = @LocationId) OR
+          (@LocationId IS NOT NULL AND l.ChainId = (SELECT ChainId FROM dbo.Locations WITH (NOLOCK) WHERE Id = @LocationId))
+      )
+    ORDER BY bt.Name;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_CreateBlockType
+    @Name                   NVARCHAR(100),
+    @ChainId                INT = NULL,
+    @LocationId             INT = NULL,
+    @IsPaid                 BIT = 0,
+    @DefaultDurationMinutes INT = 30,
+    @ColorHex               NVARCHAR(10) = '#F59E0B',
+    @CreatedBy              INT = NULL,
+    @Id                     INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.BlockTypes
+        (Name, ChainId, LocationId, IsPaid, DefaultDurationMinutes, ColorHex, CreatedBy)
+    VALUES
+        (@Name, @ChainId, @LocationId, @IsPaid, @DefaultDurationMinutes, @ColorHex, @CreatedBy);
+
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateBlockType
+    @Id                     INT,
+    @Name                   NVARCHAR(100),
+    @IsPaid                 BIT,
+    @DefaultDurationMinutes INT,
+    @ColorHex               NVARCHAR(10),
+    @IsActive               BIT,
+    @UpdatedBy              INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.BlockTypes
+    SET Name = @Name, IsPaid = @IsPaid, DefaultDurationMinutes = @DefaultDurationMinutes,
+        ColorHex = @ColorHex, IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50060, 'Block type not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_DeleteBlockType
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.BlockTypes
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50061, 'Block type not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_BlockSlot
+    @RoomId      INT,
+    @WorkDate    DATE,
+    @StartTime   TIME,
+    @EndTime     TIME,
+    @Reason      NVARCHAR(200),
+    @BlockTypeId INT = NULL,
+    @CreatedBy   INT,
+    @Id          INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.BlockedSlots (RoomId, BlockTypeId, WorkDate, StartTime, EndTime, Reason, CreatedBy)
+    VALUES (@RoomId, @BlockTypeId, @WorkDate, @StartTime, @EndTime, @Reason, @CreatedBy);
 
     SET @Id = SCOPE_IDENTITY();
 END
@@ -2679,15 +2854,41 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_UpdateBlockedSlot
+    @Id          INT,
+    @BlockTypeId INT = NULL,
+    @StartTime   TIME,
+    @EndTime     TIME,
+    @Reason      NVARCHAR(200),
+    @UpdatedBy   INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.BlockedSlots
+    SET BlockTypeId = @BlockTypeId,
+        StartTime = @StartTime,
+        EndTime = @EndTime,
+        Reason = @Reason,
+        UpdatedBy = @UpdatedBy,
+        UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50033, 'Blocked slot not found.', 1;
+END
+GO
+
 -- Ownership lookup for DELETE /blocked-slots/{id} -- same reasoning as sp_Scheduling_GetShiftLocationId.
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_GetBlockedSlotDetails
     @Id INT
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT bs.Id, r.LocationId, bs.RoomId, bs.WorkDate, bs.StartTime, bs.EndTime, bs.Reason
+    SELECT bs.Id, r.LocationId, bs.RoomId, bs.BlockTypeId, bt.Name AS BlockTypeName,
+           bt.IsPaid, bt.ColorHex, bs.WorkDate, bs.StartTime, bs.EndTime, bs.Reason
     FROM dbo.BlockedSlots bs
         JOIN dbo.Rooms r ON r.Id = bs.RoomId
+        LEFT JOIN dbo.BlockTypes bt ON bt.Id = bs.BlockTypeId AND bt.IsDelete = 0
     WHERE bs.Id = @Id AND bs.IsDelete = 0;
 END
 GO

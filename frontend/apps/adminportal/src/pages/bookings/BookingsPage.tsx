@@ -114,6 +114,13 @@ function RetailLines({ bookingId, locationId }: { bookingId: number; locationId:
   );
 }
 
+interface ReassignTarget {
+  bookingId: number;
+  treatmentId: number;
+  treatmentName: string;
+  currentTherapist?: string;
+}
+
 interface BookingDetailsModalProps {
   booking: AdminBooking;
   locationId: number;
@@ -122,9 +129,19 @@ interface BookingDetailsModalProps {
   onClose: () => void;
   onCancel: (id: number) => Promise<void>;
   onNoShow: (id: number) => Promise<void>;
+  onReassignTherapist: (target: ReassignTarget) => void;
 }
 
-function BookingDetailsModal({ booking, locationId, canCancel, canMarkNoShow, onClose, onCancel, onNoShow }: BookingDetailsModalProps) {
+function BookingDetailsModal({
+  booking,
+  locationId,
+  canCancel,
+  canMarkNoShow,
+  onClose,
+  onCancel,
+  onNoShow,
+  onReassignTherapist,
+}: BookingDetailsModalProps) {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
@@ -237,6 +254,22 @@ function BookingDetailsModal({ booking, locationId, canCancel, canMarkNoShow, on
                         {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     )}
+                    {canMarkNoShow && booking.status === 'Confirmed' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onReassignTherapist({
+                            bookingId: booking.id,
+                            treatmentId: t.treatmentId,
+                            treatmentName: t.treatmentName,
+                            currentTherapist: t.therapistName ?? undefined,
+                          })
+                        }
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                      >
+                        🔄 Assign Proxy / Alternate Specialist
+                      </button>
+                    )}
                   </div>
                   <span className="font-mono font-bold text-foreground text-sm">${t.price.toFixed(2)}</span>
                 </div>
@@ -347,6 +380,130 @@ function BookingDetailsModal({ booking, locationId, canCancel, canMarkNoShow, on
   );
 }
 
+interface ReassignTherapistModalProps {
+  target: ReassignTarget;
+  locationId: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ReassignTherapistModal({ target, locationId, onClose, onSuccess }: ReassignTherapistModalProps) {
+  const [therapists, setTherapists] = useState<{ id: number; name: string }[]>([]);
+  const [newTherapistId, setNewTherapistId] = useState<string>('');
+  const [reason, setReason] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    adminCatalogApi
+      .apiAdminCatalogTherapistsGet()
+      .then(({ data }) => {
+        const list = (data as unknown as { id: number; name: string; locationId?: number }[]).filter(
+          (t) => !t.locationId || t.locationId === locationId
+        );
+        setTherapists(list);
+        if (list.length > 0) setNewTherapistId(String(list[0].id));
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load therapists'))
+      .finally(() => setLoading(false));
+  }, [locationId]);
+
+  async function handleReassign(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newTherapistId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await adminBookingsApi.apiAdminBookingsIdTreatmentsTreatmentIdReassignTherapistPost(
+        target.bookingId,
+        target.treatmentId,
+        { newTherapistId: Number(newTherapistId), reason: reason || null }
+      );
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to reassign proxy therapist');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl space-y-4 p-6">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <h3 className="text-base font-extrabold text-foreground">Assign Proxy / Alternate Specialist</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Booking #{target.bookingId} • {target.treatmentName}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+            ✕
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="py-6"><LoadingFallback /></div>
+        ) : (
+          <form onSubmit={handleReassign} className="space-y-4 text-xs">
+            {target.currentTherapist && (
+              <div className="rounded-xl border border-border/80 bg-accent/30 p-3">
+                <span className="text-[11px] font-bold uppercase text-muted-foreground block">Currently Assigned Specialist</span>
+                <span className="font-semibold text-foreground text-sm">{target.currentTherapist}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                Select Alternate / Proxy Specialist
+              </label>
+              <select
+                value={newTherapistId}
+                onChange={(e) => setNewTherapistId(e.target.value)}
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-xs text-foreground font-semibold"
+              >
+                {therapists.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                Reason for Reassignment (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Primary specialist on emergency leave"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-xs text-foreground"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting || !newTherapistId} size="sm" className="font-bold">
+                {submitting ? 'Reassigning...' : 'Confirm Proxy Specialist'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function BookingsPage() {
   const { user } = useAuth();
   const canCancel =
@@ -369,6 +526,7 @@ export function BookingsPage() {
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<AdminBooking | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<number | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<ReassignTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -508,6 +666,19 @@ export function BookingsPage() {
           onClose={() => setSelectedBooking(null)}
           onCancel={handleCancel}
           onNoShow={handleNoShow}
+          onReassignTherapist={setReassignTarget}
+        />
+      )}
+
+      {reassignTarget && locationId !== null && (
+        <ReassignTherapistModal
+          target={reassignTarget}
+          locationId={locationId}
+          onClose={() => setReassignTarget(null)}
+          onSuccess={() => {
+            loadBookings();
+            setSelectedBooking(null);
+          }}
         />
       )}
 

@@ -198,6 +198,7 @@ export interface BlockedSlot {
   startTime: string;
   endTime: string;
   reason: string;
+  blockTypeId?: number | null;
 }
 
 export interface Roster {

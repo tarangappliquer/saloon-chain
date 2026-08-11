@@ -184,7 +184,7 @@ export function MyLocationPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate(routes.scheduling({ chainId: location.chainId, locationId: location.id }))}
+                onClick={() => navigate(routes.calendar({ chainId: location.chainId, locationId: location.id }))}
               >
                 <Calendar className="h-3.5 w-3.5 mr-1" />
                 Schedule
