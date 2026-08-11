@@ -11,10 +11,25 @@ import { type SelectOption, selectClassNames, selectMenuPortalStyles } from '../
 const SLOT_MINUTES = 15;
 const ROW_HEIGHT_PX = 22;
 const TIME_COL_PX = 64;
-const ROOM_COL_PX = 160;
+const COL_PX = 160;
+
+type ViewMode = 'day' | 'week';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Monday-Sunday week containing `dateStr`.
+function weekDatesFor(dateStr: string): string[] {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const mondayOffset = d.getDay() === 0 ? -6 : 1 - d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    return dd.toISOString().slice(0, 10);
+  });
 }
 
 function generateTimeSlots(startStr: string, endStr: string): string[] {
@@ -44,6 +59,7 @@ interface FlatAppointment {
   therapistId: number | null;
   therapistName: string | null;
   status: string;
+  dateStr: string;
   startHHMM: string;
   slotCount: number;
 }
@@ -62,12 +78,21 @@ function flattenAppointments(bookings: AdminBooking[]): FlatAppointment[] {
         therapistId: t.therapistId ?? null,
         therapistName: t.therapistName,
         status: b.status,
+        dateStr: t.startTime.slice(0, 10),
         startHHMM: toHHMM(t.startTime),
         slotCount: t.slotCount,
       });
     }
   }
   return out;
+}
+
+// A calendar column: day view = one per room (fixed date), week view = one per day (fixed room).
+interface Column {
+  key: string;
+  label: string;
+  roomId: number;
+  dateStr: string;
 }
 
 function AppointmentBlock({ appt, top, height }: { appt: FlatAppointment; top: number; height: number }) {
@@ -93,8 +118,8 @@ function AppointmentBlock({ appt, top, height }: { appt: FlatAppointment; top: n
   );
 }
 
-function DroppableCell({ roomId, time }: { roomId: number; time: string }) {
-  const { ref, isDropTarget } = useDroppable({ id: `${roomId}__${time}`, data: { roomId, time } });
+function DroppableCell({ roomId, dateStr, time }: { roomId: number; dateStr: string; time: string }) {
+  const { ref, isDropTarget } = useDroppable({ id: `${roomId}__${dateStr}__${time}`, data: { roomId, dateStr, time } });
   return (
     <div
       ref={ref}
@@ -111,6 +136,8 @@ export function AppointmentCalendarPage() {
   const [locationId, setLocationId] = useState<number | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [date, setDate] = useState(today());
+  const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [weekRoomId, setWeekRoomId] = useState<number | null>(null);
   const [bookings, setBookings] = useState<AdminBooking[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,31 +163,46 @@ export function AppointmentCalendarPage() {
     adminCatalogApi.apiAdminCatalogRoomsGet(locationId).then(({ data }) => setRooms(data as unknown as Room[]));
   }, [locationId]);
 
+  // Default (or re-pick, if the location changed) which room week view is anchored to.
+  useEffect(() => {
+    if (rooms.length === 0) {
+      setWeekRoomId(null);
+      return;
+    }
+    setWeekRoomId((prev) => (prev !== null && rooms.some((r) => r.id === prev) ? prev : rooms[0].id));
+  }, [rooms]);
+
+  const weekDates = useMemo(() => weekDatesFor(date), [date]);
+
   const loadBookings = useCallback(
     (isSilent = false) => {
       if (locationId === null) return;
       if (!isSilent) setBookings(null);
-      adminBookingsApi
-        .apiAdminBookingsGet(locationId, date)
-        .then(({ data }) => setBookings(data as unknown as AdminBooking[]))
+      const dates = viewMode === 'week' ? weekDates : [date];
+      Promise.all(dates.map((d) => adminBookingsApi.apiAdminBookingsGet(locationId, d).then(({ data }) => data as unknown as AdminBooking[])))
+        .then((results) => setBookings(results.flat()))
         .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load bookings.'));
     },
-    [locationId, date],
+    [locationId, date, viewMode, weekDates],
   );
 
   useEffect(() => {
     loadBookings();
   }, [loadBookings]);
 
+  // Live slot-changed updates only cover a single date's stream -- week view (7 dates at once)
+  // falls back to the 15s poll below instead of opening 7 concurrent subscriptions.
+  useEffect(() => {
+    if (locationId === null || viewMode !== 'day') return;
+    const unsubscribe = subscribeToStream(bookingStreamUrl(locationId, date), 'slot-changed', () => loadBookings(true));
+    return unsubscribe;
+  }, [locationId, date, viewMode, loadBookings]);
+
   useEffect(() => {
     if (locationId === null) return;
-    const unsubscribe = subscribeToStream(bookingStreamUrl(locationId, date), 'slot-changed', () => loadBookings(true));
     const interval = setInterval(() => loadBookings(true), 15000);
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-    };
-  }, [locationId, date, loadBookings]);
+    return () => clearInterval(interval);
+  }, [locationId, loadBookings]);
 
   const selectedLocation = locations.find((l) => l.id === locationId);
   const slots = useMemo(
@@ -170,18 +212,31 @@ export function AppointmentCalendarPage() {
   const slotIndex = useMemo(() => new Map(slots.map((s, i) => [s, i])), [slots]);
   const appointments = useMemo(() => flattenAppointments(bookings ?? []), [bookings]);
 
+  const columns: Column[] = useMemo(() => {
+    if (viewMode === 'day') {
+      return rooms.map((r) => ({ key: String(r.id), label: r.name, roomId: r.id, dateStr: date }));
+    }
+    if (weekRoomId === null) return [];
+    return weekDates.map((d) => ({
+      key: d,
+      label: new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+      roomId: weekRoomId,
+      dateStr: d,
+    }));
+  }, [viewMode, rooms, date, weekRoomId, weekDates]);
+
   async function handleDragEnd(event: DragEndEvent) {
     const { source, target } = event.operation;
     if (!source || !target) return;
     const appt = source.data as FlatAppointment;
-    const cell = target.data as { roomId: number; time: string };
+    const cell = target.data as { roomId: number; dateStr: string; time: string };
 
     const [h, m] = cell.time.split(':').map(Number);
-    const start = new Date(`${date}T00:00:00`);
+    const start = new Date(`${cell.dateStr}T00:00:00`);
     start.setHours(h, m, 0, 0);
     const end = new Date(start.getTime() + appt.slotCount * SLOT_MINUTES * 60 * 1000);
 
-    if (cell.roomId === appt.roomId && cell.time === appt.startHHMM) return;
+    if (cell.roomId === appt.roomId && cell.dateStr === appt.dateStr && cell.time === appt.startHHMM) return;
 
     try {
       await adminBookingsApi.apiAdminBookingsIdTreatmentsTreatmentIdReschedulePut(appt.bookingId, appt.treatmentId, {
@@ -224,12 +279,37 @@ export function AppointmentCalendarPage() {
               menuPortalTarget={document.body}
               styles={selectMenuPortalStyles}
             />
+            {viewMode === 'week' && rooms.length > 1 && (
+              <Select
+                value={rooms.map((r) => ({ value: String(r.id), label: r.name })).find((o) => o.value === String(weekRoomId ?? '')) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => setWeekRoomId(Number(picked?.value ?? ''))}
+                options={rooms.map((r) => ({ value: String(r.id), label: r.name }))}
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[140px]')}
+                menuPortalTarget={document.body}
+                styles={selectMenuPortalStyles}
+              />
+            )}
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground"
             />
+            <div className="flex rounded-lg border border-input overflow-hidden">
+              {(['day', 'week'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setViewMode(m)}
+                  className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                    viewMode === m ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
         }
       />
@@ -238,18 +318,18 @@ export function AppointmentCalendarPage() {
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs font-medium text-destructive">{error}</div>
       )}
 
-      {!bookings || rooms.length === 0 ? (
+      {!bookings || columns.length === 0 ? (
         <LoadingFallback />
       ) : (
         <Card className="overflow-x-auto">
           <DragDropProvider onDragEnd={handleDragEnd}>
-            <div className="relative" style={{ width: TIME_COL_PX + rooms.length * ROOM_COL_PX }}>
-              <div className="grid" style={{ gridTemplateColumns: `${TIME_COL_PX}px repeat(${rooms.length}, ${ROOM_COL_PX}px)` }}>
+            <div className="relative" style={{ width: TIME_COL_PX + columns.length * COL_PX }}>
+              <div className="grid" style={{ gridTemplateColumns: `${TIME_COL_PX}px repeat(${columns.length}, ${COL_PX}px)` }}>
                 {/* Header row */}
                 <div className="sticky top-0 z-10 border-b border-r border-border bg-card" />
-                {rooms.map((r) => (
-                  <div key={r.id} className="sticky top-0 z-10 border-b border-r border-border bg-card px-2 py-2 text-xs font-bold text-foreground">
-                    {r.name}
+                {columns.map((c) => (
+                  <div key={c.key} className="sticky top-0 z-10 border-b border-r border-border bg-card px-2 py-2 text-xs font-bold text-foreground">
+                    {c.label}
                   </div>
                 ))}
 
@@ -262,27 +342,27 @@ export function AppointmentCalendarPage() {
                     >
                       {time.endsWith(':00') ? time : ''}
                     </div>
-                    {rooms.map((r) => (
-                      <DroppableCell key={r.id} roomId={r.id} time={time} />
+                    {columns.map((c) => (
+                      <DroppableCell key={c.key} roomId={c.roomId} dateStr={c.dateStr} time={time} />
                     ))}
                   </div>
                 ))}
               </div>
 
               {/* Appointment blocks, absolutely positioned over the grid (header row is one row tall) */}
-              {rooms.map((r, roomIdx) => (
+              {columns.map((c, colIdx) => (
                 <div
-                  key={`overlay-${r.id}`}
+                  key={`overlay-${c.key}`}
                   className="pointer-events-none absolute"
                   style={{
-                    left: TIME_COL_PX + roomIdx * ROOM_COL_PX,
+                    left: TIME_COL_PX + colIdx * COL_PX,
                     top: ROW_HEIGHT_PX,
-                    width: ROOM_COL_PX,
+                    width: COL_PX,
                     height: slots.length * ROW_HEIGHT_PX,
                   }}
                 >
                   {appointments
-                    .filter((a) => a.roomId === r.id)
+                    .filter((a) => a.roomId === c.roomId && a.dateStr === c.dateStr)
                     .map((a) => {
                       const idx = slotIndex.get(a.startHHMM);
                       if (idx === undefined) return null;

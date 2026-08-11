@@ -45,6 +45,50 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+// Same "past" definition MyBookingsPage.tsx uses client-side (and sp_Review_Create re-derives
+// server-side): every treatment's EndTime has already passed.
+function isPast(b: MyBookingDto, now: number): boolean {
+  const ends = b.treatments
+    .map((t) => t.endTime)
+    .filter((s): s is string => !!s)
+    .map((s) => new Date(s).getTime());
+  return ends.length > 0 && now > Math.max(...ends);
+}
+
+function earliestStart(b: MyBookingDto): number {
+  const starts = b.treatments
+    .map((t) => t.startTime)
+    .filter((s): s is string => !!s)
+    .map((s) => new Date(s).getTime());
+  return starts.length > 0 ? Math.min(...starts) : Infinity;
+}
+
+function latestEnd(b: MyBookingDto): number {
+  const ends = b.treatments
+    .map((t) => t.endTime)
+    .filter((s): s is string => !!s)
+    .map((s) => new Date(s).getTime());
+  return ends.length > 0 ? Math.max(...ends) : 0;
+}
+
+function BookingRow({ b }: { b: MyBookingDto }) {
+  return (
+    <div className="py-3 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-foreground">{b.locationName}</span>
+        <Badge status={b.status} />
+      </div>
+      <ul className="text-xs text-muted-foreground space-y-0.5">
+        {b.treatments.map((t, idx) => (
+          <li key={idx}>
+            {t.treatmentName} {t.therapistName ? `with ${t.therapistName}` : ''} — {t.startTime ? formatDate(t.startTime) : 'unscheduled'}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ClientProfilePage() {
   const { id } = useParams<{ id: string }>();
   const customerId = Number(id);
@@ -176,6 +220,14 @@ export function ClientProfilePage() {
       // ignore
     }
   }
+
+  const now = Date.now();
+  const upcoming = bookings
+    .filter((b) => b.status === 'Confirmed' && !isPast(b, now))
+    .sort((a, c) => earliestStart(a) - earliestStart(c));
+  const past = bookings
+    .filter((b) => b.status !== 'Confirmed' || isPast(b, now))
+    .sort((a, c) => latestEnd(c) - latestEnd(a));
 
   if (loading) {
     return (
@@ -347,27 +399,32 @@ export function ClientProfilePage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Visit History</CardTitle>
+          <CardTitle>Upcoming</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
-          {bookings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No visits yet.</p>
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No upcoming appointments.</p>
           ) : (
             <div className="divide-y divide-border/50">
-              {bookings.map((b) => (
-                <div key={b.id as unknown as number} className="py-3 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-foreground">{b.locationName}</span>
-                    <Badge status={b.status} />
-                  </div>
-                  <ul className="text-xs text-muted-foreground space-y-0.5">
-                    {b.treatments.map((t, idx) => (
-                      <li key={idx}>
-                        {t.treatmentName} {t.therapistName ? `with ${t.therapistName}` : ''} — {t.startTime ? formatDate(t.startTime) : 'unscheduled'}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {upcoming.map((b) => (
+                <BookingRow key={b.id as unknown as number} b={b} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-border/50 pb-4">
+          <CardTitle>Past Visits</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-6">
+          {past.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No past visits yet.</p>
+          ) : (
+            <div className="divide-y divide-border/50">
+              {past.map((b) => (
+                <BookingRow key={b.id as unknown as number} b={b} />
               ))}
             </div>
           )}
