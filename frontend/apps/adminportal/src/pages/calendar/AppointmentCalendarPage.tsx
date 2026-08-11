@@ -6,7 +6,7 @@ import { Badge, Card, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, ApiError } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import type { AdminBooking, Location, Room } from '../../api/types';
-import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { type SelectOption, selectClassNames, selectMenuPortalStyles } from '../../components/reactSelectStyles';
 
 const SLOT_MINUTES = 15;
 const ROW_HEIGHT_PX = 22;
@@ -212,6 +212,7 @@ export function AppointmentCalendarPage() {
                 unstyled
                 classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground')}
                 menuPortalTarget={document.body}
+                styles={selectMenuPortalStyles}
               />
             )}
             <Select
@@ -221,6 +222,7 @@ export function AppointmentCalendarPage() {
               unstyled
               classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]')}
               menuPortalTarget={document.body}
+              styles={selectMenuPortalStyles}
             />
             <input
               type="date"

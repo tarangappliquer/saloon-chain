@@ -3,6 +3,17 @@ export interface SelectOption {
   label: string;
 }
 
+// react-select's `unstyled` mode strips most default inline styles, but menuPortal keeps its own
+// (position/zIndex) regardless -- that inline zIndex:1 beats any Tailwind class passed via
+// classNames.menuPortal, since inline style specificity always wins. Pass this via the `styles`
+// prop (not classNames) on any Select using menuPortalTarget={document.body}, so the portaled menu
+// renders above sticky/z-indexed page content (e.g. the calendar's sticky room-header row) instead
+// of underneath it.
+export const selectMenuPortalStyles = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  menuPortal: (base: any) => ({ ...base, zIndex: 9999 }),
+};
+
 export function selectClassNames(className?: string) {
   return {
     control: (state: { isDisabled?: boolean }) =>

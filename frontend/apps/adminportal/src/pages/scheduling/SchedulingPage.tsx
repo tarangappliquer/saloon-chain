@@ -7,7 +7,7 @@ import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, getFieldErr
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, BlockedSlot, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
-import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { type SelectOption, selectClassNames, selectMenuPortalStyles } from '../../components/reactSelectStyles';
 import { TimeInput } from '../../components/TimeInput';
 import { DateInput } from '../../components/DateInput';
 import { routes } from '../../routes';
@@ -434,7 +434,7 @@ export function SchedulingPage() {
               unstyled
               classNames={selectClassNames('rounded-md border border-input bg-card px-2 py-1 text-[11px] text-foreground w-full')}
               menuPortalTarget={document.body}
-              styles={{ menuPortal: (base) => ({ ...base, zIndex: 9999 }) }}
+              styles={selectMenuPortalStyles}
             />
           </div>
           <div>
