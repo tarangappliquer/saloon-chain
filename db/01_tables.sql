@@ -352,7 +352,10 @@ CREATE TABLE dbo.Bookings (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
     LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
     CustomerId   INT NOT NULL REFERENCES dbo.Users(Id), -- who the booking is FOR (a Users row with Role='Customer')
-    Status       VARCHAR(10) NOT NULL CHECK (Status IN ('Draft','Confirmed','Cancelled')),
+    -- NoShow: set only via sp_Booking_MarkNoShow, once a Confirmed booking's own start time has
+    -- passed with no check-in -- distinct from Cancelled (a staff/customer decision made ahead of
+    -- time) so no-show-rate reporting (sp_Report_NoShowRate) isn't polluted by ordinary cancellations.
+    Status       VARCHAR(10) NOT NULL CHECK (Status IN ('Draft','Confirmed','Cancelled','NoShow')),
     RowVersion   ROWVERSION,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
@@ -521,4 +524,149 @@ CREATE TABLE dbo.Payments (
     UpdatedDate    DATETIME2 NULL
 );
 CREATE INDEX IX_Payments_BookingId ON dbo.Payments(BookingId);
+
+-- ===================== Phase 3: Inventory =====================
+
+-- Chain-scoped -- a supplier relationship is a business-level thing, shared across every location
+-- in the chain, unlike Products below which live at one location (same reasoning as Treatments).
+CREATE TABLE dbo.Suppliers (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    ChainId      INT NOT NULL REFERENCES dbo.SaloonChains(Id),
+    Name         NVARCHAR(200) NOT NULL,
+    ContactEmail NVARCHAR(256) NULL,
+    ContactPhone NVARCHAR(30) NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    IsActive     BIT NOT NULL DEFAULT 1,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+CREATE INDEX IX_Suppliers_ChainId ON dbo.Suppliers(ChainId) WHERE IsDelete = 0;
+
+-- Location-scoped retail item (mirrors Treatments' one-location-owns-it model). QuantityOnHand is
+-- the stock unit itself -- no separate per-location StockLevels table, since a Product already
+-- belongs to exactly one location, same simplification Rooms/Treatments already make.
+CREATE TABLE dbo.Products (
+    Id                INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId        INT NOT NULL REFERENCES dbo.Locations(Id),
+    SupplierId        INT NULL REFERENCES dbo.Suppliers(Id),
+    Name              NVARCHAR(200) NOT NULL,
+    SKU               NVARCHAR(50) NULL,
+    Price             DECIMAL(10,2) NOT NULL CHECK (Price >= 0),
+    QuantityOnHand    INT NOT NULL DEFAULT 0 CHECK (QuantityOnHand >= 0),
+    ReorderThreshold  INT NOT NULL DEFAULT 0 CHECK (ReorderThreshold >= 0),
+    IsDelete          BIT NOT NULL DEFAULT 0,
+    IsActive          BIT NOT NULL DEFAULT 1,
+    CreatedBy         INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy         INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate       DATETIME2 NULL
+);
+CREATE INDEX IX_Products_LocationId ON dbo.Products(LocationId) WHERE IsDelete = 0;
+-- Powers the low-stock view (sp_Inventory_GetLowStockProducts) without a table scan per location.
+CREATE INDEX IX_Products_LowStock ON dbo.Products(LocationId, QuantityOnHand) INCLUDE (ReorderThreshold) WHERE IsDelete = 0 AND IsActive = 1;
+
+CREATE TABLE dbo.PurchaseOrders (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
+    SupplierId   INT NOT NULL REFERENCES dbo.Suppliers(Id),
+    Status       VARCHAR(10) NOT NULL DEFAULT 'Ordered' CHECK (Status IN ('Ordered','Received','Cancelled')),
+    ReceivedDate DATETIME2 NULL,
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+CREATE INDEX IX_PurchaseOrders_LocationId ON dbo.PurchaseOrders(LocationId) WHERE IsDelete = 0;
+
+CREATE TABLE dbo.PurchaseOrderLines (
+    Id               INT IDENTITY(1,1) PRIMARY KEY,
+    PurchaseOrderId  INT NOT NULL REFERENCES dbo.PurchaseOrders(Id) ON DELETE CASCADE,
+    ProductId        INT NOT NULL REFERENCES dbo.Products(Id),
+    QuantityOrdered  INT NOT NULL CHECK (QuantityOrdered > 0),
+    UnitCost         DECIMAL(10,2) NOT NULL CHECK (UnitCost >= 0)
+);
+CREATE INDEX IX_PurchaseOrderLines_PurchaseOrderId ON dbo.PurchaseOrderLines(PurchaseOrderId);
+
+-- Retail line items on a booking, alongside its treatment lines -- Bookings is already documented
+-- as "a draft/cart container for one or more treatments"; this extends the same cart to hold
+-- unscheduled product lines too (no room/therapist/time needed for a retail item). UnitPrice is
+-- captured from Products.Price at add time, same "lock the price into the line" pattern
+-- BookingTreatments.Price already uses, so a later price change doesn't retroactively alter an
+-- existing cart/receipt. Stock is deducted on sp_Booking_Confirm and restored on sp_Booking_Cancel.
+CREATE TABLE dbo.BookingProducts (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    BookingId    INT NOT NULL REFERENCES dbo.Bookings(Id) ON DELETE CASCADE,
+    ProductId    INT NOT NULL REFERENCES dbo.Products(Id),
+    Quantity     INT NOT NULL CHECK (Quantity > 0),
+    UnitPrice    DECIMAL(10,2) NOT NULL CHECK (UnitPrice >= 0),
+    IsDelete     BIT NOT NULL DEFAULT 0,
+    CreatedBy    INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+CREATE INDEX IX_BookingProducts_BookingId ON dbo.BookingProducts(BookingId) WHERE IsDelete = 0;
+
+-- ===================== Phase 3: Team pay (commissions + pay runs) =====================
+
+-- A rule applies to one therapist (TherapistId set) or is the location's default for every
+-- therapist with no rule of their own (TherapistId NULL) -- sp_Payroll_CreatePayRun prefers the
+-- therapist-specific rule when both exist. Location-scoped, not chain-wide: commission structure is
+-- routinely negotiated per-location, not dictated chain-wide.
+CREATE TABLE dbo.CommissionRules (
+    Id                      INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId              INT NOT NULL REFERENCES dbo.Locations(Id),
+    TherapistId             INT NULL REFERENCES dbo.TherapistProfile(Id),
+    -- CREATE INDEX can't key on an expression directly -- this persisted computed column is what
+    -- lets the unique index below still catch a second location-default row (TherapistId NULL),
+    -- which a plain unique index on TherapistId would allow (SQL Server treats NULLs as distinct).
+    TherapistKey            AS ISNULL(TherapistId, 0) PERSISTED,
+    Type                    VARCHAR(10) NOT NULL CHECK (Type IN ('Percent','Flat','Hourly')),
+    Rate                    DECIMAL(10,2) NOT NULL CHECK (Rate >= 0), -- Percent: 0-100; Flat: currency per booking treatment line; Hourly: currency per hour worked
+    HourlyRate              DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (HourlyRate >= 0), -- Base hourly rate (if set) in addition to or as part of hourly pay
+    OvertimeThresholdHours  DECIMAL(5,2) NOT NULL DEFAULT 40.0 CHECK (OvertimeThresholdHours >= 0), -- Standard period hours limit before overtime applies
+    OvertimeRateMultiplier  DECIMAL(5,2) NOT NULL DEFAULT 1.5 CHECK (OvertimeRateMultiplier >= 1.0), -- Overtime pay rate multiplier (e.g. 1.5x)
+    IsDelete                BIT NOT NULL DEFAULT 0,
+    CreatedBy               INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate             DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy               INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate             DATETIME2 NULL
+);
+CREATE UNIQUE INDEX UX_CommissionRules_Location_Therapist ON dbo.CommissionRules(LocationId, TherapistKey) WHERE IsDelete = 0;
+
+CREATE TABLE dbo.PayRuns (
+    Id            INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId    INT NOT NULL REFERENCES dbo.Locations(Id),
+    PeriodStart   DATE NOT NULL,
+    PeriodEnd     DATE NOT NULL,
+    Status        VARCHAR(10) NOT NULL DEFAULT 'Draft' CHECK (Status IN ('Draft','Finalized')),
+    FinalizedDate DATETIME2 NULL,
+    CreatedBy     INT NULL REFERENCES dbo.Users(Id),
+    CreatedDate   DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy     INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate   DATETIME2 NULL,
+    CONSTRAINT CK_PayRuns_Period CHECK (PeriodEnd >= PeriodStart)
+);
+CREATE INDEX IX_PayRuns_LocationId ON dbo.PayRuns(LocationId);
+
+-- One row per therapist who had Confirmed revenue in the pay run's period -- a frozen snapshot
+-- (GrossSales/CommissionRate/CommissionAmount all copied in at creation time, see
+-- sp_Payroll_CreatePayRun) so a later commission-rule edit never rewrites an already-generated run.
+CREATE TABLE dbo.PayRunLines (
+    Id               INT IDENTITY(1,1) PRIMARY KEY,
+    PayRunId         INT NOT NULL REFERENCES dbo.PayRuns(Id) ON DELETE CASCADE,
+    TherapistId      INT NOT NULL REFERENCES dbo.TherapistProfile(Id),
+    GrossSales       DECIMAL(10,2) NOT NULL,
+    HoursWorked      DECIMAL(10,2) NOT NULL DEFAULT 0, -- SUM(BookingTreatments.SlotCount) * 15 min
+    RegularHours     DECIMAL(10,2) NOT NULL DEFAULT 0,
+    OvertimeHours    DECIMAL(10,2) NOT NULL DEFAULT 0,
+    HourlyRate       DECIMAL(10,2) NOT NULL DEFAULT 0,
+    CommissionRate   DECIMAL(10,2) NOT NULL,
+    CommissionType   VARCHAR(10) NOT NULL CHECK (CommissionType IN ('Percent','Flat','Hourly')),
+    CommissionAmount DECIMAL(10,2) NOT NULL,
+    OvertimePay      DECIMAL(10,2) NOT NULL DEFAULT 0,
+    TotalPay         DECIMAL(10,2) NOT NULL DEFAULT 0
+);
+CREATE INDEX IX_PayRunLines_PayRunId ON dbo.PayRunLines(PayRunId);
 

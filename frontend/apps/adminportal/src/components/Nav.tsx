@@ -49,6 +49,9 @@ export const Nav = memo(function Nav() {
             <NavLink to={routes.bookings}>Bookings</NavLink>
             {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.calendar}>Calendar</NavLink>}
             {POS_ACCESS.includes(user.role) && <NavLink to={routes.customers}>Customers</NavLink>}
+            {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.inventory}>Inventory</NavLink>}
+            {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.payroll}>Team Pay</NavLink>}
+            {ADMIN_ACCESS.includes(user.role) && <NavLink to={routes.reports}>Reports</NavLink>}
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-4">

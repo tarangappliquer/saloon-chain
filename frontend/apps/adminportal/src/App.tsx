@@ -32,6 +32,9 @@ const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then(
 const ClientProfilePage = lazy(() => import('./pages/customers/ClientProfilePage').then((m) => ({ default: m.ClientProfilePage })));
 const SchedulingPage = lazy(() => import('./pages/scheduling/SchedulingPage').then((m) => ({ default: m.SchedulingPage })));
 const AppointmentCalendarPage = lazy(() => import('./pages/calendar/AppointmentCalendarPage').then((m) => ({ default: m.AppointmentCalendarPage })));
+const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage').then((m) => ({ default: m.InventoryPage })));
+const PayrollPage = lazy(() => import('./pages/payroll/PayrollPage').then((m) => ({ default: m.PayrollPage })));
+const ReportsPage = lazy(() => import('./pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -193,6 +196,30 @@ function AppRoutes() {
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <AppointmentCalendarPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.inventory}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <InventoryPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.payroll}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <PayrollPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path={routes.reports}
+              element={
+                <RequireRole roles={ADMIN_ACCESS}>
+                  <ReportsPage />
                 </RequireRole>
               }
             />

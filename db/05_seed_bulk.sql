@@ -97,16 +97,16 @@ SELECT N'Admin ' + CAST(t.N AS NVARCHAR(10)) + N' - ' + c.Name,
 FROM #Chains c JOIN #Tally t ON t.N <= 3;
 
 -- ===== 4) Manager (2/location) + Receptionist (5/location) staff =====
-INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, LocationId, IsEmailVerified)
+INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, ChainId, LocationId, IsEmailVerified)
 SELECT N'Manager ' + CAST(t.N AS NVARCHAR(10)) + N' - Loc ' + CAST(l.LocationId AS NVARCHAR(10)),
     N'manager' + CAST(t.N AS NVARCHAR(10)) + N'.loc' + CAST(l.LocationId AS NVARCHAR(10)) + N'@saloonchains.dev',
-    @SeedHash, @SeedSalt, 'Manager', l.LocationId, 1
+    @SeedHash, @SeedSalt, 'Manager', l.ChainId, l.LocationId, 1
 FROM #Locations l JOIN #Tally t ON t.N <= 2;
 
-INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, LocationId, IsEmailVerified)
+INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, ChainId, LocationId, IsEmailVerified)
 SELECT N'Receptionist ' + CAST(t.N AS NVARCHAR(10)) + N' - Loc ' + CAST(l.LocationId AS NVARCHAR(10)),
     N'receptionist' + CAST(t.N AS NVARCHAR(10)) + N'.loc' + CAST(l.LocationId AS NVARCHAR(10)) + N'@saloonchains.dev',
-    @SeedHash, @SeedSalt, 'Receptionist', l.LocationId, 1
+    @SeedHash, @SeedSalt, 'Receptionist', l.ChainId, l.LocationId, 1
 FROM #Locations l JOIN #Tally t ON t.N <= 5;
 
 -- ===== 5) Rooms (= TherapistCount per location, 5-10, always >= the 3-room floor) =====
@@ -185,11 +185,12 @@ WHEN NOT MATCHED THEN
 OUTPUT src.Seq, inserted.Id, src.LocationId, src.Ordinal, src.Name INTO #Therapists (Seq, TherapistId, LocationId, Ordinal, Name);
 
 DECLARE @TherapistUsers TABLE (TherapistId INT NOT NULL, UserId INT NOT NULL);
-INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, LocationId, TherapistId, IsEmailVerified)
+INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, ChainId, LocationId, TherapistId, IsEmailVerified)
 OUTPUT inserted.TherapistId, inserted.Id INTO @TherapistUsers (TherapistId, UserId)
 SELECT th.Name, N'therapist' + CAST(th.Ordinal AS NVARCHAR(10)) + N'.loc' + CAST(th.LocationId AS NVARCHAR(10)) + N'@saloonchains.dev',
-    @SeedHash, @SeedSalt, 'Therapist', th.LocationId, th.TherapistId, 1
-FROM #Therapists th;
+    @SeedHash, @SeedSalt, 'Therapist', l.ChainId, th.LocationId, th.TherapistId, 1
+FROM #Therapists th
+    JOIN #Locations l ON l.LocationId = th.LocationId;
 
 UPDATE tp SET UserId = tu.UserId
 FROM dbo.TherapistProfile tp
@@ -222,6 +223,138 @@ FROM #RoomTherapistPairs p
     JOIN #Categories c ON c.LocationId = p.LocationId AND c.Ordinal = ((p.RoomOrdinal + t.N) % 10) + 1
 WHERE t.N <= @DayCount;
 
+-- ===== Phase 3 Seed Data: Suppliers, Products, Purchase Orders, Commission Rules, Pay Runs =====
+
+-- 1. Suppliers (2 per chain)
+CREATE TABLE #Suppliers (ChainId INT NOT NULL, SupplierId INT NOT NULL, Name NVARCHAR(200) NOT NULL);
+INSERT INTO dbo.Suppliers (ChainId, Name, ContactEmail, ContactPhone, CreatedBy)
+SELECT c.ChainId, N'L''Oréal Professional Supplies', N'orders@loreal-saloon.com', N'+1-800-555-0199', @RootAdminId
+FROM #Chains c;
+
+INSERT INTO #Suppliers (ChainId, SupplierId, Name)
+SELECT c.ChainId, s.Id, s.Name
+FROM #Chains c
+    JOIN dbo.Suppliers s ON s.ChainId = c.ChainId AND s.Name LIKE N'L''Oréal%';
+
+INSERT INTO dbo.Suppliers (ChainId, Name, ContactEmail, ContactPhone, CreatedBy)
+SELECT c.ChainId, N'OPI Beauty & Wellness', N'supply@opibeauty.com', N'+1-800-555-0122', @RootAdminId
+FROM #Chains c;
+
+-- 2. Products (4 per location -- 2 low-stock to test thresholds)
+CREATE TABLE #Products (LocationId INT NOT NULL, ProductId INT NOT NULL, Name NVARCHAR(200) NOT NULL);
+
+INSERT INTO dbo.Products (LocationId, SupplierId, Name, SKU, Price, QuantityOnHand, ReorderThreshold, CreatedBy)
+SELECT l.LocationId, sup.SupplierId, N'Argan Repair Hair Serum 100ml', N'SKU-HAIR-01', 35.00, 18, 5, @RootAdminId
+FROM #Locations l
+    JOIN #Suppliers sup ON sup.ChainId = l.ChainId AND sup.Name LIKE N'L''Oréal%';
+
+INSERT INTO dbo.Products (LocationId, SupplierId, Name, SKU, Price, QuantityOnHand, ReorderThreshold, CreatedBy)
+SELECT l.LocationId, sup.SupplierId, N'Keratin Deep Moisture Shampoo', N'SKU-HAIR-02', 28.00, 3, 5, @RootAdminId -- Low stock (3 <= 5)
+FROM #Locations l
+    JOIN #Suppliers sup ON sup.ChainId = l.ChainId AND sup.Name LIKE N'L''Oréal%';
+
+INSERT INTO dbo.Products (LocationId, SupplierId, Name, SKU, Price, QuantityOnHand, ReorderThreshold, CreatedBy)
+SELECT l.LocationId, sup.SupplierId, N'Nail & Cuticle Restorative Oil', N'SKU-NAIL-01', 19.50, 24, 5, @RootAdminId
+FROM #Locations l
+    JOIN #Suppliers sup ON sup.ChainId = l.ChainId AND sup.Name LIKE N'OPI%';
+
+INSERT INTO dbo.Products (LocationId, SupplierId, Name, SKU, Price, QuantityOnHand, ReorderThreshold, CreatedBy)
+SELECT l.LocationId, sup.SupplierId, N'Hydrating Facial Sheet Mask 5-Pack', N'SKU-FACE-01', 22.00, 2, 5, @RootAdminId -- Low stock (2 <= 5)
+FROM #Locations l
+    JOIN #Suppliers sup ON sup.ChainId = l.ChainId AND sup.Name LIKE N'OPI%';
+
+-- 3. Commission Rules (1 location default + 1 specific therapist rule per location)
+INSERT INTO dbo.CommissionRules (LocationId, TherapistId, Type, Rate, HourlyRate, OvertimeThresholdHours, OvertimeRateMultiplier, CreatedBy)
+SELECT l.LocationId, NULL, 'Percent', 15.00, 20.00, 40.00, 1.50, @RootAdminId
+FROM #Locations l;
+
+INSERT INTO dbo.CommissionRules (LocationId, TherapistId, Type, Rate, HourlyRate, OvertimeThresholdHours, OvertimeRateMultiplier, CreatedBy)
+SELECT l.LocationId, t.TherapistId, 'Hourly', 25.00, 25.00, 35.00, 1.50, @RootAdminId
+FROM #Locations l
+    CROSS APPLY (SELECT TOP 1 TherapistId FROM #Therapists WHERE LocationId = l.LocationId) t;
+
+-- ===== 8) Bulk Customers (500,000) =====
+;WITH N1000 AS (
+    SELECT TOP (1000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b
+),
+N500 AS (
+    SELECT TOP (500) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS N FROM sys.all_columns a CROSS JOIN sys.all_columns b
+)
+INSERT INTO dbo.Users (Name, Email, PasswordHash, PasswordSalt, Role, IsEmailVerified, CreatedDate)
+SELECT
+    N'Bulk Customer ' + CAST((a.N - 1) * 1000 + b.N AS NVARCHAR(20)),
+    N'bulkcustomer' + CAST((a.N - 1) * 1000 + b.N AS NVARCHAR(20)) + N'@saloonchains.dev',
+    @SeedHash, @SeedSalt, 'Customer', 1, DATEADD(SECOND, -((a.N - 1) * 1000 + b.N), SYSUTCDATETIME())
+FROM N500 a CROSS JOIN N1000 b;
+
+-- ===== 9) Seed Bookings (150 Confirmed Bookings with Treatments, Payments, Products & Location Binds) =====
+CREATE TABLE #SeedBookings (
+    Seq INT IDENTITY(1,1) PRIMARY KEY,
+    BookingId INT NOT NULL,
+    CustomerId INT NOT NULL,
+    LocationId INT NOT NULL,
+    TreatmentId INT NOT NULL,
+    RoomId INT NOT NULL,
+    TherapistId INT NOT NULL,
+    Price DECIMAL(10,2) NOT NULL,
+    DurationSlots SMALLINT NOT NULL,
+    StartTime DATETIME2 NOT NULL
+);
+
+;WITH CustomerSample AS (
+    SELECT TOP (150) Id AS CustomerId, ROW_NUMBER() OVER (ORDER BY Id DESC) AS Seq
+    FROM dbo.Users WITH (NOLOCK)
+    WHERE Role = 'Customer'
+),
+TreatmentSample AS (
+    SELECT tr.TreatmentId, t.LocationId, tr.DurationSlots, tr.BasePrice,
+        r.RoomId, th.TherapistId,
+        ROW_NUMBER() OVER (ORDER BY tr.TreatmentId) AS Seq
+    FROM #TreatmentSpec t
+        JOIN #Treatments tr ON tr.Seq = t.Seq
+        JOIN #Rooms r ON r.LocationId = t.LocationId AND r.Ordinal = 1
+        JOIN #Therapists th ON th.LocationId = t.LocationId AND th.Ordinal = 1
+)
+INSERT INTO dbo.Bookings (LocationId, CustomerId, Status, CreatedBy, CreatedDate)
+OUTPUT inserted.Id, inserted.CustomerId, inserted.LocationId, 0, 0, 0, 0, 0, SYSUTCDATETIME() INTO #SeedBookings (BookingId, CustomerId, LocationId, TreatmentId, RoomId, TherapistId, Price, DurationSlots, StartTime)
+SELECT ts.LocationId, cs.CustomerId, 'Confirmed', @RootAdminId, DATEADD(DAY, -(cs.Seq % 30), SYSUTCDATETIME())
+FROM CustomerSample cs
+    JOIN TreatmentSample ts ON ts.Seq = ((cs.Seq - 1) % 150) + 1;
+
+UPDATE sb
+SET sb.TreatmentId = ts.TreatmentId,
+    sb.RoomId = ts.RoomId,
+    sb.TherapistId = ts.TherapistId,
+    sb.Price = ts.BasePrice,
+    sb.DurationSlots = ts.DurationSlots,
+    sb.StartTime = DATEADD(HOUR, 9 + (sb.Seq % 8), CAST(DATEADD(DAY, -(sb.Seq % 30), @Today) AS DATETIME2))
+FROM #SeedBookings sb
+    JOIN (
+        SELECT tr.TreatmentId, t.LocationId, tr.DurationSlots, tr.BasePrice,
+            r.RoomId, th.TherapistId,
+            ROW_NUMBER() OVER (ORDER BY tr.TreatmentId) AS Seq
+        FROM #TreatmentSpec t
+            JOIN #Treatments tr ON tr.Seq = t.Seq
+            JOIN #Rooms r ON r.LocationId = t.LocationId AND r.Ordinal = 1
+            JOIN #Therapists th ON th.LocationId = t.LocationId AND th.Ordinal = 1
+    ) ts ON ts.Seq = ((sb.Seq - 1) % 150) + 1;
+
+INSERT INTO dbo.BookingTreatments (BookingId, TreatmentId, RoomId, TherapistId, SequenceOrder, StartTime, EndTime, SlotCount, Price, CreatedBy)
+SELECT sb.BookingId, sb.TreatmentId, sb.RoomId, sb.TherapistId, 1,
+    sb.StartTime, DATEADD(MINUTE, sb.DurationSlots * 15, sb.StartTime), sb.DurationSlots, sb.Price, @RootAdminId
+FROM #SeedBookings sb;
+
+INSERT INTO dbo.Payments (BookingId, Amount, TipAmount, Currency, Provider, PaymentMethod, Status, TransactionId, CreatedBy)
+SELECT sb.BookingId, sb.Price, 5.00, 'USD', 'Stripe', 'card', 'Succeeded', N'tx_bulkseed_' + CAST(sb.BookingId AS NVARCHAR(20)), @RootAdminId
+FROM #SeedBookings sb;
+
+INSERT INTO dbo.CustomerLocations (CustomerId, LocationId, CreatedBy)
+SELECT DISTINCT sb.CustomerId, sb.LocationId, @RootAdminId
+FROM #SeedBookings sb
+WHERE NOT EXISTS (
+    SELECT 1 FROM dbo.CustomerLocations cl WHERE cl.CustomerId = sb.CustomerId AND cl.LocationId = sb.LocationId AND cl.IsDelete = 0
+);
+
 COMMIT TRAN;
 END TRY
 BEGIN CATCH
@@ -238,12 +371,14 @@ SELECT
     (SELECT COUNT(*) FROM dbo.Users WHERE Role = 'Admin' AND ChainId IN (SELECT ChainId FROM #Chains))      AS AdminsInserted,
     (SELECT COUNT(*) FROM dbo.Users WHERE Role = 'Manager' AND LocationId IN (SELECT LocationId FROM #Locations))      AS ManagersInserted,
     (SELECT COUNT(*) FROM dbo.Users WHERE Role = 'Receptionist' AND LocationId IN (SELECT LocationId FROM #Locations)) AS ReceptionistsInserted,
+    (SELECT COUNT(*) FROM dbo.Users WHERE Role = 'Customer')  AS CustomersInserted,
     (SELECT COUNT(*) FROM #Rooms)                             AS RoomsInserted,
     (SELECT COUNT(*) FROM #Categories)                        AS CategoriesInserted,
     (SELECT COUNT(*) FROM #Treatments)                        AS TreatmentsInserted,
     (SELECT COUNT(*) FROM dbo.TreatmentPrices WHERE TreatmentId IN (SELECT TreatmentId FROM #Treatments))    AS TreatmentPricesInserted,
     (SELECT COUNT(*) FROM #Therapists)                        AS TherapistsInserted,
     (SELECT COUNT(*) FROM @TherapistUsers)                    AS TherapistUsersInserted,
+    (SELECT COUNT(*) FROM #SeedBookings)                      AS BookingsInserted,
     @DayCount                                                 AS DaysOfScheduling,
     (SELECT COUNT(*) FROM #RoomTherapistPairs)                AS RoomTherapistPairsPerDayShift,
     (SELECT COUNT(*) FROM dbo.ShiftAssignments WHERE LocationId IN (SELECT LocationId FROM #Locations))           AS TotalShiftAssignments,

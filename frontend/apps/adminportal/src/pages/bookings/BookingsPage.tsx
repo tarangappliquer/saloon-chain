@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Select, { type SingleValue } from 'react-select';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, LoadingFallback, PageHeader } from '@saloon/ui';
-import { adminBookingsApi, adminCatalogApi, ApiError, paymentApi } from '../../api/client';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { adminBookingsApi, adminCatalogApi, adminInventoryApi, ApiError, paymentApi } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, PaymentRecord } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
@@ -11,18 +11,125 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-interface BookingDetailsModalProps {
-  booking: AdminBooking;
-  canCancel: boolean;
-  onClose: () => void;
-  onCancel: (id: number) => Promise<void>;
+function hasStarted(booking: AdminBooking): boolean {
+  const starts = booking.treatments.map((t) => t.startTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
+  return starts.length > 0 && Date.now() >= Math.min(...starts);
 }
 
-function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingDetailsModalProps) {
+// Same "local plain-number row shape" workaround InventoryPage.tsx uses for the generated DTOs.
+interface BookingProductRow {
+  id: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+interface ProductRow {
+  id: number;
+  name: string;
+  price: number;
+}
+
+function RetailLines({ bookingId, locationId }: { bookingId: number; locationId: number }) {
+  const [lines, setLines] = useState<BookingProductRow[] | null>(null);
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [productId, setProductId] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    adminBookingsApi.apiAdminBookingsIdProductsGet(bookingId).then(({ data }) => setLines(data as unknown as BookingProductRow[]));
+  }
+
+  useEffect(() => {
+    load();
+    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data as unknown as ProductRow[]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingId, locationId]);
+
+  async function addLine() {
+    if (!productId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await adminBookingsApi.apiAdminBookingsIdProductsPost(bookingId, { productId: Number(productId), quantity: Number(quantity) });
+      setProductId('');
+      setQuantity('1');
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add product.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeLine(id: number) {
+    try {
+      await adminBookingsApi.apiAdminBookingsIdProductsProductLineIdDelete(bookingId, id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove product.');
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Retail Items</h3>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {lines && lines.length > 0 && (
+        <ul className="space-y-1.5 text-xs">
+          {lines.map((l) => (
+            <li key={l.id} className="flex items-center justify-between">
+              <span>
+                {l.productName} × {l.quantity}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold text-foreground">${l.lineTotal.toFixed(2)}</span>
+                <button type="button" onClick={() => removeLine(l.id)} className="text-muted-foreground hover:text-destructive transition">
+                  ✕
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-2">
+        <select value={productId} onChange={(e) => setProductId(e.target.value)} className="flex-1 rounded-lg border border-input bg-card px-2 py-1.5 text-xs text-foreground">
+          <option value="">Add a product...</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} (${p.price.toFixed(2)})
+            </option>
+          ))}
+        </select>
+        <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-16" />
+        <Button type="button" size="sm" variant="outline" disabled={saving || !productId} onClick={addLine}>
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface BookingDetailsModalProps {
+  booking: AdminBooking;
+  locationId: number;
+  canCancel: boolean;
+  canMarkNoShow: boolean;
+  onClose: () => void;
+  onCancel: (id: number) => Promise<void>;
+  onNoShow: (id: number) => Promise<void>;
+}
+
+function BookingDetailsModal({ booking, locationId, canCancel, canMarkNoShow, onClose, onCancel, onNoShow }: BookingDetailsModalProps) {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [markingNoShow, setMarkingNoShow] = useState(false);
 
   useEffect(() => {
     async function loadPayments() {
@@ -137,6 +244,9 @@ function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingD
             </div>
           </div>
 
+          {/* Retail line items */}
+          {(booking.status === 'Draft' || booking.status === 'Confirmed') && <RetailLines bookingId={booking.id} locationId={locationId} />}
+
           {/* Financial & Payment Details */}
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Summary</h3>
@@ -201,13 +311,31 @@ function BookingDetailsModal({ booking, canCancel, onClose, onCancel }: BookingD
 
           {/* Modal Footer Actions */}
           <div className="flex items-center justify-between border-t border-border pt-4">
-            {canCancel && (booking.status === 'Draft' || booking.status === 'Confirmed') ? (
-              <Button variant="danger" size="sm" disabled={cancelling} onClick={() => setShowConfirmCancel(true)}>
-                Cancel & Refund Booking
-              </Button>
-            ) : (
-              <div />
-            )}
+            <div className="flex items-center gap-2">
+              {canCancel && (booking.status === 'Draft' || booking.status === 'Confirmed') && (
+                <Button variant="danger" size="sm" disabled={cancelling} onClick={() => setShowConfirmCancel(true)}>
+                  Cancel & Refund Booking
+                </Button>
+              )}
+              {canMarkNoShow && booking.status === 'Confirmed' && hasStarted(booking) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={markingNoShow}
+                  onClick={async () => {
+                    setMarkingNoShow(true);
+                    try {
+                      await onNoShow(booking.id);
+                      onClose();
+                    } finally {
+                      setMarkingNoShow(false);
+                    }
+                  }}
+                >
+                  {markingNoShow ? 'Marking...' : 'Mark No-Show'}
+                </Button>
+              )}
+            </div>
 
             <Button variant="outline" size="sm" onClick={onClose}>
               Close Details
@@ -227,6 +355,10 @@ export function BookingsPage() {
     user?.role === 'Admin' ||
     user?.role === 'Manager' ||
     user?.role === 'Receptionist';
+  // Matches the "AdminAccess" policy on POST /{id}/no-show -- Receptionist can cancel but not
+  // mark a no-show (a back-office record correction, not a front-desk action).
+  const canMarkNoShow =
+    user?.role === 'RootSuperAdmin' || user?.role === 'SuperAdmin' || user?.role === 'Admin' || user?.role === 'Manager';
 
   const isRootSuperAdmin = user?.role === 'RootSuperAdmin';
   const [chains, setChains] = useState<{ id: number; name: string }[]>([]);
@@ -288,6 +420,16 @@ export function BookingsPage() {
       await loadBookings();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to cancel booking');
+    }
+  }
+
+  async function handleNoShow(id: number) {
+    setError(null);
+    try {
+      await adminBookingsApi.apiAdminBookingsIdNoShowPost(id);
+      await loadBookings();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to mark booking as a no-show');
     }
   }
 
@@ -357,12 +499,15 @@ export function BookingsPage() {
         </div>
       )}
 
-      {selectedBooking && (
+      {selectedBooking && locationId !== null && (
         <BookingDetailsModal
           booking={selectedBooking}
+          locationId={locationId}
           canCancel={canCancel}
+          canMarkNoShow={canMarkNoShow}
           onClose={() => setSelectedBooking(null)}
           onCancel={handleCancel}
+          onNoShow={handleNoShow}
         />
       )}
 

@@ -1,1 +1,7 @@
 CREATE TYPE dbo.IntIdList AS TABLE (Id INT NOT NULL PRIMARY KEY);
+
+CREATE TYPE dbo.PurchaseOrderLineList AS TABLE (
+    ProductId INT NOT NULL,
+    Quantity  INT NOT NULL,
+    UnitCost  DECIMAL(10,2) NOT NULL
+);

@@ -332,4 +332,10 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
             "dbo.sp_Booking_CancelAsAdmin",
             new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() })).ToList();
     }
+
+    public async Task MarkNoShowAsync(int bookingId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Booking_MarkNoShow", new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() });
+    }
 }

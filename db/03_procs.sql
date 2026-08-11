@@ -784,6 +784,22 @@ BEGIN
     SELECT @BoundCustomerId = CustomerId, @BoundLocationId = LocationId FROM dbo.Bookings WHERE Id = @BookingId;
     EXEC dbo.sp_CustomerLocation_Bind @CustomerId = @BoundCustomerId, @LocationId = @BoundLocationId, @CreatedBy = @BoundCreatedBy;
 
+    -- Retail stock check + deduction, atomic with the confirm -- a booking never commits to selling
+    -- more than what's actually on the shelf. Draft never touches stock, only a real Confirm does.
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingProducts bp
+            JOIN dbo.Products p ON p.Id = bp.ProductId
+        WHERE bp.BookingId = @BookingId AND bp.IsDelete = 0 AND p.QuantityOnHand < bp.Quantity
+    )
+        THROW 50052, 'Not enough stock for one or more products in this booking.', 1;
+
+    UPDATE p
+    SET p.QuantityOnHand = p.QuantityOnHand - bp.Quantity, p.UpdatedDate = SYSUTCDATETIME()
+    FROM dbo.Products p
+        JOIN dbo.BookingProducts bp ON bp.ProductId = p.Id
+    WHERE bp.BookingId = @BookingId AND bp.IsDelete = 0;
+
     UPDATE dbo.BookingTreatments
     SET ExpiresAt = NULL, UpdatedBy = COALESCE(@UpdatedBy, @CustomerId), UpdatedDate = SYSUTCDATETIME()
     WHERE BookingId = @BookingId AND IsDelete = 0;
@@ -838,6 +854,10 @@ BEGIN
     IF @EarliestStartTime IS NOT NULL AND @EarliestStartTime <= DATEADD(HOUR, 48, SYSUTCDATETIME())
         THROW 50005, 'Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.', 1;
 
+    -- Only a Confirmed booking ever deducted stock (see sp_Booking_Confirm) -- restocking a Draft
+    -- cancel would add inventory back that was never actually removed.
+    DECLARE @PriorStatus VARCHAR(10) = (SELECT Status FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0);
+
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0
@@ -845,6 +865,15 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50004, 'Booking not found.', 1;
+
+    IF @PriorStatus = 'Confirmed'
+    BEGIN
+        UPDATE p
+        SET p.QuantityOnHand = p.QuantityOnHand + bp.Quantity, p.UpdatedDate = SYSUTCDATETIME()
+        FROM dbo.Products p
+            JOIN dbo.BookingProducts bp ON bp.ProductId = p.Id
+        WHERE bp.BookingId = @BookingId AND bp.IsDelete = 0;
+    END
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
     FROM dbo.BookingTreatments bt
@@ -1948,12 +1977,23 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE @PriorStatus VARCHAR(10) = (SELECT Status FROM dbo.Bookings WHERE Id = @BookingId AND IsDelete = 0);
+
     UPDATE dbo.Bookings
     SET Status = 'Cancelled', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @BookingId AND IsDelete = 0 AND Status IN ('Draft', 'Confirmed');
 
     IF @@ROWCOUNT = 0
         THROW 50004, 'Booking not found.', 1;
+
+    IF @PriorStatus = 'Confirmed'
+    BEGIN
+        UPDATE p
+        SET p.QuantityOnHand = p.QuantityOnHand + bp.Quantity, p.UpdatedDate = SYSUTCDATETIME()
+        FROM dbo.Products p
+            JOIN dbo.BookingProducts bp ON bp.ProductId = p.Id
+        WHERE bp.BookingId = @BookingId AND bp.IsDelete = 0;
+    END
 
     SELECT b.LocationId, bt.RoomId, CAST(bt.StartTime AS DATE) AS WorkDate
     FROM dbo.BookingTreatments bt
@@ -3081,4 +3121,539 @@ BEGIN
         LEFT JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = c.TherapistId
     ORDER BY ISNULL(c.StartTime, c.CreatedDate) ASC;
 END;
+GO
+
+-- ===================== Phase 3: Inventory =====================
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_CreateSupplier
+    @ChainId INT, @Name NVARCHAR(200), @ContactEmail NVARCHAR(256) = NULL, @ContactPhone NVARCHAR(30) = NULL, @CreatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.Suppliers (ChainId, Name, ContactEmail, ContactPhone, CreatedBy)
+    VALUES (@ChainId, @Name, @ContactEmail, @ContactPhone, @CreatedBy);
+    SELECT SCOPE_IDENTITY() AS Id;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_GetSuppliers
+    @ChainId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, ChainId, Name, ContactEmail, ContactPhone, IsActive
+    FROM dbo.Suppliers WITH (NOLOCK)
+    WHERE ChainId = @ChainId AND IsDelete = 0
+    ORDER BY Name;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_UpdateSupplier
+    @Id INT, @Name NVARCHAR(200), @ContactEmail NVARCHAR(256) = NULL, @ContactPhone NVARCHAR(30) = NULL, @IsActive BIT, @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Suppliers
+    SET Name = @Name, ContactEmail = @ContactEmail, ContactPhone = @ContactPhone, IsActive = @IsActive,
+        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_DeleteSupplier
+    @Id INT, @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Suppliers SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME() WHERE Id = @Id;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_CreateProduct
+    @LocationId INT, @SupplierId INT = NULL, @Name NVARCHAR(200), @SKU NVARCHAR(50) = NULL,
+    @Price DECIMAL(10,2), @QuantityOnHand INT = 0, @ReorderThreshold INT = 0, @CreatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO dbo.Products (LocationId, SupplierId, Name, SKU, Price, QuantityOnHand, ReorderThreshold, CreatedBy)
+    VALUES (@LocationId, @SupplierId, @Name, @SKU, @Price, @QuantityOnHand, @ReorderThreshold, @CreatedBy);
+    SELECT SCOPE_IDENTITY() AS Id;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_GetProducts
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT p.Id, p.LocationId, p.SupplierId, s.Name AS SupplierName, p.Name, p.SKU, p.Price,
+        p.QuantityOnHand, p.ReorderThreshold, p.IsActive
+    FROM dbo.Products p WITH (NOLOCK)
+        LEFT JOIN dbo.Suppliers s WITH (NOLOCK) ON s.Id = p.SupplierId
+    WHERE p.LocationId = @LocationId AND p.IsDelete = 0
+    ORDER BY p.Name;
+END
+GO
+
+-- QuantityOnHand is deliberately not a parameter here -- stock only ever moves through
+-- sp_Inventory_ReceivePurchaseOrder or a booking confirm/cancel, never a direct edit, so it stays
+-- an authoritative running total instead of something a form field can silently desync.
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_UpdateProduct
+    @Id INT, @SupplierId INT = NULL, @Name NVARCHAR(200), @SKU NVARCHAR(50) = NULL,
+    @Price DECIMAL(10,2), @ReorderThreshold INT, @IsActive BIT, @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Products
+    SET SupplierId = @SupplierId, Name = @Name, SKU = @SKU, Price = @Price, ReorderThreshold = @ReorderThreshold,
+        IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_DeleteProduct
+    @Id INT, @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.Products SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME() WHERE Id = @Id;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_GetLowStockProducts
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, Name, SKU, QuantityOnHand, ReorderThreshold
+    FROM dbo.Products WITH (NOLOCK)
+    WHERE LocationId = @LocationId AND IsDelete = 0 AND IsActive = 1 AND QuantityOnHand <= ReorderThreshold
+    ORDER BY QuantityOnHand ASC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_CreatePurchaseOrder
+    @LocationId INT,
+    @SupplierId INT,
+    @Lines dbo.PurchaseOrderLineList READONLY,
+    @CreatedBy INT = NULL,
+    @Id INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM @Lines)
+        THROW 50053, 'A purchase order needs at least one line.', 1;
+
+    INSERT INTO dbo.PurchaseOrders (LocationId, SupplierId, CreatedBy)
+    VALUES (@LocationId, @SupplierId, @CreatedBy);
+    SET @Id = SCOPE_IDENTITY();
+
+    INSERT INTO dbo.PurchaseOrderLines (PurchaseOrderId, ProductId, QuantityOrdered, UnitCost)
+    SELECT @Id, ProductId, Quantity, UnitCost FROM @Lines;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_GetPurchaseOrders
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT po.Id, po.LocationId, po.SupplierId, s.Name AS SupplierName, po.Status, po.ReceivedDate, po.CreatedDate,
+        ISNULL((SELECT SUM(QuantityOrdered * UnitCost) FROM dbo.PurchaseOrderLines WHERE PurchaseOrderId = po.Id), 0) AS TotalCost
+    FROM dbo.PurchaseOrders po WITH (NOLOCK)
+        JOIN dbo.Suppliers s WITH (NOLOCK) ON s.Id = po.SupplierId
+    WHERE po.LocationId = @LocationId AND po.IsDelete = 0
+    ORDER BY po.CreatedDate DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_GetPurchaseOrderDetail
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT po.Id, po.LocationId, po.SupplierId, s.Name AS SupplierName, po.Status, po.ReceivedDate, po.CreatedDate
+    FROM dbo.PurchaseOrders po WITH (NOLOCK)
+        JOIN dbo.Suppliers s WITH (NOLOCK) ON s.Id = po.SupplierId
+    WHERE po.Id = @Id AND po.IsDelete = 0;
+
+    SELECT pol.Id, pol.ProductId, p.Name AS ProductName, pol.QuantityOrdered, pol.UnitCost
+    FROM dbo.PurchaseOrderLines pol WITH (NOLOCK)
+        JOIN dbo.Products p WITH (NOLOCK) ON p.Id = pol.ProductId
+    WHERE pol.PurchaseOrderId = @Id;
+END
+GO
+
+-- Full receive only (no partial-quantity receiving in v1) -- bumps each line's product stock by
+-- exactly what was ordered and marks the whole PO Received.
+CREATE OR ALTER PROCEDURE dbo.sp_Inventory_ReceivePurchaseOrder
+    @Id INT,
+    @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.PurchaseOrders WHERE Id = @Id AND IsDelete = 0 AND Status = 'Ordered')
+        THROW 50054, 'Purchase order not found or already received/cancelled.', 1;
+
+    UPDATE p
+    SET p.QuantityOnHand = p.QuantityOnHand + pol.QuantityOrdered, p.UpdatedDate = SYSUTCDATETIME()
+    FROM dbo.Products p
+        JOIN dbo.PurchaseOrderLines pol ON pol.ProductId = p.Id
+    WHERE pol.PurchaseOrderId = @Id;
+
+    UPDATE dbo.PurchaseOrders
+    SET Status = 'Received', ReceivedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id;
+END
+GO
+
+-- Draft-only, same rule BookingTreatments' add-line procs already enforce. UnitPrice is captured
+-- from Products.Price now, not read live later, so an existing cart line survives a price change.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_AddProduct
+    @BookingId INT,
+    @ProductId INT,
+    @Quantity INT,
+    @CreatedBy INT = NULL,
+    @Id INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.Bookings WHERE Id = @BookingId AND Status = 'Draft' AND IsDelete = 0)
+        THROW 50055, 'Booking not found or already finalized.', 1;
+
+    DECLARE @UnitPrice DECIMAL(10,2);
+    SELECT @UnitPrice = Price FROM dbo.Products WHERE Id = @ProductId AND IsDelete = 0 AND IsActive = 1;
+    IF @UnitPrice IS NULL
+        THROW 50056, 'Product not found or inactive.', 1;
+
+    INSERT INTO dbo.BookingProducts (BookingId, ProductId, Quantity, UnitPrice, CreatedBy)
+    VALUES (@BookingId, @ProductId, @Quantity, @UnitPrice, @CreatedBy);
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_RemoveProduct
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.BookingProducts SET IsDelete = 1 WHERE Id = @Id AND IsDelete = 0;
+    IF @@ROWCOUNT = 0
+        THROW 50057, 'Booking product line not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetProducts
+    @BookingId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT bp.Id, bp.ProductId, p.Name AS ProductName, bp.Quantity, bp.UnitPrice, (bp.Quantity * bp.UnitPrice) AS LineTotal
+    FROM dbo.BookingProducts bp WITH (NOLOCK)
+        JOIN dbo.Products p WITH (NOLOCK) ON p.Id = bp.ProductId
+    WHERE bp.BookingId = @BookingId AND bp.IsDelete = 0;
+END
+GO
+
+-- ===================== Phase 3: Team pay (commissions + pay runs) =====================
+
+-- Upserts on (LocationId, TherapistId) -- TherapistId NULL sets/replaces the location's own default
+-- rule, matching UX_CommissionRules_Location_Therapist's TherapistKey uniqueness.
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_UpsertCommissionRule
+    @LocationId INT,
+    @TherapistId INT = NULL,
+    @Type VARCHAR(10),
+    @Rate DECIMAL(10,2),
+    @HourlyRate DECIMAL(10,2) = 0,
+    @OvertimeThresholdHours DECIMAL(5,2) = 40.0,
+    @OvertimeRateMultiplier DECIMAL(5,2) = 1.5,
+    @CreatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    MERGE dbo.CommissionRules AS target
+    USING (SELECT @LocationId AS LocationId, ISNULL(@TherapistId, 0) AS TherapistKey) AS src
+        ON target.LocationId = src.LocationId AND target.TherapistKey = src.TherapistKey AND target.IsDelete = 0
+    WHEN MATCHED THEN
+        UPDATE SET Type = @Type, Rate = @Rate, HourlyRate = @HourlyRate,
+                   OvertimeThresholdHours = @OvertimeThresholdHours, OvertimeRateMultiplier = @OvertimeRateMultiplier,
+                   UpdatedBy = @CreatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHEN NOT MATCHED THEN
+        INSERT (LocationId, TherapistId, Type, Rate, HourlyRate, OvertimeThresholdHours, OvertimeRateMultiplier, CreatedBy)
+        VALUES (@LocationId, @TherapistId, @Type, @Rate, @HourlyRate, @OvertimeThresholdHours, @OvertimeRateMultiplier, @CreatedBy);
+
+    SELECT Id FROM dbo.CommissionRules WHERE LocationId = @LocationId AND TherapistKey = ISNULL(@TherapistId, 0) AND IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_GetCommissionRules
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT cr.Id, cr.LocationId, cr.TherapistId, tp.Name AS TherapistName, cr.Type, cr.Rate,
+           cr.HourlyRate, cr.OvertimeThresholdHours, cr.OvertimeRateMultiplier
+    FROM dbo.CommissionRules cr WITH (NOLOCK)
+        LEFT JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = cr.TherapistId
+    WHERE cr.LocationId = @LocationId AND cr.IsDelete = 0
+    ORDER BY CASE WHEN cr.TherapistId IS NULL THEN 0 ELSE 1 END, tp.Name;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_DeleteCommissionRule
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.CommissionRules SET IsDelete = 1, UpdatedDate = SYSUTCDATETIME() WHERE Id = @Id;
+END
+GO
+
+-- Snapshots gross Confirmed-treatment revenue per therapist over the period into frozen PayRunLines
+-- rows, calculating base commission, hourly base wage, overtime hours, overtime pay, and total pay.
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_CreatePayRun
+    @LocationId INT,
+    @PeriodStart DATE,
+    @PeriodEnd DATE,
+    @CreatedBy INT = NULL,
+    @Id INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Replace any existing un-finalized Draft pay run for the exact same location and period
+    DELETE FROM dbo.PayRuns
+    WHERE LocationId = @LocationId AND PeriodStart = @PeriodStart AND PeriodEnd = @PeriodEnd AND Status = 'Draft';
+
+    INSERT INTO dbo.PayRuns (LocationId, PeriodStart, PeriodEnd, CreatedBy)
+    VALUES (@LocationId, @PeriodStart, @PeriodEnd, @CreatedBy);
+    SET @Id = SCOPE_IDENTITY();
+
+    ;WITH Gross AS (
+        SELECT bt.TherapistId, SUM(bt.Price) AS GrossSales, COUNT(*) AS LineCount,
+            SUM(bt.SlotCount) * 15.0 / 60.0 AS HoursWorked
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId
+        WHERE b.LocationId = @LocationId AND b.Status = 'Confirmed' AND b.IsDelete = 0 AND bt.IsDelete = 0
+            AND bt.TherapistId IS NOT NULL
+            AND CAST(bt.StartTime AS DATE) BETWEEN @PeriodStart AND @PeriodEnd
+        GROUP BY bt.TherapistId
+    ),
+    RuleResolved AS (
+        SELECT g.TherapistId, g.GrossSales, g.LineCount, g.HoursWorked,
+            COALESCE(specific.Type, def.Type, 'Percent') AS CommissionType,
+            COALESCE(specific.Rate, def.Rate, 0) AS CommissionRate,
+            CASE
+                WHEN COALESCE(specific.HourlyRate, def.HourlyRate, 0) > 0 THEN COALESCE(specific.HourlyRate, def.HourlyRate, 0)
+                WHEN COALESCE(specific.Type, def.Type, 'Percent') = 'Hourly' THEN COALESCE(specific.Rate, def.Rate, 0)
+                ELSE 0
+            END AS HourlyRate,
+            COALESCE(specific.OvertimeThresholdHours, def.OvertimeThresholdHours, 40.0) AS OvertimeThresholdHours,
+            COALESCE(specific.OvertimeRateMultiplier, def.OvertimeRateMultiplier, 1.5) AS OvertimeRateMultiplier
+        FROM Gross g
+            LEFT JOIN dbo.CommissionRules specific ON specific.LocationId = @LocationId AND specific.TherapistId = g.TherapistId AND specific.IsDelete = 0
+            LEFT JOIN dbo.CommissionRules def ON def.LocationId = @LocationId AND def.TherapistId IS NULL AND def.IsDelete = 0
+    ),
+    Calculated AS (
+        SELECT TherapistId, GrossSales, HoursWorked, CommissionType, CommissionRate, HourlyRate, LineCount,
+            CASE WHEN HoursWorked > OvertimeThresholdHours THEN OvertimeThresholdHours ELSE HoursWorked END AS RegularHours,
+            CASE WHEN HoursWorked > OvertimeThresholdHours THEN (HoursWorked - OvertimeThresholdHours) ELSE 0 END AS OvertimeHours,
+            CASE CommissionType
+                WHEN 'Percent' THEN ROUND(GrossSales * CommissionRate / 100.0, 2)
+                WHEN 'Flat' THEN ROUND(CommissionRate * LineCount, 2)
+                ELSE 0.00
+            END AS CommissionAmount,
+            OvertimeRateMultiplier
+        FROM RuleResolved
+    )
+    INSERT INTO dbo.PayRunLines (
+        PayRunId, TherapistId, GrossSales, HoursWorked, RegularHours, OvertimeHours, HourlyRate,
+        CommissionRate, CommissionType, CommissionAmount, OvertimePay, TotalPay
+    )
+    SELECT @Id, TherapistId, GrossSales, ROUND(HoursWorked, 2), ROUND(RegularHours, 2), ROUND(OvertimeHours, 2), HourlyRate,
+        CommissionRate, CommissionType, CommissionAmount,
+        ROUND(OvertimeHours * HourlyRate * OvertimeRateMultiplier, 2) AS OvertimePay,
+        ROUND(CommissionAmount + (RegularHours * HourlyRate) + (OvertimeHours * HourlyRate * OvertimeRateMultiplier), 2) AS TotalPay
+    FROM Calculated;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_GetPayRuns
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT pr.Id, pr.LocationId, pr.PeriodStart, pr.PeriodEnd, pr.Status, pr.FinalizedDate, pr.CreatedDate,
+        ISNULL((SELECT SUM(TotalPay) FROM dbo.PayRunLines WHERE PayRunId = pr.Id), 0) AS TotalCommission
+    FROM dbo.PayRuns pr WITH (NOLOCK)
+    WHERE pr.LocationId = @LocationId
+    ORDER BY pr.PeriodStart DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_GetPayRunDetail
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, LocationId, PeriodStart, PeriodEnd, Status, FinalizedDate, CreatedDate FROM dbo.PayRuns WHERE Id = @Id;
+
+    SELECT prl.Id, prl.TherapistId, tp.Name AS TherapistName, prl.GrossSales, prl.HoursWorked,
+        prl.RegularHours, prl.OvertimeHours, prl.HourlyRate, prl.CommissionRate, prl.CommissionType,
+        prl.CommissionAmount, prl.OvertimePay, prl.TotalPay
+    FROM dbo.PayRunLines prl WITH (NOLOCK)
+        JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = prl.TherapistId
+    WHERE prl.PayRunId = @Id
+    ORDER BY prl.TotalPay DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Payroll_FinalizePayRun
+    @Id INT,
+    @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.PayRuns
+    SET Status = 'Finalized', FinalizedDate = SYSUTCDATETIME(), UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND Status = 'Draft';
+    IF @@ROWCOUNT = 0
+        THROW 50058, 'Pay run not found or already finalized.', 1;
+END
+GO
+
+-- ===================== Phase 3: Reporting =====================
+
+-- Confirmed only, and only once its own start time has passed -- re-derives eligibility
+-- server-side rather than trusting the caller's clock, same convention as sp_Review_Create.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_MarkNoShow
+    @BookingId INT,
+    @UpdatedBy INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM dbo.Bookings WHERE Id = @BookingId AND Status = 'Confirmed' AND IsDelete = 0
+    )
+        THROW 50059, 'Booking not found or not Confirmed.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.BookingTreatments
+        WHERE BookingId = @BookingId AND IsDelete = 0 AND (StartTime IS NULL OR StartTime > SYSUTCDATETIME())
+    )
+        THROW 50060, 'Booking has not started yet.', 1;
+
+    UPDATE dbo.Bookings
+    SET Status = 'NoShow', UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @BookingId;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Report_SalesByService
+    @LocationId INT, @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT t.Id AS TreatmentId, t.Name AS TreatmentName, tc.Name AS CategoryName,
+        COUNT(*) AS BookingCount, SUM(bt.Price) AS TotalRevenue
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        JOIN dbo.TreatmentCategories tc WITH (NOLOCK) ON tc.Id = t.CategoryId
+    WHERE b.LocationId = @LocationId AND b.Status = 'Confirmed' AND bt.IsDelete = 0
+        AND CAST(bt.StartTime AS DATE) BETWEEN @From AND @To
+    GROUP BY t.Id, t.Name, tc.Name
+    ORDER BY TotalRevenue DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Report_SalesByStaff
+    @LocationId INT, @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT tp.Id AS TherapistId, tp.Name AS TherapistName,
+        COUNT(*) AS BookingCount, SUM(bt.Price) AS TotalRevenue
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = bt.TherapistId
+    WHERE b.LocationId = @LocationId AND b.Status = 'Confirmed' AND bt.IsDelete = 0
+        AND CAST(bt.StartTime AS DATE) BETWEEN @From AND @To
+    GROUP BY tp.Id, tp.Name
+    ORDER BY TotalRevenue DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Report_SalesByLocation
+    @ChainId INT, @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT l.Id AS LocationId, l.Name AS LocationName,
+        COUNT(*) AS BookingCount, SUM(bt.Price) AS TotalRevenue
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN dbo.Locations l WITH (NOLOCK) ON l.Id = b.LocationId
+    WHERE l.ChainId = @ChainId AND b.Status = 'Confirmed' AND bt.IsDelete = 0
+        AND CAST(bt.StartTime AS DATE) BETWEEN @From AND @To
+    GROUP BY l.Id, l.Name
+    ORDER BY TotalRevenue DESC;
+END
+GO
+
+-- "Retention" = of the customers who had a Confirmed booking at this location in the period, what
+-- share had already been bound to it (dbo.CustomerLocations, see sp_CustomerLocation_Bind) before
+-- the period started -- a repeat, not a first-time, customer.
+CREATE OR ALTER PROCEDURE dbo.sp_Report_Retention
+    @LocationId INT, @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH VisitingCustomers AS (
+        SELECT DISTINCT b.CustomerId
+        FROM dbo.Bookings b WITH (NOLOCK)
+            JOIN dbo.BookingTreatments bt WITH (NOLOCK) ON bt.BookingId = b.Id AND bt.IsDelete = 0
+        WHERE b.LocationId = @LocationId AND b.Status = 'Confirmed' AND b.IsDelete = 0
+            AND CAST(bt.StartTime AS DATE) BETWEEN @From AND @To
+    )
+    SELECT
+        COUNT(*) AS TotalCustomers,
+        SUM(CASE WHEN cl.CreatedDate < CAST(@From AS DATETIME2) THEN 1 ELSE 0 END) AS ReturningCustomers,
+        CASE WHEN COUNT(*) = 0 THEN 0
+             ELSE ROUND(100.0 * SUM(CASE WHEN cl.CreatedDate < CAST(@From AS DATETIME2) THEN 1 ELSE 0 END) / COUNT(*), 1)
+        END AS RetentionRatePercent
+    FROM VisitingCustomers vc
+        JOIN dbo.CustomerLocations cl ON cl.CustomerId = vc.CustomerId AND cl.LocationId = @LocationId AND cl.IsDelete = 0;
+END
+GO
+
+-- Only counts bookings whose own appointment date already fell within the period -- a future
+-- Confirmed booking hasn't had the chance to no-show yet and would otherwise dilute the rate.
+CREATE OR ALTER PROCEDURE dbo.sp_Report_NoShowRate
+    @LocationId INT, @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    ;WITH Appointments AS (
+        SELECT b.Id, b.Status, MIN(bt.StartTime) AS StartTime
+        FROM dbo.Bookings b WITH (NOLOCK)
+            JOIN dbo.BookingTreatments bt WITH (NOLOCK) ON bt.BookingId = b.Id AND bt.IsDelete = 0
+        WHERE b.LocationId = @LocationId AND b.IsDelete = 0 AND b.Status IN ('Confirmed','NoShow')
+        GROUP BY b.Id, b.Status
+    )
+    SELECT
+        COUNT(*) AS TotalAppointments,
+        SUM(CASE WHEN Status = 'NoShow' THEN 1 ELSE 0 END) AS NoShowCount,
+        CASE WHEN COUNT(*) = 0 THEN 0
+             ELSE ROUND(100.0 * SUM(CASE WHEN Status = 'NoShow' THEN 1 ELSE 0 END) / COUNT(*), 1)
+        END AS NoShowRatePercent
+    FROM Appointments
+    WHERE CAST(StartTime AS DATE) BETWEEN @From AND @To;
+END
 GO

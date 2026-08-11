@@ -1,6 +1,7 @@
 using FluentValidation;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Booking.Infrastructure;
+using SaloonApi.Modules.Inventory.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Validation;
 
@@ -63,6 +64,73 @@ internal static class AdminBookingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Move a Confirmed booking's treatment to a new room/therapist/time.");
+
+        // No-show, like cancel/reschedule above, has no caller-scoping in the proc itself.
+        group.MapPost("/{id:int}/no-show", async (int id, BookingService bookingService, BookingRepository repo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await repo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            await bookingService.MarkNoShowAsync(id);
+            return Results.NoContent();
+        }).RequireAuthorization("AdminAccess")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status401Unauthorized)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Mark a Confirmed booking (past its start time) as a no-show.");
+
+        // Retail line items on a Draft booking -- the POS/checkout extension point the roadmap
+        // deferred until Inventory existed (see FRESHA_PARITY_ROADMAP.md Phase 1). Booking-owns-cart
+        // scoping mirrors the schedule/reschedule routes above.
+        group.MapGet("/{id:int}/products", async (int id, BookingRepository bookingRepo, InventoryRepository inventoryRepo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await bookingRepo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await inventoryRepo.GetBookingProductsAsync(id));
+        }).RequireAuthorization("StaffAccess")
+          .Produces<IReadOnlyList<BookingProductDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a booking's retail product lines.");
+
+        group.MapPost("/{id:int}/products", async (
+            int id, AddBookingProductRequest req, BookingRepository bookingRepo, InventoryRepository inventoryRepo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await bookingRepo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new IdResponse(await inventoryRepo.AddBookingProductAsync(id, req.ProductId, req.Quantity, currentUser.UserId)));
+        }).RequireAuthorization("StaffAccess")
+          .WithValidation<AddBookingProductRequest>()
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Add a retail product line to a Draft booking, priced at the product's current price.");
+
+        group.MapDelete("/{id:int}/products/{productLineId:int}", async (
+            int id, int productLineId, BookingRepository bookingRepo, InventoryRepository inventoryRepo, ICurrentUser currentUser) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && await bookingRepo.GetLocationIdAsync(id) != currentUser.LocationId)
+                return Results.Problem("Not authorized for this booking.", statusCode: StatusCodes.Status403Forbidden);
+
+            await inventoryRepo.RemoveBookingProductAsync(productLineId);
+            return Results.NoContent();
+        }).RequireAuthorization("StaffAccess")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("Remove a retail product line from a booking.");
+    }
+}
+
+internal sealed record AddBookingProductRequest(int ProductId, int Quantity);
+
+internal sealed class AddBookingProductRequestValidator : AbstractValidator<AddBookingProductRequest>
+{
+    public AddBookingProductRequestValidator()
+    {
+        RuleFor(x => x.ProductId).GreaterThan(0);
+        RuleFor(x => x.Quantity).GreaterThan(0);
     }
 }
 

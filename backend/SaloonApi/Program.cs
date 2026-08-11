@@ -16,11 +16,17 @@ using SaloonApi.Modules.Config.Endpoints;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Modules.Inventory.Endpoints;
+using SaloonApi.Modules.Inventory.Infrastructure;
 using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Modules.Payment.Endpoints;
 using SaloonApi.Modules.Payment.Infrastructure;
+using SaloonApi.Modules.Payroll.Endpoints;
+using SaloonApi.Modules.Payroll.Infrastructure;
 using SaloonApi.Modules.Profile.Endpoints;
 using SaloonApi.Modules.Profile.Infrastructure;
+using SaloonApi.Modules.Reports.Endpoints;
+using SaloonApi.Modules.Reports.Infrastructure;
 using SaloonApi.Modules.Review.Endpoints;
 using SaloonApi.Modules.Review.Infrastructure;
 using SaloonApi.Modules.Scheduling.Endpoints;
@@ -184,7 +190,10 @@ try
     builder.Services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
     builder.Services.AddScoped<PaymentRepository>();
     builder.Services.AddScoped<StripeCustomerService>();
+    builder.Services.AddScoped<InventoryRepository>();
     builder.Services.AddScoped<PaymentService>();
+    builder.Services.AddScoped<PayrollRepository>();
+    builder.Services.AddScoped<ReportsRepository>();
 
     builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
     builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
@@ -265,6 +274,9 @@ try
     app.MapSchedulingEndpoints();
     app.MapProfileEndpoints();
     app.MapReviewEndpoints();
+    app.MapInventoryEndpoints();
+    app.MapPayrollEndpoints();
+    app.MapReportsEndpoints();
 
     await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
 

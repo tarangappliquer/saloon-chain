@@ -10,8 +10,11 @@ import {
   CatalogApi,
   ConfigApi,
   Configuration,
+  InventoryApi,
   PaymentApi,
+  PayrollApi,
   ProfileApi,
+  ReportsApi,
   SchedulingApi,
 } from '@saloon/api-client';
 import { appConfig } from '../config';
@@ -150,6 +153,9 @@ export const catalogApi = new CatalogApi(configuration, API_BASE, axiosInstance)
 export const adminCustomersApi = new AdminCustomersApi(configuration, API_BASE, axiosInstance);
 export const adminDashboardApi = new AdminDashboardApi(configuration, API_BASE, axiosInstance);
 export const adminStaffApi = new AdminStaffApi(configuration, API_BASE, axiosInstance);
+export const adminInventoryApi = new InventoryApi(configuration, API_BASE, axiosInstance);
+export const adminPayrollApi = new PayrollApi(configuration, API_BASE, axiosInstance);
+export const adminReportsApi = new ReportsApi(configuration, API_BASE, axiosInstance);
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
 export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);

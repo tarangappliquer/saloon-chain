@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Modules.Inventory.Infrastructure;
 using SaloonApi.Modules.Payment.Infrastructure;
 using Stripe;
 
@@ -11,6 +12,7 @@ internal sealed class PaymentService(
     PaymentRepository repo,
     BookingService bookingService,
     UserRepository userRepo,
+    InventoryRepository inventoryRepo,
     StripeCustomerService stripeCustomerService,
     IOptionsMonitor<StripeOptions> stripeOptions)
 {
@@ -26,7 +28,11 @@ internal sealed class PaymentService(
         var booking = await bookingService.GetByIdAsync(bookingId, customerId)
             ?? throw new KeyNotFoundException($"Booking {bookingId} not found for customer.");
 
-        var bookingTotal = booking.Treatments.Sum(t => t.Price);
+        // Retail lines (BookingProducts) ride along with a booking's treatment total -- fetched
+        // separately rather than threading Products through BookingDetailsDto, which several other
+        // call sites (confirmation/cancellation emails) already depend on the shape of.
+        var productTotal = (await inventoryRepo.GetBookingProductsAsync(bookingId)).Sum(p => p.LineTotal);
+        var bookingTotal = booking.Treatments.Sum(t => t.Price) + productTotal;
         var existingPayments = await repo.GetByBookingIdAsync(bookingId);
         var alreadyPaid = existingPayments
             .Where(p => p.Status.Equals("Succeeded", StringComparison.OrdinalIgnoreCase))

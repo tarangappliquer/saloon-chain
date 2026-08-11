@@ -344,6 +344,11 @@ internal sealed class BookingService(
     public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null) =>
         repo.GetMineAsync(customerId, chainId, locationId);
 
+    // No refund/email here -- a no-show forfeits whatever was already paid (unlike a cancellation,
+    // there's no automatic refund to process), and it's a back-office record correction, not
+    // something the customer needs notified about.
+    public Task MarkNoShowAsync(int bookingId) => repo.MarkNoShowAsync(bookingId);
+
     public async Task SweepExpiredHoldsAsync()
     {
         var affected = await repo.ExpireStaleHoldsAsync();

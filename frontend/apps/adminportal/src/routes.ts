@@ -28,6 +28,9 @@ export const routes = {
   scheduling: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
     withQuery('/scheduling', params),
   calendar: '/calendar',
+  inventory: '/inventory',
+  payroll: '/payroll',
+  reports: '/reports',
   catalog: {
     saloons: '/catalog/saloons',
     saloonUsers: (chainId?: Id | null) => withQuery('/catalog/saloons/users', { chainId }),
