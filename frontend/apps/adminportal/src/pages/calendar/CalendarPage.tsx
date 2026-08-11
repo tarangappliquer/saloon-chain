@@ -208,6 +208,28 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
   return flat;
 }
 
+const RefreshIcon = () => {
+  return <label className="cursor-pointer inline-block p-2">
+ 
+  <input type="checkbox" className="peer hidden" />
+  
+ 
+  <svg xmlns="http://w3.org" 
+       className="w-5 h-5 transition-transform duration-700 ease-in-out peer-checked:rotate-180" 
+       viewBox="0 0 24 24" 
+       fill="none" 
+       stroke="currentColor" 
+       stroke-width="2" 
+       stroke-linecap="round" 
+       stroke-linejoin="round">
+    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+    <path d="M16 16h5v5" />
+  </svg>
+</label>
+}
+
 export function CalendarPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
@@ -232,7 +254,7 @@ export function CalendarPage() {
   const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [], blockedSlots: [] });
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
 
-  const [viewMode, setViewMode] = useState<'Day' | 'Week'>('Day');
+  
   const [detailBookingId, setDetailBookingId] = useState<number | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -568,16 +590,9 @@ export function CalendarPage() {
             className="flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer text-sm"
             title="Refresh Schedule"
           >
-            🔄
+            <RefreshIcon/>
           </button>
-          <select
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as 'Day' | 'Week')}
-            className="rounded-full border border-border bg-background px-3 py-1 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer focus:outline-hidden"
-          >
-            <option value="Day">Day</option>
-            <option value="Week">Week</option>
-          </select>
+          
         </div>
       </div>
 

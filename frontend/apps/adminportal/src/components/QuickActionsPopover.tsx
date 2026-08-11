@@ -51,7 +51,7 @@ export function QuickActionsPopover({
           <span>Add appointment</span>
         </button>
 
-        <button
+        {/* <button
           type="button"
           onClick={() => {
             onClose();
@@ -61,7 +61,7 @@ export function QuickActionsPopover({
         >
           <span className="text-base">👥</span>
           <span>Add group appointment</span>
-        </button>
+        </button> */}
 
         <button
           type="button"
