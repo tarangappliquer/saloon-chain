@@ -964,7 +964,7 @@ function ScheduleGridView({
                                 <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                                   Available
                                 </span>
-                                <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-[110px]" title={opening?.categoryName}>
+                                <span className="text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 truncate max-w-27.5" title={opening?.categoryName}>
                                   {opening?.categoryName}
                                 </span>
                               </div>
@@ -1018,7 +1018,7 @@ function ScheduleGridView({
 
     {contextMenu && (
       <div
-        className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-card py-1 text-xs shadow-lg"
+        className="fixed z-50 min-w-35 rounded-lg border border-border bg-card py-1 text-xs shadow-lg"
         style={{ top: contextMenu.y, left: contextMenu.x }}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}

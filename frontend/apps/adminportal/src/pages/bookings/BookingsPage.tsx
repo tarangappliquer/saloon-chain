@@ -344,7 +344,7 @@ export function BookingsPage() {
               <DateInput
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="min-w-[140px]"
+                className="min-w-35"
               />
             </div>
           </div>
