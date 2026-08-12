@@ -214,6 +214,7 @@ try
     builder.Services.AddHostedService<HoldExpirySweepService>();
     builder.Services.AddHostedService<EmailQueueBackgroundService>();
     builder.Services.AddHostedService<SaloonApi.Modules.Booking.BackgroundJobs.AvailabilitySyncStartupHostedService>();
+    builder.Services.AddHostedService<SaloonApi.Modules.Admin.BackgroundJobs.StaffAttendanceSweepHostedService>();
 
     builder.Services.AddHealthChecks();
     builder.Services.AddAntiforgery();

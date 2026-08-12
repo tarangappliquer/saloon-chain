@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
@@ -12,7 +13,7 @@ internal sealed record UserRecord(
 
 internal sealed record StaffUserDto(
     int Id, string Name, string Email, string? Phone, UserRole Role,
-    int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateTime CreatedDate);
+    int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate, DateTime CreatedDate);
 
 internal sealed record CustomerSummaryDto(int Id, string Name, string Email, string? Phone, bool CanEmulate = true, bool IsWalkIn = false);
 
@@ -32,12 +33,88 @@ internal sealed record CustomerNoteDto(
 
 internal sealed record CustomerTagDto(int Id, string Tag, int? ChainId, string? ChainName, int? LocationId, string? LocationName);
 
+internal sealed record StaffAttendanceDto(
+    int UserId, string StaffName, string StaffEmail, string StaffRole,
+    int? AttendanceId, int LocationId, string WorkDate,
+    string? ArrivalTime, string? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
+
+internal sealed record UnattendedPreBookingAlertDto(
+    int BookingId, int LocationId, string LocationName, int BookingTreatmentId,
+    string TreatmentName, DateTime StartTime, DateTime EndTime,
+    int TherapistId, string AssignedStaffName, string? AssignedStaffEmail,
+    string CustomerName, int LeadTimeMinutes);
+
+internal sealed record LocationManagerDto(int UserId, string Name, string Email, string Role);
+
+internal sealed record ProxyAssignmentResultDto(
+    int BookingTreatmentId, int BookingId, int LocationId, string LocationName,
+    string TreatmentName, DateTime StartTime, DateTime EndTime,
+    int OriginalTherapistId, string OriginalTherapistName,
+    int ProxyTherapistId, string ProxyTherapistName, string ProxyTherapistEmail, string CustomerName);
+
 internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
 {
+    public async Task<IReadOnlyList<StaffAttendanceDto>> GetStaffAttendanceAsync(int locationId, DateOnly workDate)
+    {
+        using var db = factory.Create();
+        var rows = await db.QuerySpAsync<StaffAttendanceRow>("dbo.sp_Staff_GetAttendance", new
+        {
+            LocationId = locationId,
+            WorkDate = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        });
+        return rows.Select(r => new StaffAttendanceDto(
+            r.UserId, r.StaffName, r.StaffEmail, r.StaffRole,
+            r.AttendanceId, locationId, workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            r.ArrivalTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LeftTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LoggedDate, r.LoggedByUserId
+        )).ToList();
+    }
+
+    public async Task LogStaffAttendanceAsync(int locationId, int userId, DateOnly workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedByUserId)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Staff_LogAttendance", new
+        {
+            LocationId = locationId,
+            UserId = userId,
+            WorkDate = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ArrivalTime = arrivalTime,
+            LeftTime = leftTime,
+            LoggedBy = loggedByUserId
+        });
+    }
+
+    public async Task<IReadOnlyList<LocationManagerDto>> GetLocationManagersAsync(int locationId)
+    {
+        using var db = factory.Create();
+        return (await db.QuerySpAsync<LocationManagerDto>("dbo.sp_Staff_GetLocationManagers", new { LocationId = locationId })).ToList();
+    }
+
+    public async Task<IReadOnlyList<UnattendedPreBookingAlertDto>> GetUnattendedPreBookingAlertsAsync()
+    {
+        using var db = factory.Create();
+        return (await db.QuerySpAsync<UnattendedPreBookingAlertDto>("dbo.sp_Staff_GetUnattendedPreBookingAlerts")).ToList();
+    }
+
+    public async Task<ProxyAssignmentResultDto?> AssignProxyTherapistAsync(int bookingTreatmentId, int proxyTherapistId, int updatedByUserId)
+    {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<ProxyAssignmentResultDto>("dbo.sp_Booking_AssignProxyTherapist", new
+        {
+            BookingTreatmentId = bookingTreatmentId,
+            ProxyTherapistId = proxyTherapistId,
+            UpdatedBy = updatedByUserId
+        });
+    }
+
+    private sealed record StaffAttendanceRow(
+        int UserId, string StaffName, string StaffEmail, string StaffRole,
+        int? AttendanceId, int LocationId, DateTime WorkDate,
+        TimeSpan? ArrivalTime, TimeSpan? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
+
     public async Task<int> CreateAsync(
         string name, string email, byte[] hash, byte[] salt, string? phone,
         UserRole role = UserRole.Customer, int? chainId = null, int? locationId = null, int? therapistId = null,
-        bool isEmulator = false, bool isEmailVerified = false, bool isWalkIn = false)
+        bool isEmulator = false, DateOnly? joiningDate = null, bool isEmailVerified = false, bool isWalkIn = false)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
@@ -51,6 +128,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         p.Add("@LocationId", locationId);
         p.Add("@TherapistId", therapistId);
         p.Add("@IsEmulator", isEmulator);
+        p.Add("@JoiningDate", joiningDate);
         p.Add("@IsWalkIn", isWalkIn);
         // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
         p.Add("@CreatedBy", currentUser.UserId);
@@ -222,12 +300,12 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         });
         return rows.Select(r => new StaffUserDto(
             r.Id, r.Name, r.Email, r.Phone, Enum.Parse<UserRole>(r.Role),
-            r.ChainId, r.LocationId, r.TherapistId, r.IsEmulator, r.IsActive, r.CreatedDate)).ToList();
+            r.ChainId, r.LocationId, r.TherapistId, r.IsEmulator, r.IsActive, r.JoiningDate, r.CreatedDate)).ToList();
     }
 
     public async Task UpdateStaffAsync(
         int id, string name, string? phone, string? role, int? chainId, int? locationId, int? therapistId,
-        bool isEmulator, bool isActive)
+        bool isEmulator, DateOnly? joiningDate, bool isActive)
     {
         using var db = factory.Create();
         await db.ExecuteSpAsync("dbo.sp_Admin_UpdateUser", new
@@ -240,6 +318,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
             LocationId = locationId,
             TherapistId = therapistId,
             IsEmulator = isEmulator,
+            JoiningDate = joiningDate,
             IsActive = isActive,
             UpdatedBy = currentUser.RequireUserId()
         });
@@ -265,5 +344,5 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
 
     private sealed record StaffUserRow(
         int Id, string Name, string Email, string? Phone, string Role,
-        int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateTime CreatedDate);
+        int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate, DateTime CreatedDate);
 }

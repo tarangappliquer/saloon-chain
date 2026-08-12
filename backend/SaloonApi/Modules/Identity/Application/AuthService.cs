@@ -72,10 +72,12 @@ internal sealed class AuthService(
 
     public async Task<int> CreateStaffAsync(
         string name, string email, UserRole role, int? chainId, int? locationId, int? therapistId,
-        bool isEmulator = false)
+        bool isEmulator = false, DateOnly? joiningDate = null)
     {
         var (hash, salt) = PasswordHasher.Hash(GenerateRandomPassword());
-        var id = await repo.CreateAsync(name, email, hash, salt, phone: null, role, chainId, locationId, therapistId, isEmulator);
+        var id = await repo.CreateAsync(
+            name, email, hash, salt, phone: null, role, chainId, locationId, therapistId, isEmulator,
+            joiningDate ?? DateOnly.FromDateTime(DateTime.UtcNow));
         await stripeCustomerService.GetOrCreateCustomerAsync(id, name, email);
         await SendSetPasswordEmailAsync(id, name, email, portalUrls.CurrentValue.AdminPortalUrl);
         return id;

@@ -120,7 +120,9 @@ internal static class AdminStaffEndpoints
             if (role == UserRole.Therapist && therapistId is null)
                 therapistId = await catalogRepo.CreateTherapistAsync(req.Name);
 
-            var id = await auth.CreateStaffAsync(req.Name, req.Email, role, req.ChainId, req.LocationId, therapistId, isEmulator);
+            var id = await auth.CreateStaffAsync(
+                req.Name, req.Email, role, req.ChainId, req.LocationId, therapistId, isEmulator,
+                req.JoiningDate ?? DateOnly.FromDateTime(DateTime.UtcNow));
 
             if (role == UserRole.Therapist && therapistId is not null)
                 await catalogRepo.LinkTherapistScopeAsync(therapistId.Value, req.ChainId, req.LocationId, id);
@@ -197,7 +199,7 @@ internal static class AdminStaffEndpoints
                 return Results.Problem("Not authorized to edit staff.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.Role, req.ChainId, req.LocationId, req.TherapistId, isEmulator, req.IsActive);
+            await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.Role, req.ChainId, req.LocationId, req.TherapistId, isEmulator, req.JoiningDate, req.IsActive);
 
             // Keep the linked dbo.TherapistProfile row's Name/IsActive/scope in step with the staff
             // login that owns it -- otherwise editing/deactivating/moving a Therapist here silently
@@ -216,21 +218,91 @@ internal static class AdminStaffEndpoints
           .Produces(StatusCodes.Status404NotFound)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a staff user's details, role, scope, or active/emulator state.");
+
+        // GET /api/admin/staff/attendance
+        group.MapGet("attendance", async (int locationId, string date, ICurrentUser currentUser, UserRepository repo) =>
+        {
+            if (!DateOnly.TryParse(date, System.Globalization.CultureInfo.InvariantCulture, out var workDate))
+                return Results.Problem("Invalid date format. Expected yyyy-MM-dd.", statusCode: StatusCodes.Status400BadRequest);
+
+            var attendance = await repo.GetStaffAttendanceAsync(locationId, workDate);
+            return Results.Ok(attendance);
+        }).Produces<IReadOnlyList<StaffAttendanceDto>>()
+          .WithDescription("Get daily staff attendance roster for a location.");
+
+        // POST /api/admin/staff/attendance
+        group.MapPost("attendance", async (LogStaffAttendanceRequest req, ICurrentUser currentUser, UserRepository repo) =>
+        {
+            if (!currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager, UserRole.Receptionist))
+                return Results.Problem("Not authorized to log staff attendance.", statusCode: StatusCodes.Status403Forbidden);
+
+            if (!DateOnly.TryParse(req.WorkDate, System.Globalization.CultureInfo.InvariantCulture, out var workDate))
+                return Results.Problem("Invalid date format. Expected yyyy-MM-dd.", statusCode: StatusCodes.Status400BadRequest);
+
+            TimeSpan? arrivalTime = !string.IsNullOrWhiteSpace(req.ArrivalTime)
+                ? TimeSpan.Parse(req.ArrivalTime, System.Globalization.CultureInfo.InvariantCulture)
+                : null;
+            TimeSpan? leftTime = !string.IsNullOrWhiteSpace(req.LeftTime)
+                ? TimeSpan.Parse(req.LeftTime, System.Globalization.CultureInfo.InvariantCulture)
+                : null;
+
+            try
+            {
+                await repo.LogStaffAttendanceAsync(req.LocationId, req.UserId, workDate, arrivalTime, leftTime, currentUser.RequireUserId());
+                return Results.Ok(new { Message = "Attendance logged successfully." });
+            }
+            catch (Exception ex) when (ex.Message.Contains("immutable", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("50040", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("50041", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        }).WithDescription("Log arrival or departure/left time for a staff member (immutable once set).");
+
+        // POST /api/admin/staff/assign-proxy
+        group.MapPost("assign-proxy", async (AssignProxyRequest req, ICurrentUser currentUser, UserRepository repo, SaloonApi.Shared.Email.IBackgroundEmailQueue emailQueue) =>
+        {
+            if (!currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager))
+                return Results.Problem("Not authorized to assign proxy staff.", statusCode: StatusCodes.Status403Forbidden);
+
+            var result = await repo.AssignProxyTherapistAsync(req.BookingTreatmentId, req.ProxyTherapistId, currentUser.RequireUserId());
+            if (result is null)
+                return Results.NotFound(new { Message = "Booking treatment not found." });
+
+            // Notify location managers via email
+            var managers = await repo.GetLocationManagersAsync(result.LocationId);
+            foreach (var mgr in managers.Where(m => !string.IsNullOrWhiteSpace(m.Email)))
+            {
+                var email = new SaloonApi.Shared.Email.EmailMessage(
+                    To: [new SaloonApi.Shared.Email.EmailAddress(mgr.Email, mgr.Name)],
+                    Subject: $"[SaloonChains Alert] Proxy Staff Assigned for Booking #{result.BookingId}",
+                    HtmlBody: $"<p>Hello {mgr.Name},</p><p>A proxy staff member (<strong>{result.ProxyTherapistName}</strong>) has been assigned to Booking #{result.BookingId} for treatment '<strong>{result.TreatmentName}</strong>' at {result.LocationName}.</p><p><strong>Original Staff:</strong> {result.OriginalTherapistName}<br/><strong>Customer:</strong> {result.CustomerName}<br/><strong>Time:</strong> {result.StartTime:g} - {result.EndTime:t}<br/><strong>Assigned By:</strong> {currentUser.Email ?? currentUser.Role.ToString()}</p>"
+                );
+                emailQueue.Enqueue(email);
+            }
+
+            return Results.Ok(result);
+        }).Produces<ProxyAssignmentResultDto>()
+          .WithDescription("Assign a proxy staff member to a booking line and notify location managers via email.");
     }
 }
+
+internal sealed record LogStaffAttendanceRequest(int UserId, int LocationId, string WorkDate, string? ArrivalTime, string? LeftTime);
+internal sealed record AssignProxyRequest(int BookingTreatmentId, int ProxyTherapistId);
 
 // No Password field -- an admin creating a staff login never chooses/sees a password (see
 // AuthService.CreateStaffAsync); the new user gets a "set your password" email instead.
 // IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside that set, and
 // for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
+// JoiningDate: null defaults to today (see the endpoint below) -- the adminportal form always
+// sends today's date by default but lets the caller pick a different one.
 internal sealed record CreateStaffRequest(
     string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId,
-    bool IsEmulator = false);
+    bool IsEmulator = false, DateOnly? JoiningDate = null);
 
 // IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside that set, and
 // for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
+// JoiningDate: null leaves the stored value untouched (see sp_Admin_UpdateUser's COALESCE).
 internal sealed record UpdateStaffRequest(
-    string Name, string? Phone, string? Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive);
+    string Name, string? Phone, string? Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate = null);
 
 internal sealed class CreateStaffRequestValidator : AbstractValidator<CreateStaffRequest>
 {

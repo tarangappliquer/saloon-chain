@@ -282,10 +282,10 @@ export const Nav = memo(function Nav() {
                 <NavSubLink to={routes.staff.users} onClick={() => setMobileOpen(false)}>
                   Team Members
                 </NavSubLink>
-                <NavSubLink to={routes.staff.therapists} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.staff.timesheets} onClick={() => setMobileOpen(false)}>
                   Timesheets
                 </NavSubLink>
-                <NavSubLink to={routes.payroll} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.staff.payroll} onClick={() => setMobileOpen(false)}>
                   Pay Runs
                 </NavSubLink>
               </NavGroup>

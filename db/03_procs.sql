@@ -1086,6 +1086,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateUser
     @LocationId       INT = NULL,
     @TherapistId      INT = NULL,
     @IsEmulator       BIT = 0,
+    @JoiningDate      DATE = NULL,
     @CreatedBy        INT = NULL,
     -- NULL for self-registration (no logged-in user yet)
     -- True only for AdminSeeder's server-configured bootstrap account -- never for self-registration
@@ -1104,11 +1105,12 @@ BEGIN
     -- Defense in depth alongside AdminStaffEndpoints' C#-side clamp -- IsEmulator only ever applies
     -- to RootSuperAdmin/SuperAdmin/Admin, same restriction as sp_Admin_UpdateUser below.
     INSERT INTO dbo.Users
-        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, IsWalkIn, CreatedBy, IsEmailVerified)
+        (Name, Email, PasswordHash, PasswordSalt, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, JoiningDate, IsWalkIn, CreatedBy, IsEmailVerified)
     VALUES
         (
             @Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId,
             CASE WHEN @Role IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE CAST(0 AS BIT) END,
+            @JoiningDate,
             @IsWalkIn,
             @CreatedBy, @IsEmailVerified);
 
@@ -1343,7 +1345,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetUsers
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Name, Email, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, IsActive, CreatedDate
+    SELECT Id, Name, Email, Phone, Role, ChainId, LocationId, TherapistId, IsEmulator, IsActive, JoiningDate, CreatedDate
     FROM dbo.Users
     WHERE IsDelete = 0
         AND ((@Role IS NULL AND Role <> 'Customer') OR Role = @Role)
@@ -1362,6 +1364,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_UpdateUser
     @LocationId  INT = NULL,
     @TherapistId INT = NULL,
     @IsEmulator  BIT = 0,
+    @JoiningDate DATE = NULL,
     @IsActive    BIT,
     @UpdatedBy   INT
 AS
@@ -1377,6 +1380,7 @@ BEGIN
     SET Name = @Name, Phone = @Phone, Role = COALESCE(@Role, Role), ChainId = @ChainId, LocationId = @LocationId,
         TherapistId = @TherapistId,
         IsEmulator = CASE WHEN COALESCE(@Role, Role) IN ('RootSuperAdmin', 'SuperAdmin', 'Admin') THEN @IsEmulator ELSE 0 END,
+        JoiningDate = COALESCE(@JoiningDate, JoiningDate),
         IsActive = @IsActive, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0 AND Role <> 'Customer';
 
@@ -4047,5 +4051,194 @@ BEGIN
         END AS NoShowRatePercent
     FROM Appointments
     WHERE CAST(StartTime AS DATE) BETWEEN @From AND @To;
+END
+GO
+
+-- ==========================================
+-- STAFF ATTENDANCE & PROXY PROCEDURES
+-- ==========================================
+
+-- Retrieves daily attendance roster for all active staff at a given location
+CREATE OR ALTER PROCEDURE dbo.sp_Staff_GetAttendance
+    @LocationId INT,
+    @WorkDate   DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        u.Id AS UserId,
+        u.Name AS StaffName,
+        u.Email AS StaffEmail,
+        u.Role AS StaffRole,
+        sa.Id AS AttendanceId,
+        sa.LocationId,
+        @WorkDate AS WorkDate,
+        sa.ArrivalTime,
+        sa.LeftTime,
+        sa.CreatedDate AS LoggedDate,
+        sa.CreatedBy AS LoggedByUserId
+    FROM dbo.Users u WITH (NOLOCK)
+        LEFT JOIN dbo.StaffAttendance sa WITH (NOLOCK) 
+            ON sa.UserId = u.Id AND sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate
+    WHERE u.LocationId = @LocationId AND u.IsDelete = 0 AND u.IsActive = 1
+    ORDER BY u.Name;
+END
+GO
+
+-- Logs arrival or departure/left time for a staff member.
+-- IMMUTABILITY ENFORCEMENT: Once ArrivalTime or LeftTime is non-null, it cannot be changed.
+CREATE OR ALTER PROCEDURE dbo.sp_Staff_LogAttendance
+    @LocationId  INT,
+    @UserId      INT,
+    @WorkDate    DATE,
+    @ArrivalTime TIME NULL,
+    @LeftTime    TIME NULL,
+    @LoggedBy    INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ExistingArrival TIME = NULL;
+    DECLARE @ExistingLeft TIME = NULL;
+
+    SELECT @ExistingArrival = ArrivalTime, @ExistingLeft = LeftTime
+    FROM dbo.StaffAttendance
+    WHERE LocationId = @LocationId AND UserId = @UserId AND WorkDate = @WorkDate;
+
+    -- Validate Immutability
+    IF @ArrivalTime IS NOT NULL AND @ExistingArrival IS NOT NULL
+        THROW 50040, 'Arrival time is immutable once set and cannot be modified.', 1;
+
+    IF @LeftTime IS NOT NULL AND @ExistingLeft IS NOT NULL
+        THROW 50041, 'Departure/Left time is immutable once set and cannot be modified.', 1;
+
+    IF EXISTS (SELECT 1 FROM dbo.StaffAttendance WHERE LocationId = @LocationId AND UserId = @UserId AND WorkDate = @WorkDate)
+    BEGIN
+        UPDATE dbo.StaffAttendance
+        SET ArrivalTime = COALESCE(ArrivalTime, @ArrivalTime),
+            LeftTime = COALESCE(LeftTime, @LeftTime),
+            UpdatedBy = @LoggedBy,
+            UpdatedDate = SYSUTCDATETIME()
+        WHERE LocationId = @LocationId AND UserId = @UserId AND WorkDate = @WorkDate;
+    END
+    ELSE
+    BEGIN
+        INSERT INTO dbo.StaffAttendance (LocationId, UserId, WorkDate, ArrivalTime, LeftTime, CreatedBy)
+        VALUES (@LocationId, @UserId, @WorkDate, @ArrivalTime, @LeftTime, @LoggedBy);
+    END
+
+    SELECT
+        Id AS AttendanceId,
+        LocationId,
+        UserId,
+        WorkDate,
+        ArrivalTime,
+        LeftTime
+    FROM dbo.StaffAttendance
+    WHERE LocationId = @LocationId AND UserId = @UserId AND WorkDate = @WorkDate;
+END
+GO
+
+-- Retrieves active managers' email addresses for a given location (used for email notifications)
+CREATE OR ALTER PROCEDURE dbo.sp_Staff_GetLocationManagers
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT Id AS UserId, Name, Email, Role
+    FROM dbo.Users WITH (NOLOCK)
+    WHERE LocationId = @LocationId AND Role IN ('Manager', 'Admin', 'SuperAdmin', 'RootSuperAdmin') AND IsActive = 1 AND IsDelete = 0;
+END
+GO
+
+-- Identifies upcoming bookings starting within the next N minutes (default 30 mins or location lead time)
+-- where assigned staff member has NOT logged arrival for today yet.
+CREATE OR ALTER PROCEDURE dbo.sp_Staff_GetUnattendedPreBookingAlerts
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Now DATETIME2 = SYSUTCDATETIME();
+    DECLARE @Today DATE = CAST(@Now AS DATE);
+    DECLARE @NowTime TIME = CAST(@Now AS TIME);
+
+    SELECT
+        b.Id AS BookingId,
+        b.LocationId,
+        loc.Name AS LocationName,
+        bt.Id AS BookingTreatmentId,
+        t.Name AS TreatmentName,
+        bt.StartTime,
+        bt.EndTime,
+        bt.TherapistId,
+        ISNULL(u.Name, tp.Name) AS AssignedStaffName,
+        u.Email AS AssignedStaffEmail,
+        cust.Name AS CustomerName,
+        COALESCE(loc.StaffEarlyArrivalMinutes, chain.StaffEarlyArrivalMinutes, 30) AS LeadTimeMinutes
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId AND b.Status = 'Confirmed' AND b.IsDelete = 0
+        JOIN dbo.Locations loc WITH (NOLOCK) ON loc.Id = b.LocationId AND loc.IsDelete = 0
+        JOIN dbo.SaloonChains chain WITH (NOLOCK) ON chain.Id = loc.ChainId AND chain.IsDelete = 0
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        -- bt.TherapistId is a TherapistProfile.Id (see dbo.BookingTreatments), not a Users.Id --
+        -- must resolve through TherapistProfile.UserId to reach the staff login/email.
+        JOIN dbo.TherapistProfile tp WITH (NOLOCK) ON tp.Id = bt.TherapistId
+        LEFT JOIN dbo.Users u WITH (NOLOCK) ON u.Id = tp.UserId
+        JOIN dbo.Users cust WITH (NOLOCK) ON cust.Id = b.CustomerId
+        LEFT JOIN dbo.StaffAttendance sa WITH (NOLOCK)
+            ON sa.LocationId = b.LocationId AND sa.UserId = tp.UserId AND sa.WorkDate = @Today AND sa.ArrivalTime IS NOT NULL
+    WHERE bt.IsDelete = 0
+      AND bt.ProxyTherapistId IS NULL
+      AND CAST(bt.StartTime AS DATE) = @Today
+      AND sa.Id IS NULL -- Staff has NOT logged arrival today yet!
+      AND DATEDIFF(MINUTE, @Now, bt.StartTime) BETWEEN 0 AND COALESCE(loc.StaffEarlyArrivalMinutes, chain.StaffEarlyArrivalMinutes, 30);
+END
+GO
+
+-- Assigns a proxy staff member (ProxyTherapistId) to a booking treatment line
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_AssignProxyTherapist
+    @BookingTreatmentId INT,
+    @ProxyTherapistId   INT,
+    @UpdatedBy          INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE dbo.BookingTreatments
+    SET ProxyTherapistId = @ProxyTherapistId,
+        UpdatedBy = @UpdatedBy,
+        UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @BookingTreatmentId AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50042, 'Booking treatment line not found.', 1;
+
+    SELECT
+        bt.Id AS BookingTreatmentId,
+        bt.BookingId,
+        b.LocationId,
+        loc.Name AS LocationName,
+        t.Name AS TreatmentName,
+        bt.StartTime,
+        bt.EndTime,
+        bt.TherapistId AS OriginalTherapistId,
+        ISNULL(orig.Name, origTp.Name) AS OriginalTherapistName,
+        bt.ProxyTherapistId,
+        proxy.Name AS ProxyTherapistName,
+        proxy.Email AS ProxyTherapistEmail,
+        cust.Name AS CustomerName
+    FROM dbo.BookingTreatments bt WITH (NOLOCK)
+        JOIN dbo.Bookings b WITH (NOLOCK) ON b.Id = bt.BookingId
+        JOIN dbo.Locations loc WITH (NOLOCK) ON loc.Id = b.LocationId
+        JOIN dbo.Treatments t WITH (NOLOCK) ON t.Id = bt.TreatmentId
+        -- bt.TherapistId is a TherapistProfile.Id, not a Users.Id -- resolve through
+        -- TherapistProfile.UserId same as sp_Staff_GetUnattendedPreBookingAlerts.
+        JOIN dbo.TherapistProfile origTp WITH (NOLOCK) ON origTp.Id = bt.TherapistId
+        LEFT JOIN dbo.Users orig WITH (NOLOCK) ON orig.Id = origTp.UserId
+        JOIN dbo.Users proxy WITH (NOLOCK) ON proxy.Id = bt.ProxyTherapistId
+        JOIN dbo.Users cust WITH (NOLOCK) ON cust.Id = b.CustomerId
+    WHERE bt.Id = @BookingTreatmentId;
 END
 GO

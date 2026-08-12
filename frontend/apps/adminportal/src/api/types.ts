@@ -120,6 +120,7 @@ export interface StaffUser {
   therapistId: number | null;
   isEmulator: boolean;
   isActive: boolean;
+  joiningDate: string | null;
   createdDate: string;
 }
 

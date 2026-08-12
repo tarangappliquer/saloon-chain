@@ -25,7 +25,7 @@ const TreatmentsPage = lazy(() => import('./pages/catalog/TreatmentsPage').then(
 const TreatmentPricesPage = lazy(() => import('./pages/catalog/TreatmentPricesPage').then((m) => ({ default: m.TreatmentPricesPage })));
 const TreatmentDurationsPage = lazy(() => import('./pages/catalog/TreatmentDurationsPage').then((m) => ({ default: m.TreatmentDurationsPage })));
 const StaffPage = lazy(() => import('./pages/staff/StaffPage').then((m) => ({ default: m.StaffPage })));
-const TherapistsPage = lazy(() => import('./pages/staff/TherapistsPage').then((m) => ({ default: m.TherapistsPage })));
+const TimesheetsPage = lazy(() => import('./pages/staff/TimesheetsPage').then((m) => ({ default: m.TimesheetsPage })));
 const RoomsPage = lazy(() => import('./pages/staff/RoomsPage').then((m) => ({ default: m.RoomsPage })));
 const BookingsPage = lazy(() => import('./pages/bookings/BookingsPage').then((m) => ({ default: m.BookingsPage })));
 const CustomersPage = lazy(() => import('./pages/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })));
@@ -170,10 +170,10 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.staff.therapists}
+              path={routes.staff.timesheets}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
-                  <TherapistsPage />
+                  <TimesheetsPage />
                 </RequireRole>
               }
             />
@@ -202,7 +202,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.payroll}
+              path={routes.staff.payroll}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <PayrollPage />

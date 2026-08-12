@@ -265,7 +265,7 @@ export function DashboardPage() {
                   <span>→</span>
                 </Link>
                 <Link
-                  to={routes.staff.therapists}
+                  to={routes.staff.users}
                   className="flex items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-semibold text-foreground hover:bg-accent transition"
                 >
                   <span>👥 Staff & Specialists</span>

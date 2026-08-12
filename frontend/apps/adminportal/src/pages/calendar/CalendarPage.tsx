@@ -983,8 +983,12 @@ function ScheduleGridView({
                       role="columnheader"
                       className="border-r border-b border-border bg-card/90 p-3.5 font-semibold text-center flex flex-col items-center justify-between sticky top-0 z-10 space-y-2.5"
                     >
-                      {/* Fresha Staff Avatar Icon */}
-                      <div className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0">
+                      {/* Fresha Staff Avatar Icon -- Clickable to see/manage assigned staff */}
+                      <div
+                        onClick={(e) => openStaffPopover(e, room)}
+                        className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-primary hover:scale-105 transition-all"
+                        title={`Click to view assigned staff for ${room.name}`}
+                      >
                         {getInitials(primaryName)}
                         {roomShifts.length > 1 && (
                           <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">

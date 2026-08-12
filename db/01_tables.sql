@@ -13,6 +13,7 @@ CREATE TABLE dbo.SaloonChains (
     Name         NVARCHAR(200) NOT NULL,
     BreakStartTime TIME NULL,
     BreakEndTime   TIME NULL,
+    StaffEarlyArrivalMinutes INT NOT NULL DEFAULT 30,
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
     CreatedBy    INT NULL,
@@ -32,6 +33,7 @@ CREATE TABLE dbo.Locations (
     BreakEndTime     TIME NULL,
     WorkingDaysMask  TINYINT NOT NULL, -- bit0=Mon .. bit6=Sun
     TimeZoneId       NVARCHAR(100) NOT NULL DEFAULT 'UTC',
+    StaffEarlyArrivalMinutes INT NULL, -- NULL = inherit from SaloonChains
     IsDelete         BIT NOT NULL DEFAULT 0,
     IsActive         BIT NOT NULL DEFAULT 1,
     CreatedBy        INT NULL,
@@ -202,6 +204,7 @@ CREATE TABLE dbo.Users (
     ChainId       INT NULL REFERENCES dbo.SaloonChains(Id),
     LocationId    INT NULL REFERENCES dbo.Locations(Id),
     TherapistId   INT NULL REFERENCES dbo.TherapistProfile(Id),
+    JoiningDate   DATE NULL, -- staff only (Customer rows leave this NULL); set at creation, defaults to today in the admin portal form
     IsCustomer    AS (CASE WHEN Role = 'Customer' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END),
     IsEmulator    BIT NOT NULL DEFAULT 0, -- any staff role (RootSuperAdmin/SuperAdmin/Admin/Manager/Receptionist/Therapist/Other): allowed to open a customer session on their behalf (see sp_Auth_EmulateCustomer)
     IsWalkIn      BIT NOT NULL DEFAULT 0, -- flagged when created as a walk-in customer by staff
@@ -491,6 +494,7 @@ CREATE TABLE dbo.BookingTreatments (
     -- row" directly instead of inferring it from dates.
     TreatmentPriceId INT NULL REFERENCES dbo.TreatmentPrices(Id),
     TreatmentDurationId INT NULL REFERENCES dbo.TreatmentDurations(Id),
+    ProxyTherapistId INT NULL REFERENCES dbo.Users(Id),
     IsDelete       BIT NOT NULL DEFAULT 0,
     IsActive       BIT NOT NULL DEFAULT 1,
     CreatedBy      INT NULL REFERENCES dbo.Users(Id),
@@ -505,6 +509,22 @@ CREATE INDEX IX_BookingTreatments_TherapistId_StartTime ON dbo.BookingTreatments
 -- alone, with no RoomId/TherapistId predicate to anchor on -- neither index above leads with
 -- StartTime, so those reads would still force a full scan without this one.
 CREATE INDEX IX_BookingTreatments_StartTime ON dbo.BookingTreatments(StartTime) INCLUDE (BookingId, EndTime, Price) WHERE IsDelete = 0;
+
+-- Per-day staff attendance tracking (Arrival & Departure/Left times).
+-- Immutable once ArrivalTime or LeftTime is set by Receptionist/Admin/SuperAdmin.
+CREATE TABLE dbo.StaffAttendance (
+    Id           INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
+    UserId       INT NOT NULL REFERENCES dbo.Users(Id),
+    WorkDate     DATE NOT NULL,
+    ArrivalTime  TIME NULL,
+    LeftTime     TIME NULL,
+    CreatedBy    INT NOT NULL REFERENCES dbo.Users(Id),
+    CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy    INT NULL REFERENCES dbo.Users(Id),
+    UpdatedDate  DATETIME2 NULL
+);
+CREATE UNIQUE INDEX UX_StaffAttendance_Location_User_Date ON dbo.StaffAttendance(LocationId, UserId, WorkDate);
 
 -- 1:1 extension of dbo.Users, split by Staff/Customer per the two roles' very different concerns
 -- (a Customer's profile is self-managed and minimal; a Staff profile could grow admin-managed

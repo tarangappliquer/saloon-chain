@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
@@ -7,6 +7,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, StaffUser, Therapist, UserRole } from '../../api/types';
 import { normalizeUserRole } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
+import { DateInput } from '../../components/DateInput';
 import { routes } from '../../routes';
 
 // IsEmulator applies to any POS_ACCESS role -- Therapist/Other/Customer are always false (see
@@ -19,11 +20,13 @@ const EMULATOR_ELIGIBLE_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Ad
 // emulation rights with zero oversight.
 const CAN_GRANT_EMULATOR_ROLES: UserRole[] = ['RootSuperAdmin', 'SuperAdmin', 'Admin'];
 
+// Customer is deliberately excluded here -- customers are created via signup/walk-in flows
+// elsewhere, not this staff-account form.
 function creatableRoles(callerRole: UserRole | undefined): UserRole[] {
-  if (callerRole === 'RootSuperAdmin') return ['SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
-  if (callerRole === 'SuperAdmin') return ['Admin', 'Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
-  if (callerRole === 'Admin') return ['Manager', 'Receptionist', 'Therapist', 'Other', 'Customer'];
-  if (callerRole === 'Manager') return ['Receptionist', 'Therapist', 'Other', 'Customer'];
+  if (callerRole === 'RootSuperAdmin') return ['SuperAdmin', 'Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
+  if (callerRole === 'SuperAdmin') return ['Admin', 'Manager', 'Receptionist', 'Therapist', 'Other'];
+  if (callerRole === 'Admin') return ['Manager', 'Receptionist', 'Therapist', 'Other'];
+  if (callerRole === 'Manager') return ['Receptionist', 'Therapist', 'Other'];
   return [];
 }
 
@@ -37,6 +40,7 @@ function emptyForm(defaultRole: UserRole) {
     locationId: '',
     therapistId: '',
     isEmulator: false,
+    joiningDate: new Date().toISOString().slice(0, 10),
   };
 }
 
@@ -69,6 +73,40 @@ export function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
+
+  const [roleFilter, setRoleFilter] = useState<'All' | UserRole>('All');
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
+  const [searchKey, setSearchKey] = useState('');
+  const roleFilterOptions: ('All' | UserRole)[] = ['All', ...Array.from(new Set(staff.map((u) => u.role)))];
+  const filteredStaff = staff.filter((u) => {
+    if (roleFilter !== 'All' && u.role !== roleFilter) return false;
+    if (statusFilter === 'Active' && !u.isActive) return false;
+    if (statusFilter === 'Inactive' && u.isActive) return false;
+    const q = searchKey.trim().toLowerCase();
+    return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  // Load-on-scroll over the already-fetched list, same sentinel/IntersectionObserver pattern
+  // CustomersPage uses for its server-paginated feed -- staff lists are small enough (tens, not
+  // thousands) that a real backend keyset page isn't worth it, this just windows the render.
+  const PAGE_SIZE = 25;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [roleFilter, statusFilter, searchKey, staff]);
+  const visibleStaff = filteredStaff.slice(0, visibleCount);
+  const hasMoreStaff = visibleCount < filteredStaff.length;
+
+  const staffSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = staffSentinelRef.current;
+    if (!el || !hasMoreStaff) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) setVisibleCount((c) => Math.min(c + PAGE_SIZE, filteredStaff.length));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreStaff, filteredStaff.length]);
 
   useEffect(() => {
     if (effectiveRoleOptions.length > 0 && !effectiveRoleOptions.includes(form.role)) {
@@ -134,6 +172,7 @@ export function StaffPage() {
       locationId: u.locationId ? String(u.locationId) : '',
       therapistId: u.therapistId ? String(u.therapistId) : '',
       isEmulator: u.isEmulator,
+      joiningDate: u.joiningDate ?? new Date().toISOString().slice(0, 10),
     });
     setError(null);
   }
@@ -160,6 +199,7 @@ export function StaffPage() {
           locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
           therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
           isEmulator,
+          joiningDate: form.joiningDate,
           isActive: editingUser.isActive,
         });
       } else {
@@ -173,6 +213,7 @@ export function StaffPage() {
           locationId: lId,
           therapistId: form.therapistId ? Number(form.therapistId) : null,
           isEmulator,
+          joiningDate: form.joiningDate,
         });
       }
       handleCancelEdit();
@@ -242,7 +283,7 @@ export function StaffPage() {
         title={pageTitle}
         description={pageDesc}
         action={
-          (paramLocationId || paramChainId) ? (
+          paramLocationId || paramChainId ? (
             <Button
               variant="outline"
               size="sm"
@@ -254,6 +295,51 @@ export function StaffPage() {
             >
               ← Back to {paramLocationId ? 'Locations' : 'Saloons'}
             </Button>
+          ) : currentUser?.role === 'RootSuperAdmin' ? (
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-40">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Saloon Chain
+                </label>
+                <Select
+                  value={chains.map((c) => ({ value: String(c.id), label: c.name })).find((o) => o.value === form.chainId) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, chainId: picked?.value ?? '', locationId: '' })}
+                  placeholder="Chain..."
+                  options={chains.map((c) => ({ value: String(c.id), label: c.name }))}
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
+                />
+              </div>
+              <div className="w-44">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Location
+                </label>
+                <Select
+                  isClearable
+                  value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === form.locationId) ?? null}
+                  onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, locationId: picked?.value ?? '' })}
+                  placeholder="All locations"
+                  options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                  unstyled
+                  classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
+                />
+              </div>
+            </div>
+          ) : currentUser?.role === 'SuperAdmin' || currentUser?.role === 'Admin' ? (
+            <div className="w-44">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                Location
+              </label>
+              <Select
+                isClearable
+                value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === form.locationId) ?? null}
+                onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, locationId: picked?.value ?? '' })}
+                placeholder="All locations"
+                options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
+              />
+            </div>
           ) : undefined
         }
       />
@@ -330,6 +416,12 @@ export function StaffPage() {
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   helperText={!editingUser ? "They'll receive an email to set their own password." : undefined}
                 />
+                <DateInput
+                  label="Joining Date"
+                  value={form.joiningDate}
+                  onChange={(e) => setForm({ ...form, joiningDate: e.target.value })}
+                  maxDate={new Date()}
+                />
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                     Role
@@ -347,26 +439,17 @@ export function StaffPage() {
                 </div>
               </div>
 
-              {!paramLocationId &&
+              {/* Saloon Chain / Location Scope pickers moved to the page header (see PageHeader action
+                  below) -- they act as the page's scope selector, driving both which staff this form's
+                  list is scoped to and which chain/location a new location-scoped user is created in,
+                  so one control up top beats separate pickers repeated in this form. */}
+              {(currentUser?.role === 'RootSuperAdmin' || currentUser?.role === 'SuperAdmin' || currentUser?.role === 'Admin') &&
+                !paramLocationId &&
                 (form.role === 'Manager' || form.role === 'Receptionist' || form.role === 'Therapist' || form.role === 'Other') &&
-                currentUser?.role !== 'Manager' &&
-                currentUser?.role !== 'Receptionist' && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                        Location Scope
-                      </label>
-                      <Select
-                        isClearable
-                        value={locations.map((l) => ({ value: String(l.id), label: l.name })).find((o) => o.value === form.locationId) ?? null}
-                        onChange={(picked: SingleValue<SelectOption>) => setForm({ ...form, locationId: picked?.value ?? '' })}
-                        placeholder="Select location..."
-                        options={locations.map((l) => ({ value: String(l.id), label: l.name }))}
-                        unstyled
-                        classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
-                      />
-                    </div>
-                  </div>
+                !form.locationId && (
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    Pick a location from the scope selector above before creating a {form.role}.
+                  </p>
                 )}
 
               {form.role === 'Therapist' && (
@@ -420,14 +503,45 @@ export function StaffPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>
-            {isLocationMode
-              ? `Users for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
-              : isSaloonMode
-                ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
-                : 'User Members'}{' '}
-            ({staff.length})
-          </CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <CardTitle>
+              {isLocationMode
+                ? `Users for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
+                : isSaloonMode
+                  ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
+                  : 'User Members'}{' '}
+              ({filteredStaff.length}{filteredStaff.length !== staff.length ? ` of ${staff.length}` : ''})
+            </CardTitle>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as 'All' | UserRole)}
+                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-primary focus:outline-hidden cursor-pointer"
+              >
+                {roleFilterOptions.map((r) => (
+                  <option key={r} value={r}>
+                    {r === 'All' ? 'All Roles' : r}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as 'All' | 'Active' | 'Inactive')}
+                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-primary focus:outline-hidden cursor-pointer"
+              >
+                <option value="All">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+              <Input
+                placeholder="Search by name or email..."
+                value={searchKey}
+                onChange={(e) => setSearchKey(e.target.value)}
+                className="w-56"
+              />
+            </div>
+          </div>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
@@ -436,6 +550,10 @@ export function StaffPage() {
         ) : staff.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
             No users found for this scope. Create your first user above.
+          </CardContent>
+        ) : filteredStaff.length === 0 ? (
+          <CardContent className="py-8 text-center text-xs text-muted-foreground">
+            No users match this filter/search.
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
@@ -447,12 +565,13 @@ export function StaffPage() {
                   <th className="px-6 py-3.5">Role</th>
                   <th className="px-6 py-3.5">Scope</th>
                   <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5">Joining Date</th>
                   <th className="px-6 py-3.5">Emulator Flag</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {staff.map((u) => (
+                {visibleStaff.map((u) => (
                   <tr key={u.id} className="hover:bg-accent/40 transition">
                     <td className="px-6 py-4 font-semibold text-foreground">{u.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{u.email}</td>
@@ -465,6 +584,7 @@ export function StaffPage() {
                     <td className="px-6 py-4">
                       <Badge status={u.isActive ? 'Active' : 'Inactive'} />
                     </td>
+                    <td className="px-6 py-4 text-muted-foreground">{u.joiningDate ?? '—'}</td>
                     <td className="px-6 py-4">
                       {!EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (
                         <span className="text-muted-foreground">n/a</span>
@@ -504,6 +624,11 @@ export function StaffPage() {
                 ))}
               </tbody>
             </table>
+            {hasMoreStaff && (
+              <div ref={staffSentinelRef} className="py-4 text-center text-xs text-muted-foreground">
+                Loading more...
+              </div>
+            )}
           </div>
         )}
       </Card>

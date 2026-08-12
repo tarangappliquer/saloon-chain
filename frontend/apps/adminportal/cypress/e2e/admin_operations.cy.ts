@@ -40,8 +40,8 @@ describe('Admin Portal Full Operational E2E Tests', () => {
     cy.visit('/staff');
     cy.contains(/Staff/i).should('be.visible');
 
-    cy.visit('/staff/therapists');
-    cy.contains(/Therapists/i).should('be.visible');
+    cy.visit('/staff/timesheets');
+    cy.contains(/Timesheets/i).should('be.visible');
 
     cy.visit('/staff/rooms');
     cy.contains(/Rooms/i).should('be.visible');

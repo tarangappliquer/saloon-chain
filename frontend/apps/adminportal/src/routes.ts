@@ -28,7 +28,6 @@ export const routes = {
   calendar: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
     withQuery('/calendar', params),
   inventory: '/inventory',
-  payroll: '/payroll',
   reports: '/reports',
   settings: '/settings',
   blockTypes: '/settings/block-types',
@@ -47,9 +46,13 @@ export const routes = {
     treatmentDurations: (chainId?: Id | null, locationId?: Id | null, treatmentId?: Id | null) =>
       withQuery('/catalog/treatment-durations', { chainId, locationId, treatmentId }),
   },
+  // Mirrors the Nav "Team" group -- Team Members, Timesheets, Pay Runs, Rooms all nest under
+  // /staff/... so the URL tree matches the sidebar tree (Pay Runs used to live at top-level
+  // /payroll, outside the group it's shown under).
   staff: {
     users: '/staff/users',
-    therapists: '/staff/therapists',
+    timesheets: '/staff/timesheets',
+    payroll: '/staff/payroll',
     rooms: (chainId?: Id | null, locationId?: Id | null) => withQuery('/staff/rooms', { chainId, locationId }),
   },
   // Shared "← Back" target used across every catalog/staff/calendar sub-page: Managers (who are
