@@ -7,6 +7,7 @@ export * from './components/Card';
 export * from './components/ConfirmDialog';
 export * from './components/PageHeader';
 export * from './components/Input';
+export * from './components/FilterSelect';
 export * from './components/LoadingFallback';
 export * from './components/ThemeProvider';
 export * from './components/ThemeToggle';

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
+import { Search } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminStaffApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -502,44 +503,72 @@ export function StaffPage() {
       )}
 
       <Card>
-        <CardHeader className="border-b border-border/50 pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <CardHeader className="border-b border-border/50 pb-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <CardTitle>
               {isLocationMode
                 ? `Users for ${selectedLocation?.name ?? 'Location #' + paramLocationId}`
                 : isSaloonMode
                   ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
                   : 'User Members'}{' '}
-              ({filteredStaff.length}{filteredStaff.length !== staff.length ? ` of ${staff.length}` : ''})
+              <span className="text-muted-foreground font-normal">
+                ({filteredStaff.length}{filteredStaff.length !== staff.length ? ` of ${staff.length}` : ''})
+              </span>
             </CardTitle>
+            {(roleFilter !== 'All' || statusFilter !== 'All' || searchKey) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRoleFilter('All');
+                  setStatusFilter('All');
+                  setSearchKey('');
+                }}
+                className="text-xs font-semibold text-primary hover:underline self-start sm:self-auto"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value as 'All' | UserRole)}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-primary focus:outline-hidden cursor-pointer"
-              >
-                {roleFilterOptions.map((r) => (
-                  <option key={r} value={r}>
-                    {r === 'All' ? 'All Roles' : r}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'All' | 'Active' | 'Inactive')}
-                className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs font-semibold text-foreground focus:ring-2 focus:ring-primary focus:outline-hidden cursor-pointer"
-              >
-                <option value="All">All Status</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-              <Input
-                placeholder="Search by name or email..."
-                value={searchKey}
-                onChange={(e) => setSearchKey(e.target.value)}
-                className="w-56"
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-40">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Role</label>
+              <Select
+                value={{ value: roleFilter, label: roleFilter === 'All' ? 'All Roles' : roleFilter }}
+                onChange={(picked: SingleValue<SelectOption>) => setRoleFilter((picked?.value as 'All' | UserRole) ?? 'All')}
+                options={roleFilterOptions.map((r) => ({ value: r, label: r === 'All' ? 'All Roles' : r }))}
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
               />
+            </div>
+            <div className="w-40">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Status</label>
+              <Select
+                value={{ value: statusFilter, label: statusFilter === 'All' ? 'All Status' : statusFilter }}
+                onChange={(picked: SingleValue<SelectOption>) => setStatusFilter((picked?.value as 'All' | 'Active' | 'Inactive') ?? 'All')}
+                options={[
+                  { value: 'All', label: 'All Status' },
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' },
+                ]}
+                unstyled
+                classNames={selectClassNames('rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground')}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="staff-search" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                Search
+              </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="staff-search"
+                  placeholder="Name or email..."
+                  value={searchKey}
+                  onChange={(e) => setSearchKey(e.target.value)}
+                  className="w-64 pl-9"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
