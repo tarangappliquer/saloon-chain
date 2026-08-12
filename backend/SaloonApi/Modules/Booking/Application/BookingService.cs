@@ -197,7 +197,7 @@ internal sealed class BookingService(
 
     public Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId) => repo.GetByIdAsync(bookingId, customerId);
 
-    public async Task ConfirmAsync(int bookingId, int customerId)
+    public async Task ConfirmAsync(int bookingId, int customerId = 0)
     {
         var affected = await repo.ConfirmAsync(bookingId, customerId);
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())

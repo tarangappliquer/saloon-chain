@@ -111,7 +111,7 @@ internal sealed class PaymentService(
 
         if (result.Success && result.Status == PaymentStatus.Succeeded)
         {
-            await bookingService.ConfirmAsync(payment.BookingId, userId);
+            await bookingService.ConfirmAsync(payment.BookingId, 0);
         }
 
         return result;
@@ -148,7 +148,7 @@ internal sealed class PaymentService(
 
             if (result.NewStatus == PaymentStatus.Succeeded)
             {
-                await bookingService.ConfirmAsync(result.PaymentId.Value, latest?.CreatedBy ?? 0);
+                await bookingService.ConfirmAsync(result.PaymentId.Value, 0);
             }
         }
 
@@ -196,7 +196,7 @@ internal sealed class PaymentService(
                 );
             }
 
-            await bookingService.ConfirmAsync(bookingId, latest?.CreatedBy ?? 0);
+            await bookingService.ConfirmAsync(bookingId, 0);
             return new PaymentResultDto(true, latest?.Id ?? 0, PaymentStatus.Succeeded, session.PaymentIntentId ?? session.Id, null);
         }
 

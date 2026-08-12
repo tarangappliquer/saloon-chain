@@ -1,4 +1,5 @@
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Trash2, UserCheck } from 'lucide-react';
 import type { AvailableSlot, BookingTreatmentLine } from '../../api/types';
 
 interface Props {
@@ -35,16 +36,91 @@ function overlaps(a: { startTime: string; endTime: string }, b: { startTime: str
 }
 
 export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loading }: Props) {
+  const [therapistOption, setTherapistOption] = useState<'any' | 'specific'>('any');
+  const [selectedTherapistIds, setSelectedTherapistIds] = useState<number[]>([]);
+
   const scheduled = lines.filter((l) => l.startTime !== null && l.endTime !== null) as (BookingTreatmentLine & {
     startTime: string;
     endTime: string;
   })[];
 
+  // Collect unique therapist IDs across all available slots
+  const allSlots = Object.values(slotsByTreatment).flat();
+  const availableTherapistIds = Array.from(new Set(allSlots.map((s) => s.therapistId))).sort((a, b) => a - b);
+
   return (
     <div className="space-y-6">
+      {/* Applicable Therapist Option Selector */}
+      {availableTherapistIds.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-primary" />
+              <span>Choose Applicable Therapist</span>
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-4 text-xs font-medium">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="clientTherapistOption"
+                value="any"
+                checked={therapistOption === 'any'}
+                onChange={() => {
+                  setTherapistOption('any');
+                  setSelectedTherapistIds([]);
+                }}
+                className="text-primary focus:ring-primary h-3.5 w-3.5"
+              />
+              <span>Any Therapist (All)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="clientTherapistOption"
+                value="specific"
+                checked={therapistOption === 'specific'}
+                onChange={() => setTherapistOption('specific')}
+                className="text-primary focus:ring-primary h-3.5 w-3.5"
+              />
+              <span>Specific Therapist(s)</span>
+            </label>
+          </div>
+
+          {therapistOption === 'specific' && (
+            <div className="rounded-lg border border-border/80 bg-background/60 p-3 space-y-1.5">
+              <p className="text-[11px] font-semibold text-muted-foreground">Hold Ctrl (or Cmd) to select multiple therapists:</p>
+              <select
+                multiple
+                value={selectedTherapistIds.map(String)}
+                onChange={(e) => {
+                  const opts = Array.from(e.target.selectedOptions, (option) => Number(option.value));
+                  setSelectedTherapistIds(opts);
+                }}
+                className="w-full rounded-xl border border-input bg-background p-2 text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-primary h-28"
+              >
+                {availableTherapistIds.map((tId) => (
+                  <option key={tId} value={tId} className="py-1 px-2 rounded hover:bg-accent font-medium">
+                    Therapist #{tId}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+
       {lines.map((line) => {
         const held = line.startTime !== null;
-        const slots = slotsByTreatment[line.treatmentId] ?? [];
+        const rawSlots = slotsByTreatment[line.treatmentId] ?? [];
+        const slots = rawSlots.filter((s) => {
+          if (therapistOption === 'specific' && selectedTherapistIds.length > 0) {
+            return selectedTherapistIds.includes(s.therapistId);
+          }
+          return true;
+        });
+
         const noSlotsAvailable = !loading && slots.length === 0;
         const missingSelection = !loading && slots.length > 0 && !held;
 

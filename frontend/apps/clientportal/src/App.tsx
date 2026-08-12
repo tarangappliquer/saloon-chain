@@ -27,7 +27,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage').then((m) => ({ defa
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to={routes.login} replace />;
-  if (!user.isEmailVerified) return <VerifyEmailGate />;
+  if (!user.isEmailVerified && !user.isEmulated) return <VerifyEmailGate />;
   return <>{children}</>;
 }
 

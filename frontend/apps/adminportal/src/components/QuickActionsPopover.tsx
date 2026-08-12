@@ -14,7 +14,7 @@ export function QuickActionsPopover({
   position,
   timeDisplay,
   onAddAppointment,
-  onAddGroupAppointment,
+  onAddGroupAppointment: _onAddGroupAppointment,
   onAddBlockedTime,
 }: QuickActionsPopoverProps) {
   if (!isOpen || !position) return null;

@@ -18,13 +18,24 @@ export function EmulatePage() {
     started.current = true;
 
     const token = searchParams.get('token');
+    const locationId = searchParams.get('locationId');
+    const next = searchParams.get('next');
+
     if (!token) {
       setError('Missing emulation token.');
       return;
     }
 
     loginWithToken(token)
-      .then(() => navigate(routes.myBookings, { replace: true }))
+      .then(() => {
+        if (next) {
+          navigate(next, { replace: true });
+        } else if (locationId) {
+          navigate(routes.book.new(locationId), { replace: true });
+        } else {
+          navigate(routes.myBookings, { replace: true });
+        }
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to start emulation session'));
   }, [searchParams, loginWithToken, navigate]);
 

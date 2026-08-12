@@ -156,6 +156,12 @@ internal static class BookingEndpoints
                 if (error is not null) return error;
                 actingCustomerId = targetCustomerId;
             }
+            else if (CanActOnBehalfOfCustomer(currentUser))
+            {
+                var error = await AuthorizeActingOnBookingAsync(id, currentUser, repo);
+                if (error is not null) return error;
+                actingCustomerId = 0;
+            }
 
             await svc.ConfirmAsync(id, actingCustomerId);
             return Results.NoContent();

@@ -805,11 +805,14 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_Confirm
     @BookingId  INT,
-    @CustomerId INT = NULL,
+    @CustomerId INT,
     @UpdatedBy  INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    IF @CustomerId IS NULL OR @CustomerId <= 0
+        THROW 50003, 'CustomerId is required.', 1;
 
     IF EXISTS (
         SELECT 1 FROM dbo.Bookings WHERE Id = @BookingId AND Status = 'Confirmed' AND IsDelete = 0
@@ -825,7 +828,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM dbo.Bookings
-        WHERE Id = @BookingId AND (@CustomerId IS NULL OR @CustomerId = 0 OR CustomerId = @CustomerId) AND IsDelete = 0 AND Status = 'Draft'
+        WHERE Id = @BookingId AND CustomerId = @CustomerId AND IsDelete = 0 AND Status = 'Draft'
     )
         THROW 50003, 'Booking not found or already finalized.', 1;
 
@@ -2045,6 +2048,17 @@ BEGIN
     SET NOCOUNT ON;
     -- NOLOCK: single-row lookup of an immutable column (LocationId never changes after creation).
     SELECT LocationId
+    FROM dbo.Bookings WITH (NOLOCK)
+    WHERE Id = @BookingId AND IsDelete = 0;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_GetCustomerId
+    @BookingId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CustomerId
     FROM dbo.Bookings WITH (NOLOCK)
     WHERE Id = @BookingId AND IsDelete = 0;
 END

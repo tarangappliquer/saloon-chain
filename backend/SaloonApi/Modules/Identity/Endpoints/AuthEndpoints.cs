@@ -164,11 +164,12 @@ internal static class AuthEndpoints
                 emulatorLocationId = emulator?.LocationId;
             }
 
+            bool isEmulated = currentUser.EmulatedByUserId is not null;
             bool canEmulate = me.Role == UserRole.RootSuperAdmin || me.IsEmulator;
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
-                CanEmulate: canEmulate, IsEmulated: currentUser.EmulatedByUserId is not null, EmulatedByName: emulatedByName,
-                PhotoPath: me.PhotoPath, IsEmailVerified: me.IsEmailVerified,
+                CanEmulate: canEmulate, IsEmulated: isEmulated, EmulatedByName: emulatedByName,
+                PhotoPath: me.PhotoPath, IsEmailVerified: me.IsEmailVerified || isEmulated,
                 EmulatorChainId: emulatorChainId, EmulatorLocationId: emulatorLocationId));
         }).RequireAuthorization()
           .Produces<AuthResponse>()

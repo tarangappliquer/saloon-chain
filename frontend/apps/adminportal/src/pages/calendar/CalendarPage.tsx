@@ -1175,6 +1175,8 @@ function ScheduleGridView({
       workDate={date}
       startTime={appointmentModal?.startTime ?? '09:00'}
       therapists={therapists}
+      therapistShifts={roster.therapistShifts}
+      rooms={rooms}
     />
 
     <EditBlockSlotModal

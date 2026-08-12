@@ -266,8 +266,22 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return header is null ? null : new BookingDetailsDto(header.Id, header.LocationId, header.LocationName, header.Status, lines);
     }
 
-    public async Task<IReadOnlyList<BookingLocationRow>> ConfirmAsync(int bookingId, int customerId)
+    public async Task<int?> GetCustomerIdAsync(int bookingId)
     {
+        using var db = factory.Create();
+        return await db.QuerySingleSpAsync<int?>("dbo.sp_Booking_GetCustomerId", new { BookingId = bookingId });
+    }
+
+    public async Task<IReadOnlyList<BookingLocationRow>> ConfirmAsync(int bookingId, int customerId = 0)
+    {
+        if (customerId <= 0)
+        {
+            var resolved = await GetCustomerIdAsync(bookingId);
+            if (resolved is not { } cid || cid <= 0)
+                throw new KeyNotFoundException($"Booking {bookingId} not found or has invalid customer.");
+            customerId = cid;
+        }
+
         using var db = factory.Create();
         return (await db.QuerySpAsync<BookingLocationRow>(
             "dbo.sp_Booking_Confirm",
