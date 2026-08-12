@@ -23,7 +23,7 @@ const NavLink = memo(function NavLink({ to, icon, children, onClick, collapsed }
       to={to}
       onClick={onClick}
       title={collapsed && typeof children === 'string' ? children : undefined}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${
+      className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${
         active
           ? 'bg-primary text-primary-foreground shadow-xs shadow-primary/20 font-bold'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -48,7 +48,7 @@ const NavSubLink = memo(function NavSubLink({ to, children, onClick }: NavSubLin
     <Link
       to={to}
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-lg pl-9 pr-3 py-1.5 text-xs transition-all duration-150 ${
+      className={`flex items-center gap-2.5 rounded-lg pl-9 pr-3 py-2 text-xs font-bold transition-all duration-150 ${
         active
           ? 'text-primary font-bold bg-primary/10'
           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -76,7 +76,7 @@ function NavGroup({ title, icon, children, defaultOpen = false, collapsed }: Nav
         type="button"
         onClick={() => setOpen(!open)}
         title={collapsed ? title : undefined}
-        className={`flex w-full items-center rounded-xl px-3 py-2.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition ${collapsed ? 'justify-center px-2' : 'justify-between'}`}
+        className={`flex w-full items-center rounded-xl px-3.5 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition ${collapsed ? 'justify-center px-2' : 'justify-between'}`}
       >
         <div className="flex items-center gap-3 min-w-0">
           <span className="shrink-0 text-current">{icon}</span>
@@ -84,7 +84,7 @@ function NavGroup({ title, icon, children, defaultOpen = false, collapsed }: Nav
         </div>
         {!collapsed && (
           <svg
-            className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-90 text-primary' : ''}`}
+            className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-90 text-primary' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -387,7 +387,7 @@ export const Nav = memo(function Nav() {
       {/* Desktop Side Navbar */}
       <aside
         aria-label="Admin Navigation"
-        className={`hidden md:flex shrink-0 flex-col border-r border-border bg-card h-screen sticky top-0 z-30 transition-all duration-200 ${collapsed ? 'w-20' : 'w-64'}`}
+        className={`hidden md:flex shrink-0 flex-col border-r border-border bg-card h-screen sticky top-0 z-30 transition-all duration-200 ${collapsed ? 'w-20' : 'w-72'}`}
       >
         {renderNavContent(collapsed)}
         <button

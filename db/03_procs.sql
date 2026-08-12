@@ -2552,6 +2552,23 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_UpdateTherapistShift
+    @Id        INT,
+    @StartTime TIME,
+    @EndTime   TIME,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.ShiftAssignments
+    SET StartTime = @StartTime, EndTime = @EndTime, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50031, 'Shift assignment not found.', 1;
+END
+GO
+
 -- Ownership lookup for DELETE /therapist-shifts/{id} -- the request carries only the shift id, not
 -- its location, so SchedulingEndpoints checks the returned LocationId against the caller's own
 -- before deleting (Manager/Receptionist are otherwise able to remove any shift in the system by id).

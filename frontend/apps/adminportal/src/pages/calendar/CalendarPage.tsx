@@ -479,6 +479,19 @@ export function CalendarPage() {
     }
   }
 
+  async function updateTherapistShift(id: number, startTimeStr: string, endTimeStr: string) {
+    setError(null);
+    try {
+      await schedulingApi.apiAdminSchedulingTherapistShiftsIdPut(id, {
+        startTime: startTimeStr,
+        endTime: endTimeStr,
+      });
+      await loadRosterAndBookings(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update therapist shift');
+    }
+  }
+
   async function removeTherapistShift(id: number) {
     setError(null);
     try {
@@ -612,6 +625,7 @@ export function CalendarPage() {
           therapists={therapists}
           changeRoomStatus={changeRoomStatus}
           assignTherapist={assignTherapist}
+          updateTherapistShift={updateTherapistShift}
           removeTherapistShift={removeTherapistShift}
           handleUnblockSlot={handleUnblockSlot}
           onOpenBookingDetail={setDetailBookingId}
@@ -641,6 +655,112 @@ export function CalendarPage() {
   );
 }
 
+function ShiftRow({
+  shift,
+  onUpdate,
+  onRemove,
+}: {
+  shift: { id: number; therapistName: string; startTime: string; endTime: string };
+  onUpdate: (id: number, start: string, end: string) => void;
+  onRemove: (id: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [start, setStart] = useState(shift.startTime.slice(0, 5));
+  const [end, setEnd] = useState(shift.endTime.slice(0, 5));
+
+  function save() {
+    if (start >= end) return;
+    onUpdate(shift.id, start, end);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs shadow-xs">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-foreground truncate max-w-[200px]" title={shift.therapistName}>
+            {shift.therapistName}
+          </span>
+          <span className="text-[10px] text-muted-foreground uppercase font-mono">Editing Shift</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">Start Time</label>
+            <input
+              type="time"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">End Time</label>
+            <input
+              type="time"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setEditing(false)}
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={start >= end}
+            onClick={save}
+            className="h-7 px-3 text-xs font-semibold"
+          >
+            Save Shift
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-accent/30 p-2 hover:bg-accent/50 transition-colors">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <span className="shrink-0 rounded bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
+          {shift.startTime.slice(0, 5)} – {shift.endTime.slice(0, 5)}
+        </span>
+        <span className="truncate text-xs font-medium text-foreground" title={shift.therapistName}>
+          {shift.therapistName}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+          title="Edit shift hours"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => onRemove(shift.id)}
+          className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+          title="Remove assignment"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface ScheduleGridViewProps {
   rooms: Room[];
   roster: Roster;
@@ -654,6 +774,7 @@ interface ScheduleGridViewProps {
   therapists: { id: number; name: string }[];
   changeRoomStatus: (room: Room, opening: RoomOpening | undefined, categoryValue: string) => void;
   assignTherapist: (room: Room, therapistId: number, startTimeStr: string, endTimeStr: string) => void;
+  updateTherapistShift: (id: number, startTimeStr: string, endTimeStr: string) => void;
   removeTherapistShift: (id: number) => void;
   handleUnblockSlot: (id: number) => void;
   onOpenBookingDetail: (bookingId: number) => void;
@@ -677,6 +798,7 @@ function ScheduleGridView({
   therapists,
   changeRoomStatus,
   assignTherapist,
+  updateTherapistShift,
   removeTherapistShift,
   handleUnblockSlot,
   onOpenBookingDetail,
@@ -836,12 +958,12 @@ function ScheduleGridView({
             <div
               role="table"
               className="grid text-left text-xs"
-              style={{ gridTemplateColumns: `6rem repeat(${rooms.length}, minmax(220px, 1fr))` }}
+              style={{ gridTemplateColumns: `6.5rem repeat(${rooms.length}, minmax(260px, 1fr))` }}
             >
               <div role="row" className="contents">
                 <div
                   role="columnheader"
-                  className="sticky left-0 z-20 w-24 border-r border-b border-border bg-accent/60 p-3 font-semibold text-foreground"
+                  className="sticky left-0 z-20 w-[6.5rem] border-r border-b border-border bg-accent/60 p-3.5 font-bold text-foreground flex items-center justify-center text-center"
                 >
                   Time Slot
                 </div>
@@ -859,32 +981,34 @@ function ScheduleGridView({
                     <div
                       key={room.id}
                       role="columnheader"
-                      className="border-r border-b border-border bg-card p-3 font-semibold text-center flex flex-col items-center justify-center sticky top-0 z-10"
+                      className="border-r border-b border-border bg-card/90 p-3.5 font-semibold text-center flex flex-col items-center justify-between sticky top-0 z-10 space-y-2.5"
                     >
                       {/* Fresha Staff Avatar Icon */}
-                      <div className="relative h-10 w-10 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-sm shadow-2xs">
+                      <div className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0">
                         {getInitials(primaryName)}
                         {roomShifts.length > 1 && (
-                          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-extrabold text-primary-foreground">
+                          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">
                             +{roomShifts.length - 1}
                           </span>
                         )}
                       </div>
 
-                      <div className="mt-1.5 text-xs font-bold text-foreground truncate max-w-36">
-                        {primaryName}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground truncate max-w-32">
-                        {room.name}
+                      <div className="w-full text-center min-w-0">
+                        <div className="text-sm font-bold text-foreground truncate w-full" title={primaryName}>
+                          {primaryName}
+                        </div>
+                        <div className="text-xs font-medium text-muted-foreground truncate w-full" title={room.name}>
+                          {room.name}
+                        </div>
                       </div>
 
-                      {/* Category picker -- room-wise, chosen explicitly instead of defaulting to the first category */}
-                      <div className="mt-2 w-full space-y-1.5">
+                      {/* Category picker & Staff button */}
+                      <div className="w-full space-y-1.5 pt-1">
                         <select
                           value={opening ? String(opening.treatmentCategoryId) : ''}
                           onChange={(e) => changeRoomStatus(room, opening, e.target.value)}
                           disabled={categories.length === 0}
-                          className="w-full rounded-full border border-border bg-background px-2 py-1 text-[10px] font-bold text-foreground text-center focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-semibold text-foreground text-center focus:ring-1 focus:ring-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer shadow-xs transition-colors"
                         >
                           <option value="">Closed</option>
                           {categories.map((c) => (
@@ -896,9 +1020,12 @@ function ScheduleGridView({
                         <button
                           type="button"
                           onClick={(e) => openStaffPopover(e, room)}
-                          className="w-full rounded-full border border-border bg-background px-2 py-1 text-[10px] font-bold text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
+                          className="w-full rounded-lg border border-input bg-accent/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent hover:border-primary/40 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
                         >
-                          👥 Staff ({roomShifts.length})
+                          <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                          </svg>
+                          Staff ({roomShifts.length})
                         </button>
                       </div>
                     </div>
@@ -957,12 +1084,12 @@ function ScheduleGridView({
                             >
                               <div className="text-xs font-extrabold flex items-center justify-between gap-1">
                                 <span>{matchedTreatment.startTimeStr} – {matchedTreatment.endTimeStr}</span>
-                                <span className="text-[10px] font-bold opacity-75">#{matchedTreatment.bookingId}</span>
+                                <span className="text-xs font-mono font-extrabold opacity-95">#{matchedTreatment.bookingId}</span>
                               </div>
-                              <div className="text-xs font-bold truncate">
+                              <div className="text-xs font-extrabold truncate">
                                 {matchedTreatment.treatmentName}
                               </div>
-                              <div className="text-[11px] font-medium opacity-90 truncate">
+                              <div className="text-xs font-bold opacity-100 truncate">
                                 👤 {matchedTreatment.customerName}
                               </div>
                             </div>
@@ -972,7 +1099,7 @@ function ScheduleGridView({
                                first row and border-b/rounded-b only on its last stitch the individual
                                rows into one rectangle outline for the whole group. */
                             <div
-                              className={`h-full border-l border-r border-violet-500/40 bg-violet-500/10 p-2 space-y-1.5 shadow-2xs cursor-pointer hover:bg-violet-500/20 transition ${blockCell.position === 'only'
+                              className={`h-full border-l border-r border-violet-500/50 bg-violet-500/15 p-2.5 space-y-1.5 shadow-2xs cursor-pointer hover:bg-violet-500/25 transition ${blockCell.position === 'only'
                                 ? 'rounded-lg border-t border-b'
                                 : blockCell.position === 'first'
                                   ? 'rounded-t-lg border-t'
@@ -986,10 +1113,10 @@ function ScheduleGridView({
                               {blockCell.blocks.map((block) => (
                                 <div key={block.id} className="space-y-1">
                                   <div className="flex items-center justify-between gap-1">
-                                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                                    <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
                                       block.id <= 0
-                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-800 dark:text-amber-200'
-                                        : 'bg-violet-500/20 border-violet-500/40 text-violet-800 dark:text-violet-200'
+                                        ? 'bg-amber-500/25 border-amber-500/50 text-amber-900 dark:text-amber-100'
+                                        : 'bg-violet-500/25 border-violet-500/50 text-violet-900 dark:text-violet-100'
                                     }`}>
                                       {block.id <= 0 ? 'Lunch Break' : 'Blocked'}
                                     </span>
@@ -997,20 +1124,20 @@ function ScheduleGridView({
                                       <button
                                         type="button"
                                         onClick={() => handleUnblockSlot(block.id)}
-                                        className="text-[10px] font-semibold text-violet-700 dark:text-violet-300 underline cursor-pointer"
+                                        className="text-xs font-bold text-violet-700 dark:text-violet-300 underline cursor-pointer"
                                       >
                                         Unblock
                                       </button>
                                     ) : (
-                                      <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
+                                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
                                         🔒 Locked
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-[10px] font-mono font-bold text-violet-700 dark:text-violet-300">
+                                  <p className="text-xs font-mono font-extrabold text-violet-900 dark:text-violet-100">
                                     {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}
                                   </p>
-                                  <p className="text-[11px] text-violet-800 dark:text-violet-200 line-clamp-2">
+                                  <p className="text-xs font-semibold text-violet-950 dark:text-violet-100 line-clamp-2">
                                     {block.reason}
                                   </p>
                                 </div>
@@ -1030,16 +1157,16 @@ function ScheduleGridView({
                               }}
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                                   Available
                                 </span>
-                                <span className="text-[10px] font-semibold text-gray-800 dark:text-gray-200 truncate max-w-27.5" title={opening?.categoryName}>
+                                <span className="text-xs font-semibold text-foreground truncate" title={opening?.categoryName}>
                                   {opening?.categoryName}
                                 </span>
                               </div>
-                              <div className="text-[11px] font-medium text-foreground/90 flex items-center gap-1 pt-0.5">
-                                <span className="text-muted-foreground text-[10px] uppercase font-bold">Staff:</span>
-                                <span className="font-semibold text-gray-700 dark:text-gray-300 truncate">
+                              <div className="text-xs font-medium text-foreground flex items-center gap-1.5 pt-0.5">
+                                <span className="text-muted-foreground text-[11px] uppercase font-bold">Staff:</span>
+                                <span className="font-semibold text-foreground truncate">
                                   {activeTherapists.map((t) => t.therapistName).join(', ')}
                                 </span>
                               </div>
@@ -1047,7 +1174,7 @@ function ScheduleGridView({
                           ) : (
                             /* CLOSED OR UNSTAFFED ROOM SLOT */
                             <div
-                              className={`rounded-md bg-muted/15 p-2 text-center space-y-1 ${isOpen ? 'cursor-pointer hover:bg-muted/30 transition' : ''}`}
+                              className={`rounded-md bg-muted/30 border border-border/50 p-2 text-center space-y-1 ${isOpen ? 'cursor-pointer hover:bg-muted/50 transition' : ''}`}
                               onClick={isOpen ? (e) => {
                                 setPopover({
                                   isOpen: true,
@@ -1057,7 +1184,7 @@ function ScheduleGridView({
                                 });
                               } : undefined}
                             >
-                              <p className="text-[10px] text-muted-foreground/40 italic">
+                              <p className="text-xs text-muted-foreground font-medium">
                                 {isOpen ? 'No Staff Assigned' : 'Closed'}
                               </p>
                             </div>
@@ -1075,72 +1202,96 @@ function ScheduleGridView({
 
     {staffPopover && (
       <div
-        className="fixed z-50 w-64 rounded-lg border border-border bg-card p-3 text-xs shadow-lg space-y-2"
-        style={{ top: staffPopover.y, left: staffPopover.x }}
+        className="fixed z-50 w-96 rounded-xl border border-border/80 bg-card p-4 text-xs shadow-2xl space-y-3.5"
+        style={{
+          top: Math.min(staffPopover.y, window.innerHeight - 420),
+          left: Math.min(staffPopover.x, window.innerWidth - 400),
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="font-bold text-foreground">{staffPopover.roomName} — Staff</div>
-
-        {popoverAssignments.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground">No one assigned yet.</p>
-        ) : (
-          <div className="space-y-1">
-            {popoverAssignments.map((s) => (
-              <div key={s.id} className="flex items-center justify-between gap-2 rounded-md bg-accent/40 px-2 py-1">
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {s.startTime.slice(0, 5)}–{s.endTime.slice(0, 5)}
-                </span>
-                <span className="flex-1 truncate font-semibold text-foreground">{s.therapistName}</span>
-                <button
-                  type="button"
-                  onClick={() => removeTherapistShift(s.id)}
-                  className="text-destructive hover:text-destructive/70 cursor-pointer"
-                  title="Remove assignment"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+        <div className="flex items-center justify-between border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <div>
+              <div className="font-bold text-sm text-foreground">{staffPopover.roomName}</div>
+              <p className="text-[10px] text-muted-foreground">Manage Assigned Staff & Shifts</p>
+            </div>
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => setStaffPopover(null)}
+            className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
-        <div className="space-y-1.5 border-t border-border/60 pt-2">
-          <p className="text-[10px] font-semibold uppercase text-muted-foreground">Assign (or add a proxy for an interval)</p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Active Staff</p>
+            <span className="text-[10px] font-medium text-muted-foreground font-mono">{popoverAssignments.length} assigned</span>
+          </div>
+          {popoverAssignments.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border/80 p-3.5 text-center text-muted-foreground/70 bg-muted/10">
+              No therapist assigned to this room yet.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+              {popoverAssignments.map((s) => (
+                <ShiftRow key={s.id} shift={s} onUpdate={updateTherapistShift} onRemove={removeTherapistShift} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2.5 border-t border-border/60 pt-3">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assign Staff / Proxy Shift</p>
           <select
             value={newAssignTherapistId}
             onChange={(e) => setNewAssignTherapistId(e.target.value ? Number(e.target.value) : '')}
-            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
           >
-            <option value="">Select therapist</option>
+            <option value="">Select therapist to assign...</option>
             {therapists.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
           </select>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="time"
-              value={newAssignStart}
-              onChange={(e) => setNewAssignStart(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-            />
-            <span className="text-muted-foreground">–</span>
-            <input
-              type="time"
-              value={newAssignEnd}
-              onChange={(e) => setNewAssignEnd(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">From</label>
+              <input
+                type="time"
+                value={newAssignStart}
+                onChange={(e) => setNewAssignStart(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">To</label>
+              <input
+                type="time"
+                value={newAssignEnd}
+                onChange={(e) => setNewAssignEnd(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+              />
+            </div>
           </div>
           <Button
             type="button"
             size="sm"
-            className="w-full"
+            className="w-full h-8 font-semibold mt-1"
             disabled={newAssignTherapistId === '' || newAssignStart >= newAssignEnd}
             onClick={handleAddAssignment}
           >
-            + Add
+            + Add Staff Assignment
           </Button>
         </div>
       </div>

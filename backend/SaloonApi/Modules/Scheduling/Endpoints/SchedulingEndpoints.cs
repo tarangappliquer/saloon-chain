@@ -50,6 +50,29 @@ internal static class SchedulingEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Assign a therapist to a shift at a location/date.");
 
+        group.MapPut("/therapist-shifts/{id:int}", async (int id, UpdateTherapistShiftRequest req, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
+        {
+            var shift = await repo.GetShiftDetailsAsync(id);
+            if (shift is null) return Results.NotFound();
+
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && shift.LocationId != currentUser.LocationId)
+                return Results.Problem("Not authorized for this shift.", statusCode: StatusCodes.Status403Forbidden);
+
+            if (shift.RoomId is { } roomId && await repo.HasShiftOverlapAsync(roomId, shift.ShiftType, DateOnly.FromDateTime(shift.WorkDate), req.StartTime, req.EndTime, shift.TherapistId))
+            {
+                return Results.Problem("Room already has another therapist assigned during part of that time.", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await repo.UpdateTherapistShiftAsync(id, req.StartTime, req.EndTime);
+            var workDate = DateOnly.FromDateTime(shift.WorkDate);
+            await bookingSvc.SyncAndNotifyAsync(shift.LocationId, workDate);
+            return Results.NoContent();
+        }).WithValidation<UpdateTherapistShiftRequest>()
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .WithDescription("Update a therapist's shift start and end times.");
+
         group.MapDelete("/therapist-shifts/{id:int}", async (int id, ICurrentUser currentUser, SchedulingRepository repo, BookingService bookingSvc) =>
         {
             var shift = await repo.GetShiftDetailsAsync(id);
@@ -286,6 +309,16 @@ internal sealed class BlockSlotRequestValidator : AbstractValidator<BlockSlotReq
         RuleFor(x => x.RoomId).GreaterThan(0);
         RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(200);
+    }
+}
+
+internal sealed record UpdateTherapistShiftRequest(TimeSpan StartTime, TimeSpan EndTime);
+
+internal sealed class UpdateTherapistShiftRequestValidator : AbstractValidator<UpdateTherapistShiftRequest>
+{
+    public UpdateTherapistShiftRequestValidator()
+    {
+        RuleFor(x => x.EndTime).GreaterThan(x => x.StartTime);
     }
 }
 

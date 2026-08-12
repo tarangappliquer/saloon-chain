@@ -76,6 +76,18 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         await db.ExecuteSpAsync("dbo.sp_Scheduling_RemoveTherapistShift", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
+    public async Task UpdateTherapistShiftAsync(int id, TimeSpan startTime, TimeSpan endTime)
+    {
+        using var db = factory.Create();
+        await db.ExecuteSpAsync("dbo.sp_Scheduling_UpdateTherapistShift", new
+        {
+            Id = id,
+            StartTime = startTime,
+            EndTime = endTime,
+            UpdatedBy = currentUser.RequireUserId()
+        });
+    }
+
     public async Task<int?> GetShiftLocationIdAsync(int id)
     {
         using var db = factory.Create();
