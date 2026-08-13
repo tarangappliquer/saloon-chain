@@ -46,8 +46,6 @@ using SaloonApi.Shared.Security;
 using SaloonApi.Shared.Storage;
 using Scalar.AspNetCore;
 using Serilog;
-using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 
 StaticLogger.Initialize();
@@ -224,8 +222,12 @@ try
 
     var forwardedHeadersOptions = new ForwardedHeadersOptions
     {
-        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1 // only trust one hop: the immediate proxy/ingress
     };
+    // ponytail: trusts any single proxy (no KnownProxies/KnownIPNetworks allowlist) since pods
+    // aren't reachable except through the cluster ingress/LB. If that stops being true, restrict
+    // KnownProxies/KnownIPNetworks to the ingress IP range instead of clearing both.
     forwardedHeadersOptions.KnownIPNetworks.Clear();
     forwardedHeadersOptions.KnownProxies.Clear();
     app.UseForwardedHeaders(forwardedHeadersOptions);

@@ -1146,6 +1146,23 @@ BEGIN
 END
 GO
 
+-- Same shape as sp_Auth_GetUserById but without the IsActive filter -- that filter is correct for
+-- every auth/session-validity caller (an emulation exchange or payment shouldn't proceed as a
+-- deactivated user) but wrong for AdminStaffEndpoints' PUT existence check, which otherwise 404s
+-- on any deactivated staff member and makes them impossible to edit or reactivate.
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetUserById
+    @Id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT u.Id, u.Name, u.Email, u.PasswordHash, u.PasswordSalt, u.Role, u.ChainId, u.LocationId, u.TherapistId,
+        u.IsEmulator, u.StripeCustomerId, COALESCE(sp.PhotoPath, u.ProfilePhoto) AS PhotoPath, u.IsEmailVerified
+    FROM dbo.Users u
+        LEFT JOIN dbo.StaffProfiles sp ON sp.UserId = u.Id
+    WHERE u.Id = @Id AND u.IsDelete = 0;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Auth_CreateRefreshToken
     @UserId    INT,
     @TokenHash VARBINARY(32),

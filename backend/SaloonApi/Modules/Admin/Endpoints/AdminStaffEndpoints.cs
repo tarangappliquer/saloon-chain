@@ -140,7 +140,7 @@ internal static class AdminStaffEndpoints
         // through.
         group.MapPut("/{id:int}", async (int id, UpdateStaffRequest req, ICurrentUser currentUser, UserRepository repo, CatalogRepository catalogRepo) =>
         {
-            var existing = await repo.GetByIdAsync(id);
+            var existing = await repo.GetStaffByIdAsync(id);
             if (existing is null) return Results.NotFound();
 
             // Who may edit whom mirrors POST's creation matrix above (RootSuperAdmin edits anyone,

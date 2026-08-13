@@ -158,6 +158,16 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         return row is null ? null : ToRecord(row);
     }
 
+    // Same as GetByIdAsync but doesn't exclude deactivated users -- see AdminStaffEndpoints' PUT
+    // handler, which needs to find a staff member regardless of IsActive (that's the very field
+    // it's often being called to flip back on).
+    public async Task<UserRecord?> GetStaffByIdAsync(int id)
+    {
+        using var db = factory.Create();
+        var row = await db.QuerySingleSpAsync<UserRow>("dbo.sp_Admin_GetUserById", new { Id = id });
+        return row is null ? null : ToRecord(row);
+    }
+
     public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();

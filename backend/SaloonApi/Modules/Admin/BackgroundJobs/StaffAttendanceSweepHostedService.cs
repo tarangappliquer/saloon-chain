@@ -1,13 +1,16 @@
 using SaloonApi.Modules.Identity.Infrastructure;
+using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
 
 namespace SaloonApi.Modules.Admin.BackgroundJobs;
 
 internal sealed class StaffAttendanceSweepHostedService(
     IServiceScopeFactory scopeFactory,
+    IRedisConnectionProvider redisProvider,
     ILogger<StaffAttendanceSweepHostedService> logger) : BackgroundService
 {
     private static readonly TimeSpan Period = TimeSpan.FromMinutes(5);
+    private const string LockKey = "lock:staff-attendance-sweep";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -16,7 +19,9 @@ internal sealed class StaffAttendanceSweepHostedService(
         {
             try
             {
-                await SweepUnattendedBookingsAsync();
+                // Locked: without it, every replica emails the same manager the same
+                // "staff not arrived" alert on every tick.
+                await RedisDistributedLock.TryRunAsync(redisProvider, LockKey, Period - TimeSpan.FromSeconds(30), SweepUnattendedBookingsAsync);
             }
             catch (OperationCanceledException)
             {
