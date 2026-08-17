@@ -28,6 +28,7 @@ import type { Chain, Location } from "../api/types";
 import { TimeInput } from "../components/TimeInput";
 import { AddLocationWizard } from "../components/AddLocationWizard";
 import { DayScheduleModal } from "../components/DayScheduleModal";
+import { ClosuresModal } from "../components/ClosuresModal";
 import { weeklyScheduleFromLocation, type DaySchedule } from "../lib/schedule";
 import { toApiTime, validateBreakTimes } from "../lib/time";
 import { routes } from "../routes";
@@ -87,6 +88,7 @@ export function SettingsPage() {
 
   const [weeklySchedule, setWeeklySchedule] = useState<DaySchedule[]>([]);
   const [showDayScheduleModal, setShowDayScheduleModal] = useState(false);
+  const [showClosuresModal, setShowClosuresModal] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -861,6 +863,14 @@ export function SettingsPage() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          onClick={() => setShowClosuresModal(true)}
+                        >
+                          Holidays
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                           onClick={() => setShowDayScheduleModal(true)}
                         >
                           Day Hours
@@ -972,6 +982,15 @@ export function SettingsPage() {
           defaultOpenTime={selectedLocation.openTime}
           defaultCloseTime={selectedLocation.closeTime}
           onClose={() => setShowDayScheduleModal(false)}
+        />
+      )}
+
+      {showClosuresModal && selectedLocation && (
+        <ClosuresModal
+          scope={{ kind: "location", id: selectedLocation.id, name: selectedLocation.name }}
+          applyToAllChainId={canEditSaloon ? selectedLocation.chainId : undefined}
+          applyToAllChainName={activeChain?.name}
+          onClose={() => setShowClosuresModal(false)}
         />
       )}
 

@@ -560,6 +560,10 @@ export function LocationsPage() {
       {closuresLocation && (
         <ClosuresModal
           scope={{ kind: 'location', id: closuresLocation.id, name: closuresLocation.name }}
+          applyToAllChainId={
+            currentUser && ['RootSuperAdmin', 'SuperAdmin', 'Admin'].includes(currentUser.role) ? closuresLocation.chainId : undefined
+          }
+          applyToAllChainName={activeChain?.name}
           onClose={() => setClosuresLocation(null)}
         />
       )}

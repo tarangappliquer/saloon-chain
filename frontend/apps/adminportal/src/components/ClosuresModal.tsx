@@ -9,13 +9,28 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function ClosuresModal({ scope, onClose }: { scope: ClosureScope; onClose: () => void }) {
+export function ClosuresModal({
+  scope,
+  applyToAllChainId,
+  applyToAllChainName,
+  onClose,
+}: {
+  scope: ClosureScope;
+  // Only meaningful when scope.kind === 'location' -- lets the caller offer an "apply to every
+  // location in this saloon" shortcut inline instead of forcing a separate chain-level closures
+  // flow. Omitted entirely for roles that can't close a whole chain (SaloonsPage's chain-scoped
+  // modal has no need for this either, since it's already whole-chain).
+  applyToAllChainId?: number;
+  applyToAllChainName?: string;
+  onClose: () => void;
+}) {
   const [closures, setClosures] = useState<LocationClosure[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(todayIso());
   const [type, setType] = useState<ClosureType>('Holiday');
   const [reason, setReason] = useState('');
+  const [applyToAll, setApplyToAll] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -37,16 +52,18 @@ export function ClosuresModal({ scope, onClose }: { scope: ClosureScope; onClose
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    const useChainScope = scope.kind === 'chain' || (applyToAll && applyToAllChainId !== undefined);
     try {
       await adminCatalogApi.apiAdminCatalogClosuresPost({
-        locationId: scope.kind === 'location' ? scope.id : null,
-        chainId: scope.kind === 'chain' ? scope.id : null,
+        locationId: useChainScope ? null : scope.id,
+        chainId: useChainScope ? (scope.kind === 'chain' ? scope.id : applyToAllChainId!) : null,
         fromDate,
         toDate,
         type,
         reason: reason || null,
       });
       setReason('');
+      setApplyToAll(false);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to close date range');
@@ -75,7 +92,9 @@ export function ClosuresModal({ scope, onClose }: { scope: ClosureScope; onClose
           <div>
             <CardTitle className="text-lg">Closures for {scope.name}</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {scope.kind === 'chain' ? 'Closes every location in this saloon chain.' : 'Holidays and maintenance days for this location.'}
+              {scope.kind === 'chain' || applyToAll
+                ? 'Closes every location in this saloon chain.'
+                : 'Holidays and maintenance days for this location.'}
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -137,6 +156,18 @@ export function ClosuresModal({ scope, onClose }: { scope: ClosureScope; onClose
               {submitting ? 'Closing...' : 'Close Dates'}
             </Button>
           </form>
+
+          {scope.kind === 'location' && applyToAllChainId !== undefined && (
+            <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyToAll}
+                onChange={(e) => setApplyToAll(e.target.checked)}
+                className="rounded-sm border-input text-primary focus:ring-primary h-4 w-4"
+              />
+              Apply to all locations in {applyToAllChainName ?? 'this saloon'}
+            </label>
+          )}
 
           {closures === null ? (
             <div className="py-8">
