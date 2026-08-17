@@ -1712,9 +1712,86 @@ BEGIN
     )
         THROW 50069, 'Hours are already scheduled for this day and date.', 1;
 
+    -- A booking already exists on this day-of-week, on or after this row's effective window, that
+    -- would fall outside the new hours (or on a day being closed entirely) -- block it, same
+    -- "don't retroactively invalidate a real appointment" guard as sp_Catalog_AddTreatmentDuration.
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE b.LocationId = @LocationId AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL
+            AND CAST(bt.StartTime AS DATE) >= @EffectiveFrom
+            AND (@EffectiveTo IS NULL OR CAST(bt.StartTime AS DATE) <= @EffectiveTo)
+            AND CAST(POWER(2, DATEDIFF(DAY, 0, CAST(bt.StartTime AS DATE)) % 7) AS TINYINT) = @DayBit
+            AND (@IsClosed = 1 OR CAST(bt.StartTime AS TIME) < @OpenTime OR CAST(bt.EndTime AS TIME) > @CloseTime)
+    )
+        THROW 50073, 'Cannot schedule these hours -- a booking already exists outside the new hours (or on a day being closed).', 1;
+
     INSERT INTO dbo.LocationDaySchedule (LocationId, DayBit, OpenTime, CloseTime, IsClosed, EffectiveFrom, EffectiveTo, CreatedBy)
     VALUES (@LocationId, @DayBit, @OpenTime, @CloseTime, @IsClosed, @EffectiveFrom, @EffectiveTo, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+-- Corrects a not-yet-effective scheduled entry in place (fix a typo instead of cancel + re-add) --
+-- same "already in effect" guard as sp_Catalog_DeleteLocationDaySchedule; a day's current/past hours
+-- are never editable this way, only future-dated ones still pending.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateLocationDaySchedule
+    @Id            INT,
+    @EffectiveFrom DATE,
+    @UpdatedBy     INT,
+    @OpenTime      TIME = NULL,
+    @CloseTime     TIME = NULL,
+    @IsClosed      BIT = 0,
+    @EffectiveTo   DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @IsClosed = 0 AND (@OpenTime IS NULL OR @CloseTime IS NULL)
+        THROW 50072, 'Open and close time are required unless the day is marked closed.', 1;
+
+    DECLARE @LocationId INT, @DayBit TINYINT;
+    SELECT @LocationId = LocationId, @DayBit = DayBit
+    FROM dbo.LocationDaySchedule
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @LocationId IS NULL
+        THROW 50071, 'Scheduled hours not found.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.LocationDaySchedule
+        WHERE Id = @Id AND EffectiveFrom <= CAST(GETUTCDATE() AS DATE)
+    )
+        THROW 50070, 'Cannot edit hours that are already in effect.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.LocationDaySchedule
+        WHERE LocationId = @LocationId AND DayBit = @DayBit AND EffectiveFrom = @EffectiveFrom AND IsDelete = 0 AND Id <> @Id
+    )
+        THROW 50069, 'Hours are already scheduled for this day and date.', 1;
+
+    -- Same booking-safety guard as sp_Catalog_AddLocationDaySchedule -- the edited window (or a new
+    -- closed flag) must not fall outside an existing future booking on this day-of-week.
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE b.LocationId = @LocationId AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL
+            AND CAST(bt.StartTime AS DATE) >= @EffectiveFrom
+            AND (@EffectiveTo IS NULL OR CAST(bt.StartTime AS DATE) <= @EffectiveTo)
+            AND CAST(POWER(2, DATEDIFF(DAY, 0, CAST(bt.StartTime AS DATE)) % 7) AS TINYINT) = @DayBit
+            AND (@IsClosed = 1 OR CAST(bt.StartTime AS TIME) < @OpenTime OR CAST(bt.EndTime AS TIME) > @CloseTime)
+    )
+        THROW 50073, 'Cannot change these hours -- a booking already exists outside the new hours (or on a day being closed).', 1;
+
+    UPDATE dbo.LocationDaySchedule
+    SET OpenTime = @OpenTime, CloseTime = @CloseTime, IsClosed = @IsClosed,
+        EffectiveFrom = @EffectiveFrom, EffectiveTo = @EffectiveTo,
+        UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id;
 END
 GO
 

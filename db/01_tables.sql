@@ -62,9 +62,13 @@ CREATE TABLE dbo.LocationHolidays (
     CreatedBy    INT NULL,
     CreatedDate  DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedBy    INT NULL,
-    UpdatedDate  DATETIME2 NULL,
-    CONSTRAINT UQ_LocationHolidays_Location_Date UNIQUE (LocationId, HolidayDate)
+    UpdatedDate  DATETIME2 NULL
 );
+-- Filtered (not a plain UNIQUE constraint) so a soft-deleted (re-opened) closure never blocks
+-- re-closing the same date -- sp_Admin_CreateLocationClosures only checks IsDelete=0 rows for
+-- duplicates, so an unfiltered constraint would raw-SQL-error on any date that was ever closed then
+-- removed.
+CREATE UNIQUE INDEX UQ_LocationHolidays_Location_Date ON dbo.LocationHolidays(LocationId, HolidayDate) WHERE IsDelete = 0;
 
 -- Effective-dated per-day-of-week hours, same pattern as dbo.TreatmentPrices/TreatmentDurations: a
 -- day's hours as of any date is the row with the latest EffectiveFrom <= that date (see

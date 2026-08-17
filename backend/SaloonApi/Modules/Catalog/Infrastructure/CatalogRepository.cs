@@ -233,6 +233,21 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return p.Get<int>("@Id");
     }
 
+    public async Task UpdateLocationDayScheduleAsync(
+        int id, DateOnly effectiveFrom, TimeSpan? openTime, TimeSpan? closeTime, bool isClosed, DateOnly? effectiveTo)
+    {
+        using var db = factory.Create();
+        var p = new DynamicParameters();
+        p.Add("@Id", id);
+        p.Add("@OpenTime", openTime);
+        p.Add("@CloseTime", closeTime);
+        p.Add("@IsClosed", isClosed);
+        p.Add("@EffectiveFrom", effectiveFrom);
+        p.Add("@EffectiveTo", effectiveTo);
+        p.Add("@UpdatedBy", currentUser.RequireUserId());
+        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateLocationDaySchedule", p);
+    }
+
     public async Task DeleteLocationDayScheduleAsync(int id)
     {
         using var db = factory.Create();

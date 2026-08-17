@@ -191,6 +191,22 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Schedule a day's hours effective from a given date; rejected with 409 if that day/date is already scheduled.");
 
+        group.MapPut("/locations/{id:int}/day-schedule/{scheduleId:int}", async (
+            int id, int scheduleId, LocationDayScheduleRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            await repo.UpdateLocationDayScheduleAsync(scheduleId, req.EffectiveFrom, req.OpenTime, req.CloseTime, req.IsClosed, req.EffectiveTo);
+            return Results.NoContent();
+        }).WithValidation<LocationDayScheduleRequest>()
+          .RequireAuthorization("LocationDetailsManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Correct a not-yet-effective scheduled hours change in place; rejected with 409 if it's already in effect or the new date collides.");
+
         group.MapDelete("/locations/{id:int}/day-schedule/{scheduleId:int}", async (int id, int scheduleId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
             if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)

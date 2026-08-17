@@ -44,6 +44,10 @@ Nothing is outstanding in code. What's missing is a manual smoke test in a brows
 
 **One risk worth knowing**: `TreatmentPrices`/`TreatmentDurations` resolution is `CROSS APPLY` (not `OUTER APPLY`) -- a treatment with zero currently-matching price/duration rows silently disappears from catalog/booking listings rather than erroring. Today that can't happen because the first price/duration row is always open-ended (`EffectiveTo NULL`, created by `sp_Catalog_CreateTreatment`). If an admin now schedules a bounded (single-date/range) row and lets it lapse *without* a fallback open-ended row still covering that date, the treatment will vanish from listings on that date with no obvious error. This wasn't guarded against (out of scope for what was asked), just flagging it as a footgun for admins scheduling bounded price/duration windows.
 
+## Follow-up fix: LocationHolidays unique-constraint bug (unrelated feature, found live)
+
+Live error hit: `Violation of UNIQUE KEY constraint 'UQ_LocationHolidays_Location_Date'` when re-closing a date that had been closed then reopened. Root cause: `sp_Admin_DeleteLocationClosure` soft-deletes (`IsDelete=1`, row stays), but `UQ_LocationHolidays_Location_Date` was a plain (unfiltered) `UNIQUE` constraint, so the soft-deleted row still occupied that `(LocationId, HolidayDate)` slot forever. Fixed in `db/01_tables.sql` + `db/migrations/013_location_holidays_filtered_unique.sql` (drops the constraint, adds a filtered `WHERE IsDelete = 0` unique index instead, matching the `UQ_LocationDaySchedule_*`/`UQ_TreatmentPrices_*` convention). **Deployed already.** The `ClosuresModal` "Edit" flow (delete-then-recreate) made this bug much easier to hit since it now routinely re-inserts the exact dates it just soft-deleted, but the bug predates that -- any admin re-closing a previously-reopened date would have hit it.
+
 ## Other context worth knowing
 
 - Real dev DB creds are in `.NET user-secrets` (`dotnet user-secrets list` from `backend/SaloonApi/`), not `appsettings.json`. `sqlcmd` needs `-I` (QUOTED_IDENTIFIER ON) or filtered-index/CHECK-constraint-touching statements fail with error 1934.
