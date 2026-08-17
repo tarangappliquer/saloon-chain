@@ -113,7 +113,7 @@ try
         options.AddPolicy("RootSuperAdminOnly", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
         options.AddPolicy("ChainManagement", p => p.RequireRole(nameof(UserRole.RootSuperAdmin)));
         options.AddPolicy("ChainDetailsManagement", p => p.RequireRole(
-            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin)));
+            nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
         options.AddPolicy("LocationManagement", p => p.RequireRole(
             nameof(UserRole.RootSuperAdmin), nameof(UserRole.SuperAdmin), nameof(UserRole.Admin)));
         options.AddPolicy("LocationDetailsManagement", p => p.RequireRole(

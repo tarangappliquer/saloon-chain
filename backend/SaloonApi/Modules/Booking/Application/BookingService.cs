@@ -54,6 +54,7 @@ internal sealed class BookingService(
         if (rangeData.Location is null) return [];
 
         var mask = (rangeData.Location.WorkingDaysMask == 0) ? (byte)127 : rangeData.Location.WorkingDaysMask;
+        var hoursByDate = rangeData.DayHours.ToDictionary(h => h.WorkDate, h => (h.OpenTime, h.CloseTime));
 
         var candidates = new List<DateOnly>();
         for (var d = from; d <= to; d = d.AddDays(1))
@@ -101,11 +102,13 @@ internal sealed class BookingService(
             var bookings = bookingsByDate.GetValueOrDefault(d, []);
             var blocked = blockedByDate.GetValueOrDefault(d, []);
 
+            if (!hoursByDate.TryGetValue(d, out var hours)) continue;
+
             var allTreatmentsHaveSlot = true;
             foreach (var treatment in rangeData.Treatments)
             {
                 var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, rangeData.Location.OpenTime, rangeData.Location.CloseTime, treatment.DurationSlots, pairs, bookings, blocked,
+                    d, hours.OpenTime, hours.CloseTime, treatment.DurationSlots, pairs, bookings, blocked,
                     breakStart: rangeData.Location.BreakStartTime, breakEnd: rangeData.Location.BreakEndTime);
 
                 if (slots.Count == 0)

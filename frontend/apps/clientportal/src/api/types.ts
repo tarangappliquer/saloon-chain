@@ -8,6 +8,8 @@ export interface Location {
   chainId: number;
   name: string;
   address: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   openTime: string;
   closeTime: string;
   workingDaysMask: number;

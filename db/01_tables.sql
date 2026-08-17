@@ -27,6 +27,13 @@ CREATE TABLE dbo.Locations (
     ChainId          INT NOT NULL REFERENCES dbo.SaloonChains(Id),
     Name             NVARCHAR(200) NOT NULL,
     Address          NVARCHAR(400) NULL,
+    -- geography::Point(lat, long, 4326); NULL until an admin sets it via the map picker. Stored as
+    -- GEOGRAPHY (not separate Latitude/Longitude columns) so a future "nearest location" query can
+    -- use STDistance()/the spatial index below instead of a Haversine calc in application code.
+    -- sp_Catalog_CreateLocation/sp_Catalog_UpdateLocation still take @Latitude/@Longitude decimals in
+    -- and build the point server-side; sp_Catalog_GetLocations/sp_Admin_GetLocations extract .Lat/.Long
+    -- back out -- the C# layer never touches SqlGeography directly.
+    Coordinates      GEOGRAPHY NULL,
     OpenTime         TIME NOT NULL,
     CloseTime        TIME NOT NULL,
     BreakStartTime   TIME NULL,
@@ -41,6 +48,7 @@ CREATE TABLE dbo.Locations (
     UpdatedBy        INT NULL,
     UpdatedDate      DATETIME2 NULL
 );
+CREATE SPATIAL INDEX SIX_Locations_Coordinates ON dbo.Locations(Coordinates) USING GEOGRAPHY_AUTO_GRID;
 
 -- One-off closures (public holidays, maintenance days) on top of the weekly WorkingDaysMask.
 CREATE TABLE dbo.LocationHolidays (
@@ -48,6 +56,7 @@ CREATE TABLE dbo.LocationHolidays (
     LocationId   INT NOT NULL REFERENCES dbo.Locations(Id),
     HolidayDate  DATE NOT NULL,
     Reason       NVARCHAR(200) NULL,
+    Type         VARCHAR(20) NOT NULL DEFAULT 'Holiday',
     IsDelete     BIT NOT NULL DEFAULT 0,
     IsActive     BIT NOT NULL DEFAULT 1,
     CreatedBy    INT NULL,
@@ -56,6 +65,37 @@ CREATE TABLE dbo.LocationHolidays (
     UpdatedDate  DATETIME2 NULL,
     CONSTRAINT UQ_LocationHolidays_Location_Date UNIQUE (LocationId, HolidayDate)
 );
+
+-- Effective-dated per-day-of-week hours, same pattern as dbo.TreatmentPrices/TreatmentDurations: a
+-- day's hours as of any date is the row with the latest EffectiveFrom <= that date (see
+-- sp_Catalog_GetLocationDaySchedule). Locations.OpenTime/CloseTime remain the fallback used for a
+-- (LocationId, DayBit) that has no scheduled override yet -- most locations never need this table at
+-- all. DayBit matches Locations.WorkingDaysMask's bit scheme (bit0=Mon..bit6=Sun) -- WorkingDaysMask
+-- still alone decides whether a day is open at all; this table only ever supplies that day's hours.
+CREATE TABLE dbo.LocationDaySchedule (
+    Id             INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId     INT NOT NULL REFERENCES dbo.Locations(Id),
+    DayBit         TINYINT NOT NULL CHECK (DayBit IN (1, 2, 4, 8, 16, 32, 64)),
+    -- NULL when IsClosed = 1 -- a closed override has no hours to store.
+    OpenTime       TIME NULL,
+    CloseTime      TIME NULL,
+    IsClosed       BIT NOT NULL DEFAULT 0,
+    EffectiveFrom  DATE NOT NULL,
+    -- NULL = open-ended (stays in effect until superseded by a later row). Non-null pins the
+    -- override to a single date (EffectiveFrom = EffectiveTo) or a bounded date range.
+    EffectiveTo    DATE NULL,
+    IsDelete       BIT NOT NULL DEFAULT 0,
+    CreatedBy      INT NULL,
+    CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    UpdatedBy      INT NULL,
+    UpdatedDate    DATETIME2 NULL,
+    CONSTRAINT CK_LocationDaySchedule_Times CHECK (IsClosed = 1 OR (OpenTime IS NOT NULL AND CloseTime IS NOT NULL AND CloseTime > OpenTime)),
+    CONSTRAINT CK_LocationDaySchedule_DateRange CHECK (EffectiveTo IS NULL OR EffectiveTo >= EffectiveFrom)
+);
+CREATE INDEX IX_LocationDaySchedule_Location_Day_EffectiveFrom ON dbo.LocationDaySchedule(LocationId, DayBit, EffectiveFrom DESC);
+-- One scheduled entry per location+day+effective date -- filtered so a cancelled (soft-deleted)
+-- entry never blocks re-scheduling the same date.
+CREATE UNIQUE INDEX UQ_LocationDaySchedule_Location_Day_EffectiveFrom ON dbo.LocationDaySchedule(LocationId, DayBit, EffectiveFrom) WHERE IsDelete = 0;
 
 CREATE TABLE dbo.Rooms (
     Id           INT IDENTITY(1,1) PRIMARY KEY,
@@ -111,11 +151,15 @@ CREATE TABLE dbo.TreatmentPrices (
     TreatmentId    INT NOT NULL REFERENCES dbo.Treatments(Id),
     Price          DECIMAL(10,2) NOT NULL,
     EffectiveFrom  DATE NOT NULL,
+    -- NULL = open-ended. Non-null pins the price to a single date or a bounded date range, after
+    -- which resolution falls back to whichever row has the next-latest EffectiveFrom <= that date.
+    EffectiveTo    DATE NULL,
     IsDelete       BIT NOT NULL DEFAULT 0,
     CreatedBy      INT NULL,
     CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedBy      INT NULL,
-    UpdatedDate    DATETIME2 NULL
+    UpdatedDate    DATETIME2 NULL,
+    CONSTRAINT CK_TreatmentPrices_DateRange CHECK (EffectiveTo IS NULL OR EffectiveTo >= EffectiveFrom)
 );
 CREATE INDEX IX_TreatmentPrices_TreatmentId_EffectiveFrom ON dbo.TreatmentPrices(TreatmentId, EffectiveFrom DESC);
 -- One price per treatment per effective date -- filtered so a soft-deleted (corrected) entry never
@@ -132,11 +176,14 @@ CREATE TABLE dbo.TreatmentDurations (
     -- no arrival buffer -- most treatments don't need one.
     PreTimeMinutes SMALLINT NOT NULL DEFAULT 0 CHECK (PreTimeMinutes >= 0),
     EffectiveFrom  DATE NOT NULL,
+    -- NULL = open-ended, same convention as TreatmentPrices.EffectiveTo.
+    EffectiveTo    DATE NULL,
     IsDelete       BIT NOT NULL DEFAULT 0,
     CreatedBy      INT NULL,
     CreatedDate    DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedBy      INT NULL,
-    UpdatedDate    DATETIME2 NULL
+    UpdatedDate    DATETIME2 NULL,
+    CONSTRAINT CK_TreatmentDurations_DateRange CHECK (EffectiveTo IS NULL OR EffectiveTo >= EffectiveFrom)
 );
 CREATE INDEX IX_TreatmentDurations_TreatmentId_EffectiveFrom ON dbo.TreatmentDurations(TreatmentId, EffectiveFrom DESC);
 CREATE UNIQUE INDEX UQ_TreatmentDurations_Treatment_EffectiveFrom ON dbo.TreatmentDurations(TreatmentId, EffectiveFrom) WHERE IsDelete = 0;

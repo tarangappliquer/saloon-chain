@@ -52,6 +52,8 @@ export interface Location {
   chainId: number;
   name: string;
   address: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   openTime: string;
   closeTime: string;
   breakStartTime?: string | null;
@@ -59,6 +61,27 @@ export interface Location {
   workingDaysMask: number;
   timeZoneId: string;
   isActive?: boolean;
+}
+
+export type ClosureType = 'Holiday' | 'Maintenance';
+
+export interface LocationClosure {
+  id: number;
+  locationId: number;
+  locationName: string;
+  holidayDate: string;
+  reason: string | null;
+  type: ClosureType;
+}
+
+export interface LocationDaySchedule {
+  id: number;
+  dayBit: number;
+  openTime: string | null;
+  closeTime: string | null;
+  isClosed: boolean;
+  effectiveFrom: string;
+  effectiveTo: string | null;
 }
 
 export interface TreatmentCategory {
@@ -87,6 +110,7 @@ export interface TreatmentPrice {
   id: number;
   price: number;
   effectiveFrom: string;
+  effectiveTo: string | null;
 }
 
 export interface TreatmentDuration {
@@ -94,6 +118,7 @@ export interface TreatmentDuration {
   durationSlots: number;
   preTimeMinutes: number;
   effectiveFrom: string;
+  effectiveTo: string | null;
 }
 
 export interface Therapist {

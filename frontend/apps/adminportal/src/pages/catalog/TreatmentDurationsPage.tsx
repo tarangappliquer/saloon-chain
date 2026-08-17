@@ -7,7 +7,8 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Treatment, TreatmentDuration } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TreatmentCatalogTabs } from '../../components/TreatmentCatalogTabs';
-import { DateInput } from '../../components/DateInput';
+import { EffectiveDateFields } from '../../components/EffectiveDateFields';
+import { resolveEffectiveTo, describeEffectiveWindow, type EffectiveMode } from '../../lib/effectiveDate';
 import { routes } from '../../routes';
 
 function today() {
@@ -15,7 +16,7 @@ function today() {
 }
 
 function emptyDurationForm() {
-  return { durationSlots: '', preTimeMinutes: '0', effectiveFrom: today() };
+  return { durationSlots: '', preTimeMinutes: '0', mode: 'from' as EffectiveMode, effectiveFrom: today(), effectiveTo: today() };
 }
 
 export function TreatmentDurationsPage() {
@@ -208,6 +209,7 @@ export function TreatmentDurationsPage() {
         durationSlots: Number(durationForm.durationSlots),
         preTimeMinutes: Number(durationForm.preTimeMinutes),
         effectiveFrom: durationForm.effectiveFrom,
+        effectiveTo: resolveEffectiveTo(durationForm.mode, durationForm.effectiveFrom, durationForm.effectiveTo),
       });
       setDurationForm(emptyDurationForm());
       await loadDurationHistory(treatmentId);
@@ -332,7 +334,7 @@ export function TreatmentDurationsPage() {
                               className="w-16"
                               title="Pre-time (arrival buffer, minutes)"
                             />
-                            <span className="text-muted-foreground shrink-0">from {d.effectiveFrom}</span>
+                            <span className="text-muted-foreground shrink-0">{describeEffectiveWindow(d.effectiveFrom, d.effectiveTo)}</span>
                             <Button type="submit" size="sm" disabled={savingEditDuration}>
                               {savingEditDuration ? 'Saving...' : 'Save'}
                             </Button>
@@ -357,7 +359,7 @@ export function TreatmentDurationsPage() {
                           )}
                         </span>
                         <span className="text-muted-foreground flex items-center gap-1.5">
-                          from {d.effectiveFrom}
+                          {describeEffectiveWindow(d.effectiveFrom, d.effectiveTo)}
                           {isFuture && <Badge status="Inactive" className="text-[10px] py-0 px-1.5" />}
                           <Button variant="ghost" size="sm" onClick={() => handleStartEditDuration(d)}>
                             Edit
@@ -407,17 +409,19 @@ export function TreatmentDurationsPage() {
                   onChange={(e) => setDurationForm({ ...durationForm, preTimeMinutes: e.target.value })}
                   error={getFieldError(durationSubmitError, 'preTimeMinutes')}
                 />
-                <DateInput
-                  required
-                  label="Effective From"
-                  helperText="Two durations can't share the same effective date."
-                  value={durationForm.effectiveFrom}
-                  onChange={(e) => setDurationForm({ ...durationForm, effectiveFrom: e.target.value })}
-                  error={
+                <EffectiveDateFields
+                  mode={durationForm.mode}
+                  onModeChange={(mode) => setDurationForm({ ...durationForm, mode })}
+                  fromDate={durationForm.effectiveFrom}
+                  onFromDateChange={(v) => setDurationForm({ ...durationForm, effectiveFrom: v })}
+                  toDate={durationForm.effectiveTo}
+                  onToDateChange={(v) => setDurationForm({ ...durationForm, effectiveTo: v })}
+                  fromError={
                     (durationSubmitError as { message?: string } | null)?.message ||
                     getFieldError(durationSubmitError, 'effectiveFrom')
                   }
                 />
+                <p className="text-xs text-muted-foreground">Two durations can't share the same effective start date.</p>
                 <Button type="submit" disabled={savingDuration} className="w-full">
                   {savingDuration ? 'Scheduling...' : 'Schedule Duration'}
                 </Button>

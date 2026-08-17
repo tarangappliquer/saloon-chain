@@ -19,14 +19,17 @@ internal sealed record AvailabilityData(
     IReadOnlyList<BlockedRangeRow> BlockedRanges);
 
 // Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
-// (callers resolve holiday dates for the whole range separately, see CatalogRepository), and
+// (callers resolve holiday dates for the whole range separately, see CatalogRepository) AND
+// OpenTime/CloseTime (those can vary per date via dbo.LocationDaySchedule -- see DayHoursRow), and
 // EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
-internal sealed record LocationHoursRangeRow(TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask);
+internal sealed record LocationHoursRangeRow(TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask);
+internal sealed record DayHoursRow(DateOnly WorkDate, TimeSpan OpenTime, TimeSpan CloseTime);
 internal sealed record EligiblePairRangeRow(DateOnly WorkDate, int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
 internal sealed record BlockedRangeRangeRow(DateOnly WorkDate, int RoomId, TimeSpan StartTime, TimeSpan EndTime);
 
 internal sealed record AvailabilityRangeData(
     LocationHoursRangeRow? Location,
+    IReadOnlyList<DayHoursRow> DayHours,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRangeRow> EligiblePairs,
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
@@ -136,12 +139,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         });
 
         var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRangeRow>();
+        var dayHours = (await multi.ReadAsync<DayHoursRow>()).ToList();
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
         var eligible = (await multi.ReadAsync<EligiblePairRangeRow>()).ToList();
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
         var blocked = (await multi.ReadAsync<BlockedRangeRangeRow>()).ToList();
 
-        return new AvailabilityRangeData(location, treatments, eligible, existing, blocked);
+        return new AvailabilityRangeData(location, dayHours, treatments, eligible, existing, blocked);
     }
 
     public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)

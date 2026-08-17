@@ -1,27 +1,23 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
-import { Calendar, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
+import { Calendar, CalendarOff, Clock, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 import { TimeInput } from '../../components/TimeInput';
+import { ClosuresModal } from '../../components/ClosuresModal';
+import { DayScheduleModal } from '../../components/DayScheduleModal';
+import { DAY_BITS } from '../../lib/schedule';
+import { toApiTime, validateBreakTimes } from '../../lib/time';
 import { routes } from '../../routes';
-
-const DAY_BITS: { bit: number; label: string }[] = [
-  { bit: 1, label: 'Mon' },
-  { bit: 2, label: 'Tue' },
-  { bit: 4, label: 'Wed' },
-  { bit: 8, label: 'Thu' },
-  { bit: 16, label: 'Fri' },
-  { bit: 32, label: 'Sat' },
-  { bit: 64, label: 'Sun' },
-];
 
 function emptyForm() {
   return {
     name: '',
     address: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     openTime: '09:00',
     closeTime: '18:00',
     breakStartTime: '',
@@ -45,6 +41,8 @@ export function LocationsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [deletingLocation, setDeletingLocation] = useState<Location | null>(null);
+  const [closuresLocation, setClosuresLocation] = useState<Location | null>(null);
+  const [dayScheduleLocation, setDayScheduleLocation] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -105,6 +103,8 @@ export function LocationsPage() {
     setForm({
       name: loc.name,
       address: loc.address ?? '',
+      latitude: loc.latitude ?? null,
+      longitude: loc.longitude ?? null,
       openTime: loc.openTime,
       closeTime: loc.closeTime,
       breakStartTime: loc.breakStartTime ? loc.breakStartTime.slice(0, 5) : '',
@@ -117,6 +117,7 @@ export function LocationsPage() {
     setError(null);
     setSubmitError(null);
   }
+
 
   function handleCancelForm() {
     setEditingLocation(null);
@@ -138,36 +139,31 @@ export function LocationsPage() {
     setBreakStartError(null);
     setBreakEndError(null);
 
-    if (form.breakStartTime && !form.breakEndTime) {
-      setBreakEndError('Break End Time is required when Start Time is provided.');
+    const breakErrors = validateBreakTimes(form.breakStartTime, form.breakEndTime);
+    if (breakErrors.startError || breakErrors.endError) {
+      setBreakStartError(breakErrors.startError);
+      setBreakEndError(breakErrors.endError);
       setError('Please fix the validation errors below.');
       return;
     }
-    if (!form.breakStartTime && form.breakEndTime) {
-      setBreakStartError('Break Start Time is required when End Time is provided.');
-      setError('Please fix the validation errors below.');
+
+    if (form.latitude === null || form.longitude === null) {
+      setError('Enter latitude and longitude before saving.');
       return;
-    }
-    if (form.breakStartTime && form.breakEndTime) {
-      const [sh, sm] = form.breakStartTime.split(':').map(Number);
-      const [eh, em] = form.breakEndTime.split(':').map(Number);
-      if (eh * 60 + em <= sh * 60 + sm) {
-        setBreakEndError('Break End Time must be greater than Break Start Time.');
-        setError('Please fix the validation errors below.');
-        return;
-      }
     }
 
     setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
-      const breakStart = form.breakStartTime ? (form.breakStartTime.length === 5 ? `${form.breakStartTime}:00` : form.breakStartTime) : null;
-      const breakEnd = form.breakEndTime ? (form.breakEndTime.length === 5 ? `${form.breakEndTime}:00` : form.breakEndTime) : null;
+      const breakStart = toApiTime(form.breakStartTime);
+      const breakEnd = toApiTime(form.breakEndTime);
 
       if (editingLocation) {
         await adminCatalogApi.apiAdminCatalogLocationsIdPut(editingLocation.id, {
           name: form.name,
           address: form.address || null,
+          latitude: form.latitude,
+          longitude: form.longitude,
           openTime: form.openTime,
           closeTime: form.closeTime,
           breakStartTime: breakStart,
@@ -181,6 +177,8 @@ export function LocationsPage() {
           chainId: targetChainId,
           name: form.name,
           address: form.address || null,
+          latitude: form.latitude,
+          longitude: form.longitude,
           openTime: form.openTime,
           closeTime: form.closeTime,
           breakStartTime: breakStart,
@@ -210,6 +208,14 @@ export function LocationsPage() {
       await adminCatalogApi.apiAdminCatalogLocationsIdPut(loc.id, {
         name: loc.name,
         address: loc.address,
+        // Generated request type for decimal? fields is a broken placeholder (openapi-generator
+        // quirk, see AdminBookingTreatmentDtoPrice) that structurally rejects `null` even though the
+        // field is genuinely nullable -- cast through, same as the `as unknown as X[]` casts already
+        // used for response bodies elsewhere in this file. A legacy location with no pin set yet will
+        // still get a real 400 from sp_Catalog_UpdateLocation's NotNull validator, which is correct:
+        // the map pin is compulsory for every save, this call included.
+        latitude: (loc.latitude ?? null) as number,
+        longitude: (loc.longitude ?? null) as number,
         openTime: loc.openTime,
         closeTime: loc.closeTime,
         breakStartTime: loc.breakStartTime ?? null,
@@ -366,6 +372,30 @@ export function LocationsPage() {
                 }}
                 error={breakEndError ?? undefined}
               />
+              <Input
+                required
+                type="number"
+                step="any"
+                min={-90}
+                max={90}
+                label="Latitude"
+                placeholder="e.g. 28.613900"
+                value={form.latitude ?? ''}
+                onChange={(e) => setForm({ ...form, latitude: e.target.value === '' ? null : Number(e.target.value) })}
+                error={getFieldError(submitError, 'latitude')}
+              />
+              <Input
+                required
+                type="number"
+                step="any"
+                min={-180}
+                max={180}
+                label="Longitude"
+                placeholder="e.g. 77.209000"
+                value={form.longitude ?? ''}
+                onChange={(e) => setForm({ ...form, longitude: e.target.value === '' ? null : Number(e.target.value) })}
+                error={getFieldError(submitError, 'longitude')}
+              />
             </div>
 
             <div className="space-y-2">
@@ -473,6 +503,22 @@ export function LocationsPage() {
                           Schedule
                         </Button>
                         <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setClosuresLocation(l)}
+                        >
+                          <CalendarOff className="h-3.5 w-3.5" />
+                          Closures
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDayScheduleLocation(l)}
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                          Day Hours
+                        </Button>
+                        <Button
                           variant="primary"
                           size="sm"
                           onClick={() => handleNavigateToTreatments(l)}
@@ -510,6 +556,23 @@ export function LocationsPage() {
           </div>
         )}
       </Card>
+
+      {closuresLocation && (
+        <ClosuresModal
+          scope={{ kind: 'location', id: closuresLocation.id, name: closuresLocation.name }}
+          onClose={() => setClosuresLocation(null)}
+        />
+      )}
+
+      {dayScheduleLocation && (
+        <DayScheduleModal
+          locationId={dayScheduleLocation.id}
+          locationName={dayScheduleLocation.name}
+          defaultOpenTime={dayScheduleLocation.openTime}
+          defaultCloseTime={dayScheduleLocation.closeTime}
+          onClose={() => setDayScheduleLocation(null)}
+        />
+      )}
     </div>
   );
 }

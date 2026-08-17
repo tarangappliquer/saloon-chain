@@ -8,18 +8,44 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
-  saloonchains-sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: saloonchains-sqlserver
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
-    ports:
-      - "1434:1433"
-    volumes:
-      - sqlserver-data:/var/opt/mssql
-    restart: unless-stopped
+  # saloonchains-sqlserver:
+  #   image: mcr.microsoft.com/mssql/server:2022-latest
+  #   container_name: saloonchains-sqlserver
+  #   environment:
+  #     ACCEPT_EULA: "Y"
+  #     MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
+  #   ports:
+  #     - "1434:1433"
+  #   volumes:
+  #     - sqlserver-data:/var/opt/mssql
+  #   restart: unless-stopped
+
+  
+  # Whole-planet import -- NOT a quick start. Expect a multi-hour (often 1-2+ day) first-run import,
+  # ~1TB+ free disk for nominatim-data, and the mediagis image's own docs recommend 64GB+ RAM (it will
+  # run on less, but import gets dramatically slower as it swaps). THREADS below caps parallelism to
+  # your CPU core count -- turn it down if the host is shared with anything else during import.
+  # REPLICATION_URL enables `nominatim replication` for incremental updates after the initial import,
+  # instead of re-importing the whole planet file again later.
+  # saloonchains-nominatim:
+  #   image: mediagis/nominatim:5.3
+  #   container_name: saloonchains-nominatim
+  #   shm_size: 1gb
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - PBF_URL=https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf
+  #     - REPLICATION_URL=https://planet.openstreetmap.org/replication/day/
+  #     - IMPORT_STYLE=full
+  #     - THREADS=8
+  #     - NOMINATIM_PASSWORD=SaloonChains_Nominatim123!
+  #   stdin_open: true  # corresponds to the -i flag
+  #   tty: true         # corresponds to the -t flag
+  #   restart: unless-stopped
+  #   volumes:
+  #     - nominatim-data:/var/lib/postgresql/16/main
 
 volumes:
   redis-data:
-  sqlserver-data:
+  # sqlserver-data:
+  # nominatim-data:

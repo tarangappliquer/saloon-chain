@@ -23,7 +23,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetLocations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT l.Id, l.ChainId, l.Name, l.Address, l.OpenTime, l.CloseTime,
+    SELECT l.Id, l.ChainId, l.Name, l.Address,
+           CAST(l.Coordinates.Lat AS DECIMAL(9,6)) AS Latitude, CAST(l.Coordinates.Long AS DECIMAL(9,6)) AS Longitude,
+           l.OpenTime, l.CloseTime,
            COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
            COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
            l.WorkingDaysMask, l.TimeZoneId
@@ -61,14 +63,14 @@ BEGIN
         CROSS APPLY (
             SELECT TOP 1 tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
             SELECT TOP 1 td.DurationSlots, td.PreTimeMinutes
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE)
@@ -87,18 +89,34 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- DATEDIFF(DAY, 0, x) % 7 is DATEFIRST/locale-independent (day 0 = 1900-01-01, a Monday) --
+    -- 0=Mon..6=Sun, matching Locations.WorkingDaysMask's bit scheme once raised to a power of 2.
+    -- Same expression BookingService.GetAvailableDatesAsync uses in C# via (int)DayOfWeek + 6) % 7.
+    DECLARE @DayBit TINYINT = CAST(POWER(2, DATEDIFF(DAY, 0, @WorkDate) % 7) AS TINYINT);
+
     -- 1) location hours (+ explicit holiday flag, independent of whether shifts happen to exist that day)
-    SELECT l.OpenTime, l.CloseTime,
+    -- OpenTime/CloseTime resolve to this WorkDate's scheduled override (dbo.LocationDaySchedule) if
+    -- one is effective (EffectiveFrom <= WorkDate <= EffectiveTo, EffectiveTo NULL = open-ended),
+    -- else fall back to the location's own default hours. A day the override marks IsClosed rolls
+    -- into IsHoliday -- same "no slots at all" outcome as an explicit holiday.
+    SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime,
            COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
            COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
            l.WorkingDaysMask,
-        CASE WHEN EXISTS (
+        CASE WHEN dh.IsClosed = 1 OR EXISTS (
                SELECT 1
         FROM dbo.LocationHolidays h
         WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
            ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsHoliday
     FROM dbo.Locations l
         JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+        OUTER APPLY (
+            SELECT TOP 1 ds.OpenTime, ds.CloseTime, ds.IsClosed
+            FROM dbo.LocationDaySchedule ds
+            WHERE ds.LocationId = l.Id AND ds.DayBit = @DayBit AND ds.EffectiveFrom <= @WorkDate
+                AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= @WorkDate) AND ds.IsDelete = 0
+            ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
+        ) dh
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
 
     -- 2) requested treatments (duration/category/price) as offered at this location
@@ -108,14 +126,14 @@ BEGIN
         CROSS APPLY (
             SELECT TOP 1 tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
             SELECT TOP 1 td.DurationSlots
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
@@ -125,9 +143,16 @@ BEGIN
         Loc
         AS
         (
-            SELECT OpenTime, CloseTime
-            FROM dbo.Locations
-            WHERE Id = @LocationId AND IsDelete = 0 AND IsActive = 1
+            SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
+            FROM dbo.Locations l
+                OUTER APPLY (
+                    SELECT TOP 1 ds.OpenTime, ds.CloseTime
+                    FROM dbo.LocationDaySchedule ds
+                    WHERE ds.LocationId = l.Id AND ds.DayBit = @DayBit AND ds.EffectiveFrom <= @WorkDate
+                        AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= @WorkDate) AND ds.IsDelete = 0
+                    ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
+                ) dh
+            WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1
         ),
         TargetCategories
         AS
@@ -230,15 +255,43 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- 1) location hours -- date-independent, so no per-date holiday flag here (callers already
-    -- resolve holiday dates for the whole range separately -- see CatalogRepository.GetHolidayDatesAsync).
-    SELECT l.OpenTime, l.CloseTime,
-           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+    -- 1) location -- break times/working-days-mask are date-independent (no per-date holiday flag
+    -- either -- callers already resolve holiday dates for the whole range separately, see
+    -- CatalogRepository.GetHolidayDatesAsync). OpenTime/CloseTime are NOT included here -- they can
+    -- vary per date (dbo.LocationDaySchedule effective-dated overrides), see result set 1b below.
+    SELECT COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
            COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
            l.WorkingDaysMask
     FROM dbo.Locations l
         JOIN dbo.SaloonChains c ON c.Id = l.ChainId
     WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
+
+    -- 1b) per-date resolved OpenTime/CloseTime for every date in the range -- same
+    -- COALESCE-to-location-default resolution as sp_Booking_GetAvailabilityData's single-date
+    -- version, just once per date instead of once per call. A date whose override is IsClosed is
+    -- dropped from this result set entirely -- GetAvailableDatesAsync treats a date missing here
+    -- the same as it would a holiday (no slots), so no separate closed-flag column is needed.
+    ;WITH DateSpine AS (
+        SELECT @FromDate AS WorkDate
+        UNION ALL
+        SELECT DATEADD(DAY, 1, WorkDate) FROM DateSpine WHERE WorkDate < @ToDate
+    )
+    SELECT ds.WorkDate,
+           COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
+    FROM DateSpine ds
+        CROSS JOIN dbo.Locations l
+        OUTER APPLY (
+            SELECT TOP 1 lds.OpenTime, lds.CloseTime, lds.IsClosed
+            FROM dbo.LocationDaySchedule lds
+            WHERE lds.LocationId = l.Id
+                AND lds.DayBit = CAST(POWER(2, DATEDIFF(DAY, 0, ds.WorkDate) % 7) AS TINYINT)
+                AND lds.EffectiveFrom <= ds.WorkDate
+                AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= ds.WorkDate) AND lds.IsDelete = 0
+            ORDER BY CASE WHEN lds.EffectiveTo = lds.EffectiveFrom THEN 1 WHEN lds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, lds.EffectiveFrom DESC
+        ) dh
+    WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1
+        AND (dh.IsClosed IS NULL OR dh.IsClosed = 0)
+    OPTION (MAXRECURSION 366);
 
     -- 2) requested treatments (duration/category/price) -- same for every date in the range
     SELECT t.Id, t.CategoryId, cd.DurationSlots, cp.Price
@@ -247,14 +300,14 @@ BEGIN
         CROSS APPLY (
             SELECT TOP 1 tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
             SELECT TOP 1 td.DurationSlots
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
@@ -266,10 +319,20 @@ BEGIN
         UNION ALL
         SELECT DATEADD(DAY, 1, WorkDate) FROM Dates WHERE WorkDate < @ToDate
     ),
-    Loc AS (
-        SELECT OpenTime, CloseTime
-        FROM dbo.Locations
-        WHERE Id = @LocationId AND IsDelete = 0 AND IsActive = 1
+    DayHours AS (
+        SELECT d.WorkDate, COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
+        FROM Dates d
+            CROSS JOIN dbo.Locations l
+            OUTER APPLY (
+                SELECT TOP 1 lds.OpenTime, lds.CloseTime
+                FROM dbo.LocationDaySchedule lds
+                WHERE lds.LocationId = l.Id
+                    AND lds.DayBit = CAST(POWER(2, DATEDIFF(DAY, 0, d.WorkDate) % 7) AS TINYINT)
+                    AND lds.EffectiveFrom <= d.WorkDate
+                    AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= d.WorkDate) AND lds.IsDelete = 0
+                ORDER BY CASE WHEN lds.EffectiveTo = lds.EffectiveFrom THEN 1 WHEN lds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, lds.EffectiveFrom DESC
+            ) dh
+        WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1
     ),
     TargetCategories AS (
         SELECT DISTINCT t.CategoryId
@@ -309,10 +372,10 @@ BEGIN
 
         UNION ALL
 
-            SELECT d.WorkDate, CAST(NULL AS INT) AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, l.OpenTime AS ShiftStart, l.CloseTime AS ShiftEnd
+            SELECT d.WorkDate, CAST(NULL AS INT) AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, dh.OpenTime AS ShiftStart, dh.CloseTime AS ShiftEnd
             FROM Dates d
                 CROSS JOIN dbo.TherapistProfile tp
-                CROSS JOIN Loc l
+                JOIN DayHours dh ON dh.WorkDate = d.WorkDate
             WHERE tp.IsDelete = 0 AND tp.IsActive = 1
                 AND (tp.LocationId = @LocationId OR tp.LocationId IS NULL)
                 AND NOT EXISTS (
@@ -431,14 +494,14 @@ BEGIN
         CROSS APPLY (
             SELECT TOP 1 tp.Id, tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
             SELECT TOP 1 td.Id, td.DurationSlots
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
@@ -478,14 +541,14 @@ BEGIN
         CROSS APPLY (
             SELECT TOP 1 tp.Id, tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         CROSS APPLY (
             SELECT TOP 1 td.Id, td.DurationSlots
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
@@ -1435,7 +1498,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetLocations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT l.Id, l.ChainId, l.Name, l.Address, l.OpenTime, l.CloseTime,
+    SELECT l.Id, l.ChainId, l.Name, l.Address,
+           CAST(l.Coordinates.Lat AS DECIMAL(9,6)) AS Latitude, CAST(l.Coordinates.Long AS DECIMAL(9,6)) AS Longitude,
+           l.OpenTime, l.CloseTime,
            COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
            COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
            l.WorkingDaysMask, l.TimeZoneId, l.IsActive
@@ -1459,14 +1524,14 @@ BEGIN
         OUTER APPLY (
             SELECT TOP 1 tp.Price
             FROM dbo.TreatmentPrices tp
-            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND tp.IsDelete = 0
-            ORDER BY tp.EffectiveFrom DESC
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND tp.IsDelete = 0
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
         ) cp
         OUTER APPLY (
             SELECT TOP 1 td.DurationSlots, td.PreTimeMinutes
             FROM dbo.TreatmentDurations td
-            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND td.IsDelete = 0
-            ORDER BY td.EffectiveFrom DESC
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= CAST(GETUTCDATE() AS DATE) AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= CAST(GETUTCDATE() AS DATE)) AND td.IsDelete = 0
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
         ) cd
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0
     ORDER BY tc.Name, t.Name;
@@ -1532,6 +1597,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateLocation
     @ChainId         INT,
     @Name            NVARCHAR(200),
     @Address         NVARCHAR(400) = NULL,
+    @Latitude        DECIMAL(9,6) = NULL,
+    @Longitude       DECIMAL(9,6) = NULL,
     @OpenTime        TIME,
     @CloseTime       TIME,
     @BreakStartTime  TIME = NULL,
@@ -1543,10 +1610,13 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_CreateLocation
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @Coordinates GEOGRAPHY = CASE WHEN @Latitude IS NOT NULL AND @Longitude IS NOT NULL
+        THEN geography::Point(@Latitude, @Longitude, 4326) ELSE NULL END;
+
     INSERT INTO dbo.Locations
-        (ChainId, Name, Address, OpenTime, CloseTime, BreakStartTime, BreakEndTime, WorkingDaysMask, TimeZoneId, CreatedBy)
+        (ChainId, Name, Address, Coordinates, OpenTime, CloseTime, BreakStartTime, BreakEndTime, WorkingDaysMask, TimeZoneId, CreatedBy)
     VALUES
-        (@ChainId, @Name, @Address, @OpenTime, @CloseTime, @BreakStartTime, @BreakEndTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
+        (@ChainId, @Name, @Address, @Coordinates, @OpenTime, @CloseTime, @BreakStartTime, @BreakEndTime, @WorkingDaysMask, @TimeZoneId, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1555,6 +1625,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateLocation
     @Id              INT,
     @Name            NVARCHAR(200),
     @Address         NVARCHAR(400) = NULL,
+    @Latitude        DECIMAL(9,6) = NULL,
+    @Longitude       DECIMAL(9,6) = NULL,
     @OpenTime        TIME,
     @CloseTime       TIME,
     @BreakStartTime  TIME = NULL,
@@ -1566,8 +1638,12 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_UpdateLocation
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @Coordinates GEOGRAPHY = CASE WHEN @Latitude IS NOT NULL AND @Longitude IS NOT NULL
+        THEN geography::Point(@Latitude, @Longitude, 4326) ELSE NULL END;
+
     UPDATE dbo.Locations
-    SET Name = @Name, Address = @Address, OpenTime = @OpenTime, CloseTime = @CloseTime,
+    SET Name = @Name, Address = @Address, Coordinates = @Coordinates,
+        OpenTime = @OpenTime, CloseTime = @CloseTime,
         BreakStartTime = @BreakStartTime, BreakEndTime = @BreakEndTime,
         WorkingDaysMask = @WorkingDaysMask, TimeZoneId = @TimeZoneId, IsActive = @IsActive,
         UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
@@ -1590,6 +1666,162 @@ BEGIN
 
     IF @@ROWCOUNT = 0
         THROW 50022, 'Location not found.', 1;
+END
+GO
+
+-- Full scheduled-entry history for a location, every day mixed together (newest EffectiveFrom
+-- first) -- the caller groups by DayBit and treats the first (latest EffectiveFrom <= today) row
+-- per day as "current", any later-dated rows as "upcoming" (same convention TreatmentPricesPage
+-- already uses client-side for prices/durations: EffectiveFrom > today => not yet active).
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetLocationDaySchedule
+    @LocationId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, DayBit, OpenTime, CloseTime, IsClosed, EffectiveFrom, EffectiveTo
+    FROM dbo.LocationDaySchedule
+    WHERE LocationId = @LocationId AND IsDelete = 0
+    ORDER BY DayBit, EffectiveFrom DESC;
+END
+GO
+
+-- Schedules a day's hours (or a closed override) for a single date, a bounded date range
+-- (@EffectiveTo set), or open-ended (@EffectiveTo NULL, stays in effect until superseded) -- never
+-- edits an existing row in place, so a day's hours on any past date stay reconstructable, same
+-- convention as sp_Catalog_AddTreatmentPrice.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AddLocationDaySchedule
+    @LocationId    INT,
+    @DayBit        TINYINT,
+    @EffectiveFrom DATE,
+    @CreatedBy     INT,
+    @OpenTime      TIME = NULL,
+    @CloseTime     TIME = NULL,
+    @IsClosed      BIT = 0,
+    @EffectiveTo   DATE = NULL,
+    @Id            INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @IsClosed = 0 AND (@OpenTime IS NULL OR @CloseTime IS NULL)
+        THROW 50072, 'Open and close time are required unless the day is marked closed.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.LocationDaySchedule
+        WHERE LocationId = @LocationId AND DayBit = @DayBit AND EffectiveFrom = @EffectiveFrom AND IsDelete = 0
+    )
+        THROW 50069, 'Hours are already scheduled for this day and date.', 1;
+
+    INSERT INTO dbo.LocationDaySchedule (LocationId, DayBit, OpenTime, CloseTime, IsClosed, EffectiveFrom, EffectiveTo, CreatedBy)
+    VALUES (@LocationId, @DayBit, @OpenTime, @CloseTime, @IsClosed, @EffectiveFrom, @EffectiveTo, @CreatedBy);
+    SET @Id = SCOPE_IDENTITY();
+END
+GO
+
+-- Cancels a not-yet-effective scheduled entry -- refuses once its EffectiveFrom has already passed,
+-- same convention as sp_Catalog_DeleteTreatmentDuration ("already in effect" guard); a day's current
+-- hours are never removable this way, only future-dated ones still pending.
+CREATE OR ALTER PROCEDURE dbo.sp_Catalog_DeleteLocationDaySchedule
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.LocationDaySchedule
+        WHERE Id = @Id AND IsDelete = 0 AND EffectiveFrom <= CAST(GETUTCDATE() AS DATE)
+    )
+        THROW 50070, 'Cannot cancel hours that are already in effect.', 1;
+
+    UPDATE dbo.LocationDaySchedule
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50071, 'Scheduled hours not found.', 1;
+END
+GO
+
+-- Lists closures (holidays/maintenance days) for admin management -- either one location
+-- (@LocationId) or every location under a chain (@ChainId), for the "whole saloon" scope view.
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_GetLocationClosures
+    @LocationId INT = NULL,
+    @ChainId    INT = NULL,
+    @Id         INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT h.Id, h.LocationId, l.Name AS LocationName, l.ChainId, h.HolidayDate, h.Reason, h.Type
+    FROM dbo.LocationHolidays h
+        JOIN dbo.Locations l ON l.Id = h.LocationId
+    WHERE h.IsDelete = 0 AND h.IsActive = 1
+        AND (@LocationId IS NULL OR h.LocationId = @LocationId)
+        AND (@ChainId IS NULL OR l.ChainId = @ChainId)
+        AND (@Id IS NULL OR h.Id = @Id)
+    ORDER BY h.HolidayDate DESC, l.Name;
+END
+GO
+
+-- Closes one or more locations (a single location, or every location in a chain -- caller resolves
+-- @LocationIds) over an inclusive date range in one atomic call. Rejects the whole request with a
+-- 409 (THROW 50000-50999 convention, see AppExceptionHandler) if ANY date in the range already has
+-- a non-cancelled booking at ANY of the target locations -- partial closures would leave a booked
+-- day silently un-closed, which is worse than failing loud and letting the admin split the range.
+-- Dates already closed (e.g. re-submitting an overlapping range) are silently skipped, not duplicated
+-- -- see UQ_LocationHolidays_Location_Date.
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_CreateLocationClosures
+    @LocationIds dbo.IntIdList READONLY,
+    @FromDate    DATE,
+    @ToDate      DATE,
+    @Type        VARCHAR(20),
+    @Reason      NVARCHAR(200) = NULL,
+    @CreatedBy   INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @Dates TABLE (D DATE PRIMARY KEY);
+    ;WITH Seq AS (
+        SELECT @FromDate AS D
+        UNION ALL
+        SELECT DATEADD(DAY, 1, D) FROM Seq WHERE D < @ToDate
+    )
+    INSERT INTO @Dates (D) SELECT D FROM Seq OPTION (MAXRECURSION 366);
+
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.Bookings b
+            JOIN dbo.BookingTreatments bt ON bt.BookingId = b.Id AND bt.IsDelete = 0
+            JOIN @LocationIds li ON li.Id = b.LocationId
+            JOIN @Dates d ON d.D = CAST(bt.StartTime AS DATE)
+        WHERE b.IsDelete = 0 AND b.Status <> 'Cancelled'
+    )
+        THROW 50068, 'Cannot close -- one or more existing bookings fall within this date range.', 1;
+
+    INSERT INTO dbo.LocationHolidays (LocationId, HolidayDate, Reason, Type, CreatedBy)
+    SELECT li.Id, d.D, @Reason, @Type, @CreatedBy
+    FROM @LocationIds li
+        CROSS JOIN @Dates d
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dbo.LocationHolidays h
+        WHERE h.LocationId = li.Id AND h.HolidayDate = d.D AND h.IsDelete = 0
+    );
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_Admin_DeleteLocationClosure
+    @Id        INT,
+    @UpdatedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE dbo.LocationHolidays
+    SET IsDelete = 1, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @@ROWCOUNT = 0
+        THROW 50022, 'Closure not found.', 1;
 END
 GO
 
@@ -1706,6 +1938,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AddTreatmentPrice
     @Price         DECIMAL(10,2),
     @EffectiveFrom DATE,
     @CreatedBy     INT,
+    @EffectiveTo   DATE = NULL,
     @Id            INT OUTPUT
 AS
 BEGIN
@@ -1720,8 +1953,8 @@ BEGIN
     )
         THROW 50026, 'A price is already scheduled for this date.', 1;
 
-    INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom, CreatedBy)
-    VALUES (@TreatmentId, @Price, @EffectiveFrom, @CreatedBy);
+    INSERT INTO dbo.TreatmentPrices (TreatmentId, Price, EffectiveFrom, EffectiveTo, CreatedBy)
+    VALUES (@TreatmentId, @Price, @EffectiveFrom, @EffectiveTo, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1759,7 +1992,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatmentPrices
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Price, EffectiveFrom
+    SELECT Id, Price, EffectiveFrom, EffectiveTo
     FROM dbo.TreatmentPrices
     WHERE TreatmentId = @TreatmentId AND IsDelete = 0
     ORDER BY EffectiveFrom DESC;
@@ -1769,9 +2002,10 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_AddTreatmentDuration
     @TreatmentId   INT,
     @DurationSlots SMALLINT,
-    @PreTimeMinutes SMALLINT = 0,
     @EffectiveFrom DATE,
     @CreatedBy     INT,
+    @PreTimeMinutes SMALLINT = 0,
+    @EffectiveTo   DATE = NULL,
     @Id            INT OUTPUT
 AS
 BEGIN
@@ -1799,8 +2033,8 @@ BEGIN
     )
         THROW 50028, 'Cannot schedule this duration change -- a booking already exists on or after that date.', 1;
 
-    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, PreTimeMinutes, EffectiveFrom, CreatedBy)
-    VALUES (@TreatmentId, @DurationSlots, @PreTimeMinutes, @EffectiveFrom, @CreatedBy);
+    INSERT INTO dbo.TreatmentDurations (TreatmentId, DurationSlots, PreTimeMinutes, EffectiveFrom, EffectiveTo, CreatedBy)
+    VALUES (@TreatmentId, @DurationSlots, @PreTimeMinutes, @EffectiveFrom, @EffectiveTo, @CreatedBy);
     SET @Id = SCOPE_IDENTITY();
 END
 GO
@@ -1836,7 +2070,7 @@ CREATE OR ALTER PROCEDURE dbo.sp_Catalog_GetTreatmentDurations
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, DurationSlots, PreTimeMinutes, EffectiveFrom
+    SELECT Id, DurationSlots, PreTimeMinutes, EffectiveFrom, EffectiveTo
     FROM dbo.TreatmentDurations
     WHERE TreatmentId = @TreatmentId AND IsDelete = 0
     ORDER BY EffectiveFrom DESC;
@@ -3837,9 +4071,28 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Replace any existing un-finalized Draft pay run for the exact same location and period
+    BEGIN TRAN;
+
+    -- Regenerating the exact same location+period while it's still Draft is a legitimate "redo"
+    -- (e.g. admin fixed a commission rule) -- clear it out before the overlap check below, so this
+    -- exact range doesn't count as "already generated" against itself.
     DELETE FROM dbo.PayRuns
     WHERE LocationId = @LocationId AND PeriodStart = @PeriodStart AND PeriodEnd = @PeriodEnd AND Status = 'Draft';
+
+    -- Any OTHER pay run (Draft or Finalized) whose period overlaps this one at all -- not just an
+    -- exact match -- would double-count Confirmed revenue for the overlapping days across two runs.
+    -- UPDLOCK+HOLDLOCK: without it, two concurrent generate calls for overlapping-but-not-identical
+    -- periods can both pass this check (each sees "no overlap yet" under plain READ COMMITTED, since
+    -- a shared-lock read releases immediately) and both INSERT -- this serializes the check against
+    -- the same LocationId until whichever transaction runs it first commits or rolls back.
+    IF EXISTS (
+        SELECT 1 FROM dbo.PayRuns WITH (UPDLOCK, HOLDLOCK)
+        WHERE LocationId = @LocationId AND PeriodStart <= @PeriodEnd AND PeriodEnd >= @PeriodStart
+    )
+    BEGIN
+        ROLLBACK TRAN;
+        THROW 50067, 'A pay run already exists for a date range overlapping this period.', 1;
+    END
 
     INSERT INTO dbo.PayRuns (LocationId, PeriodStart, PeriodEnd, CreatedBy)
     VALUES (@LocationId, @PeriodStart, @PeriodEnd, @CreatedBy);
@@ -3891,6 +4144,8 @@ BEGIN
         ROUND(OvertimeHours * HourlyRate * OvertimeRateMultiplier, 2) AS OvertimePay,
         ROUND(CommissionAmount + (RegularHours * HourlyRate) + (OvertimeHours * HourlyRate * OvertimeRateMultiplier), 2) AS TotalPay
     FROM Calculated;
+
+    COMMIT TRAN;
 END
 GO
 

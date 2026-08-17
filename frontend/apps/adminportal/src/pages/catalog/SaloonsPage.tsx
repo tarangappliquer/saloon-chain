@@ -1,19 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
-import { Building2, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
+import { Building2, CalendarOff, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 import { routes } from '../../routes';
 
 import { TimeInput } from '../../components/TimeInput';
+import { ClosuresModal } from '../../components/ClosuresModal';
+import { toApiTime, validateBreakTimes } from '../../lib/time';
 
 export function SaloonsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const isRootSuperAdmin = currentUser?.role === 'RootSuperAdmin';
-  const canEditChain = isRootSuperAdmin || currentUser?.role === 'SuperAdmin';
+  const canEditChain = isRootSuperAdmin || currentUser?.role === 'SuperAdmin' || currentUser?.role === 'Admin';
   const [chains, setChains] = useState<Chain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,7 @@ export function SaloonsPage() {
   const [selectedChainForLocations, setSelectedChainForLocations] = useState<Chain | null>(null);
   const [chainLocations, setChainLocations] = useState<Location[]>([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
+  const [closuresChain, setClosuresChain] = useState<Chain | null>(null);
 
   async function loadChains() {
     setLoading(true);
@@ -98,30 +101,18 @@ export function SaloonsPage() {
     setBreakStartError(null);
     setBreakEndError(null);
 
-    if (breakStartTime && !breakEndTime) {
-      setBreakEndError('Break End Time is required when Start Time is provided.');
+    const breakErrors = validateBreakTimes(breakStartTime, breakEndTime);
+    if (breakErrors.startError || breakErrors.endError) {
+      setBreakStartError(breakErrors.startError);
+      setBreakEndError(breakErrors.endError);
       setError('Please fix the validation errors below.');
       return;
-    }
-    if (!breakStartTime && breakEndTime) {
-      setBreakStartError('Break Start Time is required when End Time is provided.');
-      setError('Please fix the validation errors below.');
-      return;
-    }
-    if (breakStartTime && breakEndTime) {
-      const [sh, sm] = breakStartTime.split(':').map(Number);
-      const [eh, em] = breakEndTime.split(':').map(Number);
-      if (eh * 60 + em <= sh * 60 + sm) {
-        setBreakEndError('Break End Time must be greater than Break Start Time.');
-        setError('Please fix the validation errors below.');
-        return;
-      }
     }
 
     setSubmitting(true);
     try {
-      const bStart = breakStartTime ? (breakStartTime.length === 5 ? `${breakStartTime}:00` : breakStartTime) : null;
-      const bEnd = breakEndTime ? (breakEndTime.length === 5 ? `${breakEndTime}:00` : breakEndTime) : null;
+      const bStart = toApiTime(breakStartTime);
+      const bEnd = toApiTime(breakEndTime);
 
       if (editingChain) {
         await adminCatalogApi.apiAdminCatalogChainsIdPut(editingChain.id, {
@@ -385,6 +376,12 @@ export function SaloonsPage() {
                           Locations
                         </Button>
                         {canEditChain && (
+                          <Button variant="outline" size="sm" onClick={() => setClosuresChain(c)}>
+                            <CalendarOff className="h-3.5 w-3.5" />
+                            Close Saloon
+                          </Button>
+                        )}
+                        {canEditChain && (
                           <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>
                             Edit
                           </Button>
@@ -476,6 +473,13 @@ export function SaloonsPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {closuresChain && (
+        <ClosuresModal
+          scope={{ kind: 'chain', id: closuresChain.id, name: closuresChain.name }}
+          onClose={() => setClosuresChain(null)}
+        />
       )}
     </div>
   );

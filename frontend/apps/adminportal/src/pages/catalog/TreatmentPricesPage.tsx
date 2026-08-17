@@ -7,7 +7,8 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location, Treatment, TreatmentPrice } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TreatmentCatalogTabs } from '../../components/TreatmentCatalogTabs';
-import { DateInput } from '../../components/DateInput';
+import { EffectiveDateFields } from '../../components/EffectiveDateFields';
+import { resolveEffectiveTo, describeEffectiveWindow, type EffectiveMode } from '../../lib/effectiveDate';
 import { routes } from '../../routes';
 
 function today() {
@@ -15,7 +16,7 @@ function today() {
 }
 
 function emptyPriceForm() {
-  return { price: '', effectiveFrom: today() };
+  return { price: '', mode: 'from' as EffectiveMode, effectiveFrom: today(), effectiveTo: today() };
 }
 
 export function TreatmentPricesPage() {
@@ -186,6 +187,7 @@ export function TreatmentPricesPage() {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPricesPost(treatmentId, {
         price: Number(priceForm.price),
         effectiveFrom: priceForm.effectiveFrom,
+        effectiveTo: resolveEffectiveTo(priceForm.mode, priceForm.effectiveFrom, priceForm.effectiveTo),
       });
       setPriceForm(emptyPriceForm());
       await loadPriceHistory(treatmentId);
@@ -301,7 +303,7 @@ export function TreatmentPricesPage() {
                               error={getFieldError(editPriceError, 'price')}
                               className="w-24"
                             />
-                            <span className="text-muted-foreground shrink-0">from {p.effectiveFrom}</span>
+                            <span className="text-muted-foreground shrink-0">{describeEffectiveWindow(p.effectiveFrom, p.effectiveTo)}</span>
                             <Button type="submit" size="sm" disabled={savingEditPrice}>
                               {savingEditPrice ? 'Saving...' : 'Save'}
                             </Button>
@@ -319,7 +321,7 @@ export function TreatmentPricesPage() {
                       <li key={p.id} className="flex items-center justify-between py-2.5">
                         <span className="font-mono font-semibold text-foreground">${p.price.toFixed(2)}</span>
                         <span className="text-muted-foreground flex items-center gap-1.5">
-                          from {p.effectiveFrom}
+                          {describeEffectiveWindow(p.effectiveFrom, p.effectiveTo)}
                           {isFuture && <Badge status="Inactive" className="text-[10px] py-0 px-1.5" />}
                           <Button variant="ghost" size="sm" onClick={() => handleStartEditPrice(p)}>
                             Edit
@@ -349,17 +351,19 @@ export function TreatmentPricesPage() {
                   onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })}
                   error={getFieldError(priceSubmitError, 'price')}
                 />
-                <DateInput
-                  required
-                  label="Effective From"
-                  helperText="Two prices can't share the same effective date."
-                  value={priceForm.effectiveFrom}
-                  onChange={(e) => setPriceForm({ ...priceForm, effectiveFrom: e.target.value })}
-                  error={
+                <EffectiveDateFields
+                  mode={priceForm.mode}
+                  onModeChange={(mode) => setPriceForm({ ...priceForm, mode })}
+                  fromDate={priceForm.effectiveFrom}
+                  onFromDateChange={(v) => setPriceForm({ ...priceForm, effectiveFrom: v })}
+                  toDate={priceForm.effectiveTo}
+                  onToDateChange={(v) => setPriceForm({ ...priceForm, effectiveTo: v })}
+                  fromError={
                     (priceSubmitError as { message?: string } | null)?.message ||
                     getFieldError(priceSubmitError, 'effectiveFrom')
                   }
                 />
+                <p className="text-xs text-muted-foreground">Two prices can't share the same effective start date.</p>
                 <Button type="submit" disabled={savingPrice} className="w-full">
                   {savingPrice ? 'Scheduling...' : 'Schedule Price'}
                 </Button>

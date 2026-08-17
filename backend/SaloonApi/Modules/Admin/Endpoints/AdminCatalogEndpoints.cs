@@ -89,10 +89,10 @@ internal static class AdminCatalogEndpoints
 
         // No scoping check needed for POST/DELETE -- ChainManagement admits only RootSuperAdmin (see
         // Program.cs), which has no chain of its own to be scoped by. PUT uses ChainDetailsManagement
-        // instead, which also admits a chain's own SuperAdmin, so it needs the explicit id check below.
+        // instead, which also admits a chain's own SuperAdmin/Admin, so it needs the explicit id check below.
         group.MapPut("/chains/{id:int}", async (int id, ChainUpdateRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.SuperAdmin) && currentUser.ChainId != id)
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != id)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
             var breakError = ValidateBreakTimes(req.BreakStartTime, req.BreakEndTime);
@@ -104,7 +104,7 @@ internal static class AdminCatalogEndpoints
           .Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .ProducesProblem(StatusCodes.Status403Forbidden)
-          .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin any chain, SuperAdmin their own).");
+          .WithDescription("Rename or activate/deactivate a chain (RootSuperAdmin any chain, SuperAdmin/Admin their own).");
 
         group.MapDelete("/chains/{id:int}", async (int id, CatalogRepository repo) =>
         {
@@ -123,7 +123,7 @@ internal static class AdminCatalogEndpoints
             if (breakError != null) return breakError;
 
             return Results.Ok(new IdResponse(await repo.CreateLocationAsync(
-                req.ChainId, req.Name, req.Address, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId)));
+                req.ChainId, req.Name, req.Address, req.Latitude, req.Longitude, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId)));
         }).WithValidation<LocationRequest>().RequireAuthorization("LocationManagement")
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -145,7 +145,7 @@ internal static class AdminCatalogEndpoints
             if (breakError != null) return breakError;
 
             await repo.UpdateLocationAsync(
-                id, req.Name, req.Address, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
+                id, req.Name, req.Address, req.Latitude, req.Longitude, req.OpenTime, req.CloseTime, req.BreakStartTime, req.BreakEndTime, req.WorkingDaysMask, req.TimeZoneId, req.IsActive);
             return Results.NoContent();
         }).WithValidation<LocationUpdateRequest>().RequireAuthorization("LocationDetailsManagement")
           .Produces(StatusCodes.Status204NoContent)
@@ -160,6 +160,49 @@ internal static class AdminCatalogEndpoints
         }).RequireAuthorization("LocationManagement")
           .Produces(StatusCodes.Status204NoContent)
           .WithDescription("Soft-delete a location.");
+
+        // Full effective-dated history, every day mixed together -- caller groups by DayBit and
+        // treats the first (latest EffectiveFrom <= today) row per day as current, later-dated rows
+        // as upcoming/cancellable. Same trust level as PUT /locations/{id} -- no separate ownership
+        // fetch needed beyond the Manager check, the location id only ever reaches this handler via a
+        // dropdown GET /locations already scoped to the caller's own chain.
+        group.MapGet("/locations/{id:int}/day-schedule", async (int id, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(await repo.GetLocationDayScheduleAsync(id));
+        }).Produces<IEnumerable<LocationDayScheduleDto>>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List a location's effective-dated per-day hours history (current + upcoming).");
+
+        group.MapPost("/locations/{id:int}/day-schedule", async (int id, LocationDayScheduleRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new IdResponse(await repo.AddLocationDayScheduleAsync(
+                id, req.DayBit, req.EffectiveFrom, req.OpenTime, req.CloseTime, req.IsClosed, req.EffectiveTo)));
+        }).WithValidation<LocationDayScheduleRequest>()
+          .RequireAuthorization("LocationDetailsManagement")
+          .Produces<IdResponse>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Schedule a day's hours effective from a given date; rejected with 409 if that day/date is already scheduled.");
+
+        group.MapDelete("/locations/{id:int}/day-schedule/{scheduleId:int}", async (int id, int scheduleId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != id)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            await repo.DeleteLocationDayScheduleAsync(scheduleId);
+            return Results.NoContent();
+        }).RequireAuthorization("LocationDetailsManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Cancel a not-yet-effective scheduled hours change; rejected with 409 if it's already in effect.");
 
         group.MapGet("/treatment-categories", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
@@ -256,7 +299,7 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            return Results.Ok(new IdResponse(await repo.AddTreatmentPriceAsync(id, req.Price, req.EffectiveFrom)));
+            return Results.Ok(new IdResponse(await repo.AddTreatmentPriceAsync(id, req.Price, req.EffectiveFrom, req.EffectiveTo)));
         }).WithValidation<TreatmentPriceRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -309,7 +352,7 @@ internal static class AdminCatalogEndpoints
                     return Results.Problem("Not authorized for this treatment.", statusCode: StatusCodes.Status403Forbidden);
             }
 
-            return Results.Ok(new IdResponse(await repo.AddTreatmentDurationAsync(id, req.DurationSlots, req.PreTimeMinutes, req.EffectiveFrom)));
+            return Results.Ok(new IdResponse(await repo.AddTreatmentDurationAsync(id, req.DurationSlots, req.PreTimeMinutes, req.EffectiveFrom, req.EffectiveTo)));
         }).WithValidation<TreatmentDurationRequest>()
           .Produces<IdResponse>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -444,6 +487,94 @@ internal static class AdminCatalogEndpoints
           .Produces(StatusCodes.Status204NoContent)
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Update a room's name or active state.");
+
+        group.MapGet("/closures", async (int? locationId, int? chainId, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            if (locationId is null && chainId is null)
+                return Results.Problem("Specify locationId or chainId.", statusCode: StatusCodes.Status400BadRequest);
+
+            if (currentUser.IsInRole(UserRole.Manager) && locationId != currentUser.LocationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin))
+            {
+                if (chainId is not null && chainId != currentUser.ChainId)
+                    return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
+
+                // chainId alone doesn't cover a locationId-only request -- resolve that location's own
+                // chain and check it too, same as POST /closures already does.
+                if (locationId is not null)
+                {
+                    var location = await repo.GetLocationByIdForAdminAsync(locationId.Value);
+                    if (location is null || location.ChainId != currentUser.ChainId)
+                        return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
+
+            return Results.Ok(await repo.GetClosuresAsync(locationId, chainId));
+        }).Produces<IEnumerable<LocationClosureDto>>()
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .WithDescription("List closures (holidays/maintenance) for one location or every location in a chain.");
+
+        // Closes one location, or every location in a chain (@ChainId), over an inclusive date range.
+        // "Whole chain" scope needs RootSuperAdmin or that chain's own SuperAdmin/Admin -- the same
+        // trust level as ChainDetailsManagement (Program.cs) -- since it touches every location under
+        // it, not just one Admin/Manager already owns; single-location scope stays at the usual
+        // LocationDetailsManagement level.
+        group.MapPost("/closures", async (LocationClosureRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            IReadOnlyList<int> locationIds;
+            if (req.ChainId is { } chainId)
+            {
+                if (!currentUser.IsInRole(UserRole.RootSuperAdmin) &&
+                    !(currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId == chainId))
+                    return Results.Problem("Not authorized to close an entire saloon chain.", statusCode: StatusCodes.Status403Forbidden);
+
+                locationIds = (await repo.GetLocationsForAdminAsync(chainId)).Select(l => l.Id).ToList();
+            }
+            else
+            {
+                var locationId = req.LocationId!.Value;
+                if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+                    return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+                if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin))
+                {
+                    var location = await repo.GetLocationByIdForAdminAsync(locationId);
+                    if (location is null || location.ChainId != currentUser.ChainId)
+                        return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                locationIds = [locationId];
+            }
+
+            await repo.CreateClosuresAsync(locationIds, req.FromDate, req.ToDate, req.Type, req.Reason);
+            return Results.NoContent();
+        }).WithValidation<LocationClosureRequest>()
+          .RequireAuthorization("LocationDetailsManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status400BadRequest)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status409Conflict)
+          .WithDescription("Close a location (or a whole chain) for a date range; rejected with 409 if a booking already exists on any date in range.");
+
+        group.MapDelete("/closures/{id:int}", async (int id, ICurrentUser currentUser, CatalogRepository repo) =>
+        {
+            var closure = (await repo.GetClosuresAsync(null, null, id)).FirstOrDefault();
+            if (closure is null)
+                return Results.NotFound();
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != closure.LocationId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != closure.ChainId)
+                return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
+
+            await repo.DeleteClosureAsync(id);
+            return Results.NoContent();
+        }).RequireAuthorization("LocationDetailsManagement")
+          .Produces(StatusCodes.Status204NoContent)
+          .ProducesProblem(StatusCodes.Status403Forbidden)
+          .ProducesProblem(StatusCodes.Status404NotFound)
+          .WithDescription("Remove a closure, re-opening that date.");
     }
 
     private static IResult? ValidateBreakTimes(TimeSpan? start, TimeSpan? end)
@@ -469,9 +600,14 @@ internal sealed record ChainRequest(string Name, TimeSpan? BreakStartTime, TimeS
 internal sealed record ChainUpdateRequest(string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, bool IsActive);
 
 internal sealed record LocationRequest(
-    int ChainId, string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId);
+    int ChainId, string Name, string? Address, decimal? Latitude, decimal? Longitude,
+    TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId);
 internal sealed record LocationUpdateRequest(
-    string Name, string? Address, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
+    string Name, string? Address, decimal? Latitude, decimal? Longitude,
+    TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId, bool IsActive);
+
+internal sealed record LocationDayScheduleRequest(
+    byte DayBit, DateOnly EffectiveFrom, TimeSpan? OpenTime, TimeSpan? CloseTime, bool IsClosed, DateOnly? EffectiveTo);
 
 internal sealed record TreatmentCategoryRequest(int LocationId, string Name);
 internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive);
@@ -479,9 +615,9 @@ internal sealed record TreatmentCategoryUpdateRequest(string Name, bool IsActive
 internal sealed record TreatmentRequest(
     int LocationId, int CategoryId, string Name, string? Description, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, decimal Price);
 internal sealed record TreatmentUpdateRequest(int CategoryId, string Name, string? Description, DateOnly EffectiveFrom, bool IsActive);
-internal sealed record TreatmentPriceRequest(decimal Price, DateOnly EffectiveFrom);
+internal sealed record TreatmentPriceRequest(decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 internal sealed record TreatmentPriceUpdateRequest(decimal Price);
-internal sealed record TreatmentDurationRequest(short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom);
+internal sealed record TreatmentDurationRequest(short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 internal sealed record TreatmentDurationUpdateRequest(short DurationSlots, short PreTimeMinutes);
 
 internal sealed record TherapistRequest(string Name);
@@ -489,6 +625,10 @@ internal sealed record TherapistUpdateRequest(string Name, bool IsActive);
 
 internal sealed record RoomRequest(int LocationId, string Name);
 internal sealed record RoomUpdateRequest(string Name, bool IsActive);
+
+// Exactly one of LocationId/ChainId is set -- LocationId closes just that location, ChainId closes
+// every location under that chain ("whole saloon" scope).
+internal sealed record LocationClosureRequest(int? LocationId, int? ChainId, DateOnly FromDate, DateOnly ToDate, string Type, string? Reason);
 
 internal sealed class ChainRequestValidator : AbstractValidator<ChainRequest>
 {
@@ -507,6 +647,12 @@ internal sealed class LocationRequestValidator : AbstractValidator<LocationReque
         RuleFor(x => x.ChainId).GreaterThan(0);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Address).MaximumLength(400);
+        // Map pin is compulsory, not optional -- every location needs a mappable point (client-portal
+        // map display, future nearest-location search via dbo.Locations.Coordinates).
+        RuleFor(x => x.Latitude).NotNull().WithMessage("Mark the location on the map.");
+        RuleFor(x => x.Latitude).InclusiveBetween(-90m, 90m).When(x => x.Latitude.HasValue);
+        RuleFor(x => x.Longitude).NotNull().WithMessage("Mark the location on the map.");
+        RuleFor(x => x.Longitude).InclusiveBetween(-180m, 180m).When(x => x.Longitude.HasValue);
         RuleFor(x => x.CloseTime).GreaterThan(x => x.OpenTime);
         RuleFor(x => x.TimeZoneId).NotEmpty();
     }
@@ -518,8 +664,31 @@ internal sealed class LocationUpdateRequestValidator : AbstractValidator<Locatio
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Address).MaximumLength(400);
+        // No NotNull here (unlike LocationRequestValidator/create) -- PUT is also how toggleActive
+        // resends a location's unchanged fields just to flip IsActive, and a location created before
+        // migration 010 has no pin yet. The three real "edit location details" forms already refuse
+        // to submit without a pin client-side (LocationsPage/MyLocationPage/SettingsPage); this only
+        // stops an unrelated status toggle from being blocked by a rule meant for actual edits.
+        RuleFor(x => x.Latitude).InclusiveBetween(-90m, 90m).When(x => x.Latitude.HasValue);
+        RuleFor(x => x.Longitude).InclusiveBetween(-180m, 180m).When(x => x.Longitude.HasValue);
         RuleFor(x => x.CloseTime).GreaterThan(x => x.OpenTime);
         RuleFor(x => x.TimeZoneId).NotEmpty();
+    }
+}
+
+internal sealed class LocationDayScheduleRequestValidator : AbstractValidator<LocationDayScheduleRequest>
+{
+    public LocationDayScheduleRequestValidator()
+    {
+        RuleFor(x => x.DayBit).Must(b => b is 1 or 2 or 4 or 8 or 16 or 32 or 64).WithMessage("DayBit must be a single day-of-week bit.");
+        RuleFor(x => x.EffectiveFrom).NotEmpty();
+        // EffectiveTo equal to EffectiveFrom is a single date, greater is a bounded range, and
+        // omitted (null) is open-ended -- stays in effect until superseded by a later row.
+        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom).When(x => x.EffectiveTo.HasValue);
+        RuleFor(x => x)
+            .Must(x => x.IsClosed || (x.OpenTime.HasValue && x.CloseTime.HasValue))
+            .WithMessage("Open and close time are required unless the day is marked closed.");
+        RuleFor(x => x.CloseTime).GreaterThan(x => x.OpenTime).When(x => !x.IsClosed && x.OpenTime.HasValue && x.CloseTime.HasValue);
     }
 }
 
@@ -569,6 +738,7 @@ internal sealed class TreatmentPriceRequestValidator : AbstractValidator<Treatme
     {
         RuleFor(x => x.Price).GreaterThan(0);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
+        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom).When(x => x.EffectiveTo.HasValue);
     }
 }
 
@@ -584,6 +754,7 @@ internal sealed class TreatmentDurationRequestValidator : AbstractValidator<Trea
         RuleFor(x => x.DurationSlots).GreaterThan((short)0);
         RuleFor(x => x.PreTimeMinutes).GreaterThanOrEqualTo((short)0);
         RuleFor(x => x.EffectiveFrom).NotEmpty();
+        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom).When(x => x.EffectiveTo.HasValue);
     }
 }
 
@@ -618,4 +789,20 @@ internal sealed class RoomRequestValidator : AbstractValidator<RoomRequest>
 internal sealed class RoomUpdateRequestValidator : AbstractValidator<RoomUpdateRequest>
 {
     public RoomUpdateRequestValidator() => RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
+}
+
+internal sealed class LocationClosureRequestValidator : AbstractValidator<LocationClosureRequest>
+{
+    public LocationClosureRequestValidator()
+    {
+        RuleFor(x => x).Must(x => (x.LocationId is null) != (x.ChainId is null))
+            .WithMessage("Specify exactly one of LocationId or ChainId.");
+        RuleFor(x => x.ToDate).GreaterThanOrEqualTo(x => x.FromDate);
+        // Matches sp_Admin_CreateLocationClosures' OPTION (MAXRECURSION 366) -- without this, a
+        // longer range hits SQL Server's recursion-limit error (530) instead of a clean 400.
+        RuleFor(x => x).Must(x => x.ToDate.DayNumber - x.FromDate.DayNumber <= 366)
+            .WithMessage("Date range cannot exceed 366 days.");
+        RuleFor(x => x.Type).Must(t => t is "Holiday" or "Maintenance").WithMessage("Type must be Holiday or Maintenance.");
+        RuleFor(x => x.Reason).MaximumLength(200);
+    }
 }
