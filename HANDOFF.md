@@ -48,6 +48,13 @@ Nothing is outstanding in code. What's missing is a manual smoke test in a brows
 
 Live error hit: `Violation of UNIQUE KEY constraint 'UQ_LocationHolidays_Location_Date'` when re-closing a date that had been closed then reopened. Root cause: `sp_Admin_DeleteLocationClosure` soft-deletes (`IsDelete=1`, row stays), but `UQ_LocationHolidays_Location_Date` was a plain (unfiltered) `UNIQUE` constraint, so the soft-deleted row still occupied that `(LocationId, HolidayDate)` slot forever. Fixed in `db/01_tables.sql` + `db/migrations/013_location_holidays_filtered_unique.sql` (drops the constraint, adds a filtered `WHERE IsDelete = 0` unique index instead, matching the `UQ_LocationDaySchedule_*`/`UQ_TreatmentPrices_*` convention). **Deployed already.** The `ClosuresModal` "Edit" flow (delete-then-recreate) made this bug much easier to hit since it now routinely re-inserts the exact dates it just soft-deleted, but the bug predates that -- any admin re-closing a previously-reopened date would have hit it.
 
+## Follow-up: Day Hours edit-in-place + booking-conflict guard
+
+Added after the above was written:
+
+- **Edit, not just cancel+re-add**: a not-yet-effective `LocationDaySchedule` entry can now be edited in place from the Day Hours modal ("Edit" button next to "Cancel" on each upcoming row). New proc `sp_Catalog_UpdateLocationDaySchedule` (same "already in effect" guard as Delete), new `PUT /api/admin/catalog/locations/{id}/day-schedule/{scheduleId}` endpoint, `CatalogRepository.UpdateLocationDayScheduleAsync`, wired into `DayScheduleModal.tsx` (`editingId` state, `openEditForm`/`handleSave`/`closeForm`). **Deployed and OpenAPI-regenerated already.**
+- **Booking-conflict guard on both Add and Update**: scheduling or editing a day's hours (or marking it closed) now checks for an existing non-cancelled booking on that day-of-week, on or after the effective window, whose time falls outside the new hours -- blocks with a clean 409 (`THROW 50073`) instead of silently orphaning a real appointment. Mirrors the existing `sp_Catalog_AddTreatmentDuration`/`DeleteTreatmentDuration` "don't retroactively invalidate a booking" pattern. **Deployed already.**
+
 ## Other context worth knowing
 
 - Real dev DB creds are in `.NET user-secrets` (`dotnet user-secrets list` from `backend/SaloonApi/`), not `appsettings.json`. `sqlcmd` needs `-I` (QUOTED_IDENTIFIER ON) or filtered-index/CHECK-constraint-touching statements fail with error 1934.

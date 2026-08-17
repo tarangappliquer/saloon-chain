@@ -32,6 +32,7 @@ export function DayScheduleModal({
   const [history, setHistory] = useState<LocationDaySchedule[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addingForBit, setAddingForBit] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     openTime: '09:00',
     closeTime: '18:00',
@@ -60,6 +61,7 @@ export function DayScheduleModal({
 
   function openAddForm(bit: number) {
     setAddingForBit(bit);
+    setEditingId(null);
     setForm({
       openTime: defaultOpenTime.slice(0, 5),
       closeTime: defaultCloseTime.slice(0, 5),
@@ -72,7 +74,29 @@ export function DayScheduleModal({
     setError(null);
   }
 
-  async function handleAdd(e: FormEvent) {
+  function openEditForm(entry: LocationDaySchedule) {
+    setAddingForBit(entry.dayBit);
+    setEditingId(entry.id);
+    const from = entry.effectiveFrom.slice(0, 10);
+    const to = entry.effectiveTo?.slice(0, 10) ?? from;
+    setForm({
+      openTime: entry.openTime?.slice(0, 5) ?? defaultOpenTime.slice(0, 5),
+      closeTime: entry.closeTime?.slice(0, 5) ?? defaultCloseTime.slice(0, 5),
+      isClosed: entry.isClosed,
+      mode: entry.effectiveTo === null ? 'from' : entry.effectiveTo === entry.effectiveFrom ? 'single' : 'range',
+      effectiveFrom: from,
+      effectiveTo: to,
+    });
+    setTimeError(null);
+    setError(null);
+  }
+
+  function closeForm() {
+    setAddingForBit(null);
+    setEditingId(null);
+  }
+
+  async function handleSave(e: FormEvent) {
     e.preventDefault();
     if (addingForBit === null) return;
     setError(null);
@@ -85,18 +109,23 @@ export function DayScheduleModal({
 
     setSubmitting(true);
     try {
-      await adminCatalogApi.apiAdminCatalogLocationsIdDaySchedulePost(locationId, {
+      const payload = {
         dayBit: addingForBit,
         openTime: form.isClosed ? null : toApiTime(form.openTime)!,
         closeTime: form.isClosed ? null : toApiTime(form.closeTime)!,
         isClosed: form.isClosed,
         effectiveFrom: form.effectiveFrom,
         effectiveTo: resolveEffectiveTo(form.mode, form.effectiveFrom, form.effectiveTo),
-      });
-      setAddingForBit(null);
+      };
+      if (editingId !== null) {
+        await adminCatalogApi.apiAdminCatalogLocationsIdDayScheduleScheduleIdPut(locationId, editingId, payload);
+      } else {
+        await adminCatalogApi.apiAdminCatalogLocationsIdDaySchedulePost(locationId, payload);
+      }
+      closeForm();
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to schedule hours');
+      setError(err instanceof ApiError ? err.message : editingId !== null ? 'Failed to update scheduled hours' : 'Failed to schedule hours');
     } finally {
       setSubmitting(false);
     }
@@ -175,16 +204,24 @@ export function DayScheduleModal({
                               </Badge>
                               {formatWindowHours(u, defaultOpenTime, defaultCloseTime)} ({describeEffectiveWindow(u.effectiveFrom.slice(0, 10), u.effectiveTo?.slice(0, 10) ?? null)})
                             </span>
-                            <Button variant="ghost" size="sm" disabled={deletingId === u.id} onClick={() => handleDelete(u.id)}>
-                              {deletingId === u.id ? 'Cancelling...' : 'Cancel'}
-                            </Button>
+                            <span className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditForm(u)}>
+                                Edit
+                              </Button>
+                              <Button variant="ghost" size="sm" disabled={deletingId === u.id} onClick={() => handleDelete(u.id)}>
+                                {deletingId === u.id ? 'Cancelling...' : 'Cancel'}
+                              </Button>
+                            </span>
                           </div>
                         ))}
                       </div>
                     )}
 
                     {addingForBit === d.bit && (
-                      <form onSubmit={handleAdd} className="mt-3 space-y-3 border-t border-border/50 pt-3">
+                      <form onSubmit={handleSave} className="mt-3 space-y-3 border-t border-border/50 pt-3">
+                        {editingId !== null && (
+                          <p className="text-[11px] font-semibold text-primary">Editing scheduled change</p>
+                        )}
                         <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
                           <input
                             type="checkbox"
@@ -235,7 +272,7 @@ export function DayScheduleModal({
                           <Button type="submit" size="sm" disabled={submitting}>
                             {submitting ? 'Saving...' : 'Save'}
                           </Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => setAddingForBit(null)} disabled={submitting}>
+                          <Button type="button" variant="outline" size="sm" onClick={closeForm} disabled={submitting}>
                             Cancel
                           </Button>
                         </div>
