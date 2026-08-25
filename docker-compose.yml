@@ -4,6 +4,7 @@ services:
   # =========================================================================
   saloonchains-backend:
     image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-backend:latest
+    pull_policy: always
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -38,6 +39,7 @@ services:
   # =========================================================================
   saloonchains-adminportal:
     image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-adminportal:latest
+    pull_policy: always
     build:
       context: ./frontend
       dockerfile: apps/adminportal/Dockerfile
@@ -55,6 +57,7 @@ services:
   # =========================================================================
   saloonchains-clientportal:
     image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-clientportal:latest
+    pull_policy: always
     build:
       context: ./frontend
       dockerfile: apps/clientportal/Dockerfile

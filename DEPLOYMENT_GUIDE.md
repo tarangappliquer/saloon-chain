@@ -201,8 +201,9 @@ Once set up, **you never need to SSH into your server to deploy updates**:
 
 1. Make code changes locally.
 2. Run `.\push-to-dockerhub.ps1` (or `./push-to-dockerhub.sh`).
-3. **Watchtower** running on your server checks Docker Hub every 60 seconds.
-4. When Watchtower detects a new image push under `tarangappliquer1606/*`, it automatically:
+3. All service definitions specify `pull_policy: always`, ensuring Docker always checks for and pulls updated images.
+4. **Watchtower** running on your server checks Docker Hub every 60 seconds.
+5. When Watchtower detects a new image push under `tarangappliquer1606/*`, it automatically:
    - Pulls the latest images.
    - Gracefully restarts `saloonchains-backend`, `saloonchains-adminportal`, and `saloonchains-clientportal`.
    - Cleans up old dangling images (`--cleanup`) to preserve server disk space.
@@ -213,6 +214,8 @@ Once set up, **you never need to SSH into your server to deploy updates**:
 
 | Action | Command (Run on Server) |
 | :--- | :--- |
+| **Pull Latest Images Manually** | `docker compose pull` |
+| **Update Containers to Latest Images** | `docker compose up -d` |
 | **View Live Logs** | `docker compose logs -f` |
 | **View Backend Logs** | `docker compose logs -f saloonchains-backend` |
 | **View Watchtower Activity** | `docker compose logs -f saloonchains-watchtower` |
