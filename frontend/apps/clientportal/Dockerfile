@@ -1,0 +1,29 @@
+# Stage 1: Build
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Install pnpm globally
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+# Copy full workspace source code
+COPY . .
+
+# Install dependencies across workspace
+RUN pnpm install --frozen-lockfile
+
+# Build arg for API base URL (defaults to relative /api routing via Nginx proxy)
+ARG VITE_API_BASE_URL=""
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
+# Build clientportal application
+RUN pnpm --filter clientportal build
+
+# Stage 2: Production Nginx Server
+FROM nginx:alpine AS final
+
+COPY --from=build /app/apps/clientportal/dist /usr/share/nginx/html
+COPY apps/clientportal/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

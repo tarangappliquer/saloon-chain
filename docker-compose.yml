@@ -1,51 +1,138 @@
 services:
+  # =========================================================================
+  # SALOON API BACKEND SERVICE
+  # =========================================================================
+  saloonchains-backend:
+    image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: saloonchains-backend
+    ports:
+      - "5127:5127"
+    environment:
+      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Server=host.docker.internal,1433;Database=SaloonChainsDb;User Id=sa;Password=SaloonChains_Dev123!;TrustServerCertificate=True;}"
+      Redis__ConnectionString: "saloonchains-redis:6379"
+      Redis__Enabled: "true"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:-SaloonChains_Production_Or_Dev_Secret_Signing_Key_32_Bytes_Min}"
+      Jwt__Issuer: "SaloonApi"
+      Jwt__Audience: "SaloonClients"
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+      Cors__AllowedOrigins__1: "http://localhost:5174"
+      Cors__AllowedOrigins__2: "http://localhost:8080"
+      Cors__AllowedOrigins__3: "http://localhost:8081"
+      Portals__AdminPortalUrl: "http://localhost:5173"
+      Portals__ClientPortalUrl: "http://localhost:5174"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Physical folder on host machine mounted to /app/uploads inside container
+      - ${UPLOADS_DIR:-./uploads}:/app/uploads
+    depends_on:
+      saloonchains-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # ADMIN PORTAL FRONTEND (REACT 19 + VITE + NGINX)
+  # =========================================================================
+  saloonchains-adminportal:
+    image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-adminportal:latest
+    build:
+      context: ./frontend
+      dockerfile: apps/adminportal/Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://localhost:5127"
+    container_name: saloonchains-adminportal
+    ports:
+      - "5173:80"
+    depends_on:
+      - saloonchains-backend
+    restart: unless-stopped
+
+  # =========================================================================
+  # CLIENT PORTAL FRONTEND (REACT 19 + VITE + NGINX)
+  # =========================================================================
+  saloonchains-clientportal:
+    image: ${DOCKERHUB_USERNAME:-tarangappliquer1606}/saloonchains-clientportal:latest
+    build:
+      context: ./frontend
+      dockerfile: apps/clientportal/Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://localhost:5127"
+    container_name: saloonchains-clientportal
+    ports:
+      - "5174:80"
+    depends_on:
+      - saloonchains-backend
+    restart: unless-stopped
+
+  # =========================================================================
+  # REDIS CACHE SERVICE
+  # =========================================================================
   saloonchains-redis:
     image: redis:8-alpine
     container_name: saloonchains-redis
     ports:
       - "6379:6379"
     volumes:
-      - redis-data:/data
+      # Physical folder on host machine mounted to /data inside Redis container
+      - ${REDIS_DATA_DIR:-./docker-data/redis}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
-  # saloonchains-sqlserver:
-  #   image: mcr.microsoft.com/mssql/server:2022-latest
-  #   container_name: saloonchains-sqlserver
-  #   environment:
-  #     ACCEPT_EULA: "Y"
-  #     MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
-  #   ports:
-  #     - "1434:1433"
-  #   volumes:
-  #     - sqlserver-data:/var/opt/mssql
-  #   restart: unless-stopped
+  # =========================================================================
+  # WATCHTOWER CONTAINER AUTO-UPDATER
+  # Monitors Docker Hub for new image pushes every 60 seconds.
+  # Automatically pulls updated images & restarts server containers.
+  # =========================================================================
+  saloonchains-watchtower:
+    image: containrrr/watchtower
+    container_name: saloonchains-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount docker config for private Docker Hub repository access (if needed)
+      # - ~/.docker/config.json:/config.json:ro
+    command: --interval 60 --cleanup
+    restart: unless-stopped
 
-  
-  # Whole-planet import -- NOT a quick start. Expect a multi-hour (often 1-2+ day) first-run import,
-  # ~1TB+ free disk for nominatim-data, and the mediagis image's own docs recommend 64GB+ RAM (it will
-  # run on less, but import gets dramatically slower as it swaps). THREADS below caps parallelism to
-  # your CPU core count -- turn it down if the host is shared with anything else during import.
-  # REPLICATION_URL enables `nominatim replication` for incremental updates after the initial import,
-  # instead of re-importing the whole planet file again later.
-  # saloonchains-nominatim:
-  #   image: mediagis/nominatim:5.3
-  #   container_name: saloonchains-nominatim
-  #   shm_size: 1gb
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     - PBF_URL=https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf
-  #     - REPLICATION_URL=https://planet.openstreetmap.org/replication/day/
-  #     - IMPORT_STYLE=full
-  #     - THREADS=8
-  #     - NOMINATIM_PASSWORD=SaloonChains_Nominatim123!
-  #   stdin_open: true  # corresponds to the -i flag
-  #   tty: true         # corresponds to the -t flag
-  #   restart: unless-stopped
-  #   volumes:
-  #     - nominatim-data:/var/lib/postgresql/16/main
+  # =========================================================================
+  # OPTIONAL: IN-CONTAINER SQL SERVER (Only active if explicitly enabled)
+  # Run with: docker compose --profile db-container up
+  # =========================================================================
+  saloonchains-sqlserver:
+    profiles: ["db-container"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: saloonchains-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
+    ports:
+      - "1433:1433"
+    volumes:
+      # Physical folder on host machine mounted to /var/opt/mssql inside SQL container
+      - ${SQL_DATA_DIR:-./docker-data/mssql}:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SaloonChains_Dev123!' -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
 
-volumes:
-  redis-data:
-  # sqlserver-data:
-  # nominatim-data:
+  saloonchains-db-init:
+    profiles: ["db-container"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: saloonchains-db-init
+    environment:
+      MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
+    volumes:
+      - ./db:/db
+    entrypoint: ["/bin/bash", "/db/init-db.sh"]
+    depends_on:
+      saloonchains-sqlserver:
+        condition: service_healthy
