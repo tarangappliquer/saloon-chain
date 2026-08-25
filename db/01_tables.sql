@@ -1,6 +1,10 @@
 -- Run order: 01_tables -> 02_types -> 03_procs_catalog -> 04_procs_booking -> 05_procs_auth -> 06_seed -> 07_procs_admin -> 08_procs_emulation -> 09_procs_scheduling -> 10_procs_profile
 -- Target: an existing SQL Server database (create one first, e.g. CREATE DATABASE SaloonChains;)
 
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 -- Every table carries the same 6 audit columns: IsDelete (soft-delete flag; nothing sets it yet --
 -- no delete feature exists, but SELECT procs already filter on it), IsActive, CreatedBy/CreatedDate,
 -- UpdatedBy/UpdatedDate. CreatedBy/UpdatedBy are the current logged-in user's id (ICurrentUser,

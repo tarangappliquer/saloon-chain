@@ -505,3 +505,5 @@ backend/SaloonApi/uploads/
 /frontend/**/cypress/snapshots/
 /frontend/**/cypress/screenshots/
 /frontend/**/cypress/videos/
+
+/docker-data

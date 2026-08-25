@@ -185,7 +185,7 @@ export function ProfilePage() {
           onSuccess={refreshProfilePhoto}
         />
 
-        <form onSubmit={handleSave} className="space-y-4">
+        <form action={handleSave} className="space-y-4">
           <Input required label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
           <Input
             label="Phone Number"
@@ -228,7 +228,7 @@ export function ProfilePage() {
           </div>
 
           {changingEmail && (
-            <form onSubmit={handleChangeEmailRequest} className="flex items-start gap-2 pt-1">
+            <form action={handleChangeEmailRequest} className="flex items-start gap-2 pt-1">
               <Input
                 required
                 type="email"

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { configApi } from '../../api/client';
 
 interface PortalConfigContextValue {
@@ -39,5 +39,5 @@ export function PortalConfigProvider({ children }: { children: ReactNode }) {
 
 // oxlint-disable-next-line react/only-export-components
 export function usePortalConfig() {
-  return useContext(PortalConfigContext);
+  return use(PortalConfigContext);
 }

@@ -78,7 +78,7 @@ export function ConnectivityBanner({ apiBase, onServerUp }: { apiBase: string; o
       clearInterval(id);
       document.removeEventListener('visibilitychange', check);
     };
-  }, [apiBase, online, handleServerUpEvent]);
+  }, [apiBase, online]);
 
   // Always mounted (never `return null`) so hiding animates instead of popping -- a CSS grid track
   // collapsing 1fr -> 0fr transitions smoothly, unlike height:auto, and needs no JS unmount timer.

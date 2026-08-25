@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import { profileStreamUrl, subscribeToStream } from '../../api/sseClient';
 import type { AuthResponse } from '../../api/types';
@@ -162,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 // oxlint-disable-next-line react/only-export-components
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  const ctx = use(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }

@@ -25,8 +25,10 @@ flowchart TD
         AdminContainer["saloonchains-adminportal (Port 5173)"]
         ClientContainer["saloonchains-clientportal (Port 5174)"]
         RedisContainer["saloonchains-redis (Port 6379)"]
+        SQLContainer["saloonchains-sqlserver (Port 1433)"]
         PhysicalUploads["./uploads (Host Physical Folder)"]
         PhysicalRedis["./docker-data/redis (Host Physical Folder)"]
+        PhysicalSQL["./docker-data/mssql (Host Physical Folder)"]
     end
 
     subgraph DatabaseHost ["Host PC or Remote SQL Server"]
@@ -42,6 +44,7 @@ flowchart TD
 
     BackendContainer -->|Persist Uploads| PhysicalUploads
     RedisContainer -->|Persist Cache| PhysicalRedis
+    SQLContainer -->|Persist DB| PhysicalSQL
     BackendContainer -->|SQL Connection| SQLServer
 ```
 
@@ -93,12 +96,13 @@ docker compose push
 ### Step 1: Configure Cloud Firewall / Security Group
 In your cloud provider console (AWS EC2, DigitalOcean, Hetzner, GCP, Azure VM, Linode, etc.), allow incoming TCP traffic on the following ports:
 
-| Port | Service | Description |
-| :--- | :--- | :--- |
-| **5127** | `saloonchains-backend` | .NET 10 Web API |
-| **5173** | `saloonchains-adminportal` | Admin Portal Frontend (Nginx) |
-| **5174** | `saloonchains-clientportal` | Client Portal Frontend (Nginx) |
-| **6379** | `saloonchains-redis` | Redis Cache (Optional: Keep internal) |
+| Port | Service | Description | Exposure |
+| :--- | :--- | :--- | :--- |
+| **1433** | `saloonchains-sqlserver` | Microsoft SQL Server | Public / External DB Clients |
+| **5127** | `saloonchains-backend` | .NET 10 Web API | Public API Access |
+| **5173** | `saloonchains-adminportal` | Admin Portal Frontend (Nginx) | Public Web Access |
+| **5174** | `saloonchains-clientportal` | Client Portal Frontend (Nginx) | Public Web Access |
+| **6379** | `saloonchains-redis` | Redis Cache | Internal / External Cache |
 
 ---
 
@@ -144,12 +148,13 @@ DOCKERHUB_USERNAME=tarangappliquer1606
 # -------------------------------------------------------------------------
 UPLOADS_DIR=/opt/saloonchains/uploads
 REDIS_DATA_DIR=/opt/saloonchains/data/redis
+SQL_DATA_DIR=/opt/saloonchains/data/mssql
 
 # -------------------------------------------------------------------------
 # DATABASE CONNECTION STRING (Targeting Host PC or Remote SQL Server)
 # -------------------------------------------------------------------------
-# Example for Remote SQL Server / Cloud DB:
-SALOON_DB_CONN_STRING=Server=192.168.1.100,1433;Database=SaloonChainsDb;User Id=sa;Password=YourSecurePassword123!;TrustServerCertificate=True;
+# Example for Remote SQL Server / Containerized SQL Server / Host PC:
+SALOON_DB_CONN_STRING=Server=your-sql-server-ip-or-domain,1433;Database=SaloonChainsDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
 
 # -------------------------------------------------------------------------
 # SECURITY CONFIGURATION
@@ -166,7 +171,7 @@ If your Docker Hub repository is **Private**, authenticate your server using a *
 docker login -u tarangappliquer1606
 ```
 
-Then, in `/opt/saloonchains/docker-compose.yml`, enable Watchtower to read your saved credentials by uncommenting line 97:
+Then, in `/opt/saloonchains/docker-compose.yml`, enable Watchtower to read your saved credentials by uncommenting line 102:
 
 ```yaml
   saloonchains-watchtower:
@@ -182,11 +187,16 @@ Then, in `/opt/saloonchains/docker-compose.yml`, enable Watchtower to read your 
 ---
 
 ### Step 6: Start Server Containers
-Run Docker Compose on your Cloud Linux server:
 
-```bash
-docker compose up -d
-```
+- **To run standard services (Backend API, Frontend Portals, Redis, Watchtower)**:
+  ```bash
+  docker compose up -d
+  ```
+
+- **To also run in-container SQL Server on Port 1433**:
+  ```bash
+  docker compose --profile db-container up -d
+  ```
 
 Verify all containers are running:
 ```bash

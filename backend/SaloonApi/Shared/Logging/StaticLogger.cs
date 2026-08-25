@@ -1,4 +1,4 @@
-﻿using Serilog;
+using Serilog;
 using Serilog.Formatting.Json;
 using System.Globalization;
 
@@ -31,10 +31,8 @@ internal static class StaticLogger
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
             .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-#if DEBUG
             .WriteTo.Console(SerilogFormatter)
-#endif
-            .WriteTo.File(SerilogFormatter, "Logs/log-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31);
+            .WriteTo.File(SerilogFormatter, "Logs/log-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31, shared: true);
     }
 
 }
