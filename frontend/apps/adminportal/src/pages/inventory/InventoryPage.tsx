@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useOptimistic, startTransition, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminInventoryApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
@@ -126,9 +126,8 @@ export function InventoryPage() {
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${
-              tab === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent'
-            }`}
+            className={`px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${tab === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent'
+              }`}
           >
             {t.replace('-', ' ')}
           </button>
@@ -150,6 +149,15 @@ export function InventoryPage() {
 
 function ProductsTab({ locationId, setError }: { locationId: number; setError: (e: string | null) => void }) {
   const [products, setProducts] = useState<ProductRow[] | null>(null);
+  const [optimisticProducts, setOptimisticProducts] = useOptimistic(
+    products,
+    (state, action: { type: 'toggle' | 'delete'; id: number }) => {
+      if (!state) return state;
+      if (action.type === 'delete') return state.filter((p) => p.id !== action.id);
+      if (action.type === 'toggle') return state.map((p) => (p.id === action.id ? { ...p, isActive: !p.isActive } : p));
+      return state;
+    },
+  );
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
   const [form, setForm] = useState({ name: '', sku: '', price: '', quantityOnHand: '0', reorderThreshold: '5', supplierId: '' });
   const [saving, setSaving] = useState(false);
@@ -164,11 +172,11 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
 
   useEffect(() => {
     load();
-    adminInventoryApi.apiAdminInventorySuppliersGet(undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => {});
+    adminInventoryApi.apiAdminInventorySuppliersGet(undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
@@ -192,6 +200,10 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
   }
 
   async function toggleActive(p: ProductRow) {
+    setError(null);
+    startTransition(() => {
+      setOptimisticProducts({ type: 'toggle', id: p.id });
+    });
     try {
       await adminInventoryApi.apiAdminInventoryProductsIdPut(p.id, {
         supplierId: p.supplierId,
@@ -204,15 +216,21 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update product.');
+      load();
     }
   }
 
   async function remove(id: number) {
+    setError(null);
+    startTransition(() => {
+      setOptimisticProducts({ type: 'delete', id });
+    });
     try {
       await adminInventoryApi.apiAdminInventoryProductsIdDelete(id);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete product.');
+      load();
     }
   }
 
@@ -257,9 +275,9 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
       </Card>
 
       <Card className="overflow-x-auto">
-        {!products ? (
+        {!optimisticProducts ? (
           <LoadingFallback />
-        ) : products.length === 0 ? (
+        ) : optimisticProducts.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">No products yet.</p>
         ) : (
           <table className="w-full text-sm">
@@ -274,7 +292,7 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {optimisticProducts.map((p) => (
                 <tr key={p.id} className="border-b border-border/50">
                   <td className="p-3 font-medium text-foreground">{p.name}</td>
                   <td className="p-3 text-muted-foreground">{p.sku ?? '—'}</td>
@@ -322,7 +340,7 @@ function SuppliersTab({ chainId, setError }: { chainId: number | null; setError:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainId]);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
@@ -420,8 +438,8 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
 
   useEffect(() => {
     load();
-    adminInventoryApi.apiAdminInventorySuppliersGet(chainId ?? undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => {});
-    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data as unknown as ProductRow[])).catch(() => {});
+    adminInventoryApi.apiAdminInventorySuppliersGet(chainId ?? undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => { });
+    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data as unknown as ProductRow[])).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, chainId]);
 
@@ -429,7 +447,7 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);

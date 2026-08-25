@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Chain, Location, Treatment } from '../api/types';
@@ -82,6 +82,20 @@ export function VenueDetailPage() {
     loadData();
   }, [locationId]);
 
+  // Grouped once per `treatments` change instead of re-filtering per category on every render
+  // (previously re-ran on every tab click, even switches to tabs that don't show this grouping).
+  const treatmentsByCategory = useMemo(() => {
+    const map = new Map<string, Treatment[]>();
+    for (const t of treatments) {
+      const cat = t.categoryName || 'General Services';
+      const existing = map.get(cat);
+      if (existing) existing.push(t);
+      else map.set(cat, [t]);
+    }
+    return map;
+  }, [treatments]);
+  const categories = useMemo(() => Array.from(treatmentsByCategory.keys()), [treatmentsByCategory]);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 animate-pulse">
@@ -90,9 +104,6 @@ export function VenueDetailPage() {
       </div>
     );
   }
-
-  // Group treatments by category
-  const categories = Array.from(new Set(treatments.map((t) => t.categoryName || 'General Services')));
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8">
@@ -170,7 +181,7 @@ export function VenueDetailPage() {
       {activeTab === 'services' && (
         <div className="space-y-8">
           {categories.map((cat) => {
-            const catTreatments = treatments.filter((t) => (t.categoryName || 'General Services') === cat);
+            const catTreatments = treatmentsByCategory.get(cat) ?? [];
             return (
               <div key={cat} className="space-y-4">
                 <h2 className="text-lg font-bold text-foreground border-b border-border pb-2">{cat}</h2>

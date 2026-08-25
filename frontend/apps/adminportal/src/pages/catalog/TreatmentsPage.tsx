@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, useOptimistic, startTransition, type SyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
@@ -31,6 +31,10 @@ export function TreatmentsPage() {
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [optimisticTreatments, setOptimisticTreatments] = useOptimistic(
+    treatments,
+    (state, id: number) => state.map((t) => (t.id === id ? { ...t, isActive: !t.isActive } : t)),
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingTreatment, setSavingTreatment] = useState(false);
@@ -118,7 +122,7 @@ export function TreatmentsPage() {
     setTreatmentSubmitError(null);
   }
 
-  async function handleSubmitTreatment(e: FormEvent) {
+  async function handleSubmitTreatment(e: SyntheticEvent) {
     e.preventDefault();
     if (locationId === null || !treatmentForm.categoryId) return;
     setError(null);
@@ -158,6 +162,9 @@ export function TreatmentsPage() {
 
   async function toggleTreatmentActive(t: Treatment) {
     setError(null);
+    startTransition(() => {
+      setOptimisticTreatments(t.id);
+    });
     try {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(t.id, {
         categoryId: t.categoryId,
@@ -169,6 +176,7 @@ export function TreatmentsPage() {
       if (locationId !== null) await loadLocationData(locationId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update treatment');
+      if (locationId !== null) await loadLocationData(locationId);
     }
   }
 
@@ -328,13 +336,13 @@ export function TreatmentsPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Treatments ({treatments.length})</CardTitle>
+          <CardTitle>Treatments ({optimisticTreatments.length})</CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : treatments.length === 0 ? (
+        ) : optimisticTreatments.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
             No treatments in catalog yet.
           </CardContent>
@@ -353,7 +361,7 @@ export function TreatmentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {treatments.map((t) => (
+                {optimisticTreatments.map((t) => (
                   <tr key={t.id} className="hover:bg-accent/40 transition">
                     <td className="px-6 py-4 font-semibold text-foreground">{t.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{t.categoryName}</td>

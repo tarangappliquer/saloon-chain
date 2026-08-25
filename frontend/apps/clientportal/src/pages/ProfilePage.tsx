@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Badge, Button, Card, Input, LoadingFallback, PageHeader, UppyPhotoUploadModal } from '@saloon/ui';
 import { API_BASE, ApiError, authApi, getAuthToken, getFieldError, profileApi } from '../api/client';
 import { profileStreamUrl, subscribeToStream } from '../api/sseClient';
@@ -12,25 +12,15 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
   const [cacheBuster, setCacheBuster] = useState(Date.now());
   const [uppyOpen, setUppyOpen] = useState(false);
 
   const [changingEmail, setChangingEmail] = useState(false);
   const [newEmail, setNewEmail] = useState('');
-  const [emailSubmitting, setEmailSubmitting] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [emailSubmitError, setEmailSubmitError] = useState<unknown>(null);
-  const [emailChangeSent, setEmailChangeSent] = useState<string | null>(null);
-
-  const [passwordResetSubmitting, setPasswordResetSubmitting] = useState(false);
-  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
-  const [passwordResetSent, setPasswordResetSent] = useState(false);
 
   const refreshProfilePhoto = async () => {
     const { data: res } = await profileApi.apiProfileGet();
@@ -43,7 +33,7 @@ export function ProfilePage() {
 
   async function load() {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const { data } = await profileApi.apiProfileGet();
       const p = data as unknown as Profile;
@@ -51,7 +41,7 @@ export function ProfilePage() {
       setName(p.name);
       setPhone(p.phone ?? '');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load profile');
+      setLoadError(err instanceof ApiError ? err.message : 'Failed to load profile');
     } finally {
       setLoading(false);
     }
@@ -76,60 +66,56 @@ export function ProfilePage() {
     });
   }, [profileUserId, profileIsEmailVerified]);
 
-  async function handleSave(e: SyntheticEvent) {
-    e.preventDefault();
-    if (isEmulated) return;
-    setError(null);
-    setSubmitError(null);
-    setSuccess(null);
-    setSaving(true);
-    try {
-      const { data } = await profileApi.apiProfilePut({ name, phone: phone || null });
-      const updated = data as unknown as Profile;
-      setProfile(updated);
-      updateName(updated.name);
-      setSuccess('Profile updated successfully.');
-    } catch (err) {
-      setSubmitError(err);
-      setError(err instanceof ApiError ? err.message : 'Failed to update profile');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const [{ error, submitError }, handleSave, saving] = useActionState<{ error: string | null; submitError: unknown }>(
+    async () => {
+      if (isEmulated) return { error: null, submitError: null };
+      setSuccess(null);
+      try {
+        const { data } = await profileApi.apiProfilePut({ name, phone: phone || null });
+        const updated = data as unknown as Profile;
+        setProfile(updated);
+        updateName(updated.name);
+        setSuccess('Profile updated successfully.');
+        return { error: null, submitError: null };
+      } catch (err) {
+        return { error: err instanceof ApiError ? err.message : 'Failed to update profile', submitError: err };
+      }
+    },
+    { error: null, submitError: null },
+  );
 
-  async function handleChangeEmailRequest(e: SyntheticEvent) {
-    e.preventDefault();
-    if (isEmulated) return;
-    setEmailError(null);
-    setEmailSubmitError(null);
-    setEmailSubmitting(true);
-    try {
-      await profileApi.apiProfileEmailChangeRequestPost({ newEmail });
-      setEmailChangeSent(newEmail);
-      setChangingEmail(false);
-      setNewEmail('');
-    } catch (err) {
-      setEmailSubmitError(err);
-      setEmailError(err instanceof ApiError ? err.message : 'Failed to request email change');
-    } finally {
-      setEmailSubmitting(false);
-    }
-  }
+  const [
+    { error: emailError, submitError: emailSubmitError, sentTo: emailChangeSent },
+    handleChangeEmailRequest,
+    emailSubmitting,
+  ] = useActionState<{ error: string | null; submitError: unknown; sentTo: string | null }>(
+    async () => {
+      if (isEmulated) return { error: null, submitError: null, sentTo: null };
+      try {
+        await profileApi.apiProfileEmailChangeRequestPost({ newEmail });
+        setChangingEmail(false);
+        setNewEmail('');
+        return { error: null, submitError: null, sentTo: newEmail };
+      } catch (err) {
+        return { error: err instanceof ApiError ? err.message : 'Failed to request email change', submitError: err, sentTo: null };
+      }
+    },
+    { error: null, submitError: null, sentTo: null },
+  );
 
-  async function handlePasswordResetRequest() {
-    if (isEmulated || !profile) return;
-    setPasswordResetError(null);
-    setPasswordResetSent(false);
-    setPasswordResetSubmitting(true);
-    try {
-      await authApi.apiAuthForgotPasswordPost({ email: profile.email });
-      setPasswordResetSent(true);
-    } catch (err) {
-      setPasswordResetError(err instanceof ApiError ? err.message : 'Failed to send password reset link');
-    } finally {
-      setPasswordResetSubmitting(false);
-    }
-  }
+  const [{ error: passwordResetError, sent: passwordResetSent }, handlePasswordResetRequest, passwordResetSubmitting] =
+    useActionState<{ error: string | null; sent: boolean }>(
+      async () => {
+        if (isEmulated || !profile) return { error: null, sent: false };
+        try {
+          await authApi.apiAuthForgotPasswordPost({ email: profile.email });
+          return { error: null, sent: true };
+        } catch (err) {
+          return { error: err instanceof ApiError ? err.message : 'Failed to send password reset link', sent: false };
+        }
+      },
+      { error: null, sent: false },
+    );
 
   if (loading) return <LoadingFallback />;
   if (!profile) return null;
@@ -141,6 +127,12 @@ export function ProfilePage() {
       {isEmulated && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-medium text-amber-700 dark:text-amber-400">
           Viewing as an emulated session. Profile changes and password resets are disabled.
+        </div>
+      )}
+
+      {loadError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
+          {loadError}
         </div>
       )}
 
@@ -196,7 +188,7 @@ export function ProfilePage() {
           onSuccess={refreshProfilePhoto}
         />
 
-        <form onSubmit={handleSave} className="space-y-4">
+        <form action={handleSave} className="space-y-4">
           <Input required disabled={isEmulated} label="Name" value={name} onChange={(e) => setName(e.target.value)} error={getFieldError(submitError, 'name')} />
           <Input
             disabled={isEmulated}
@@ -240,7 +232,7 @@ export function ProfilePage() {
           </div>
 
           {changingEmail && (
-            <form onSubmit={handleChangeEmailRequest} className="flex items-start gap-2 pt-1">
+            <form action={handleChangeEmailRequest} className="flex items-start gap-2 pt-1">
               <Input
                 required
                 type="email"
@@ -260,7 +252,6 @@ export function ProfilePage() {
                 onClick={() => {
                   setChangingEmail(false);
                   setNewEmail('');
-                  setEmailError(null);
                 }}
               >
                 Cancel
@@ -293,7 +284,7 @@ export function ProfilePage() {
                 variant="secondary"
                 size="sm"
                 disabled={passwordResetSubmitting}
-                onClick={handlePasswordResetRequest}
+                onClick={() => handlePasswordResetRequest()}
                 className="shrink-0"
               >
                 {passwordResetSubmitting ? 'Sending...' : 'Change Password'}

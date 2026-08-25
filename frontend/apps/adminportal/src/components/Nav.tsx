@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Badge, BrandMark, ThemeToggle, Tooltip } from '@saloon/ui';
 import { API_BASE } from '../api/client';
@@ -117,6 +117,10 @@ export const Nav = memo(function Nav() {
     });
   }
 
+  // Stable reference reused across every NavLink/NavSubLink call site below -- those are memo()'d,
+  // so a fresh closure per render here would defeat the memo for all of them.
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
   if (!user) return null;
   // Narrowing from the guard above doesn't carry into renderNavContent below -- it's a nested
   // function declaration, not inline code, so TS can't assume `user` is still non-null by the time
@@ -142,7 +146,7 @@ export const Nav = memo(function Nav() {
             <button
               type="button"
               className="md:hidden rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobile}
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -154,7 +158,7 @@ export const Nav = memo(function Nav() {
             {/* 1. Home */}
             <NavLink
               to={routes.root}
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobile}
               collapsed={isCollapsed}
               icon={
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -169,7 +173,7 @@ export const Nav = memo(function Nav() {
             {ADMIN_ACCESS.includes(currentUser.role) && (
               <NavLink
                 to={routes.calendar()}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
                 collapsed={isCollapsed}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,16 +198,16 @@ export const Nav = memo(function Nav() {
                 </svg>
               }
             >
-              <NavSubLink to={routes.reports} onClick={() => setMobileOpen(false)}>
+              <NavSubLink to={routes.reports} onClick={closeMobile}>
                 Daily Sales Summary
               </NavSubLink>
-              <NavSubLink to={routes.bookings} onClick={() => setMobileOpen(false)}>
+              <NavSubLink to={routes.bookings} onClick={closeMobile}>
                 Appointments
               </NavSubLink>
-              <NavSubLink to={routes.reports} onClick={() => setMobileOpen(false)}>
+              <NavSubLink to={routes.reports} onClick={closeMobile}>
                 Sales Transactions
               </NavSubLink>
-              <NavSubLink to={routes.reports} onClick={() => setMobileOpen(false)}>
+              <NavSubLink to={routes.reports} onClick={closeMobile}>
                 Payments
               </NavSubLink>
             </NavGroup>
@@ -212,7 +216,7 @@ export const Nav = memo(function Nav() {
             {POS_ACCESS.includes(currentUser.role) && (
               <NavLink
                 to={routes.customers}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
                 collapsed={isCollapsed}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -235,13 +239,13 @@ export const Nav = memo(function Nav() {
                   </svg>
                 }
               >
-                <NavSubLink to={routes.catalog.treatmentCategories} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.catalog.treatmentCategories} onClick={closeMobile}>
                   Categories
                 </NavSubLink>
-                <NavSubLink to={routes.catalog.treatments()} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.catalog.treatments()} onClick={closeMobile}>
                   Services
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.inventory} onClick={closeMobile}>
                   Products
                 </NavSubLink>
               </NavGroup>
@@ -258,13 +262,13 @@ export const Nav = memo(function Nav() {
                   </svg>
                 }
               >
-                <NavSubLink to={routes.inventory} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.inventory} onClick={closeMobile}>
                   Stock Orders
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.inventory} onClick={closeMobile}>
                   Stocktakes
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.inventory} onClick={closeMobile}>
                   Suppliers
                 </NavSubLink>
               </NavGroup>
@@ -281,13 +285,13 @@ export const Nav = memo(function Nav() {
                   </svg>
                 }
               >
-                <NavSubLink to={routes.staff.users} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.staff.users} onClick={closeMobile}>
                   Team Members
                 </NavSubLink>
-                <NavSubLink to={routes.staff.timesheets} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.staff.timesheets} onClick={closeMobile}>
                   Timesheets
                 </NavSubLink>
-                <NavSubLink to={routes.staff.payroll} onClick={() => setMobileOpen(false)}>
+                <NavSubLink to={routes.staff.payroll} onClick={closeMobile}>
                   Pay Runs
                 </NavSubLink>
               </NavGroup>
@@ -297,7 +301,7 @@ export const Nav = memo(function Nav() {
             {ADMIN_ACCESS.includes(currentUser.role) && (
               <NavLink
                 to={routes.reports}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
                 collapsed={isCollapsed}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,7 +317,7 @@ export const Nav = memo(function Nav() {
             {ADMIN_ACCESS.includes(currentUser.role) && (
               <NavLink
                 to={routes.settings}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
                 collapsed={isCollapsed}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -341,7 +345,7 @@ export const Nav = memo(function Nav() {
             <Tooltip content={isCollapsed ? currentUser.name : null} side="right">
               <Link
                 to={routes.profile}
-                onClick={() => setMobileOpen(false)}
+                onClick={closeMobile}
                 className={`flex items-center gap-2.5 min-w-0 overflow-hidden group ${isCollapsed ? '' : 'flex-1'}`}
               >
                 {currentUser.photoPath ? (
@@ -426,7 +430,7 @@ export const Nav = memo(function Nav() {
       {/* Mobile Drawer Overlay -- always renders fully expanded, independent of the desktop collapse state */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setMobileOpen(false)} />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" onClick={closeMobile} />
           <div className="relative flex w-72 max-w-full flex-col bg-card shadow-2xl z-10">
             {renderNavContent(false)}
           </div>

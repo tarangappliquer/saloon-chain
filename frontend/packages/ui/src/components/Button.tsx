@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useFormStatus } from "react-dom";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "../lib/utils";
@@ -43,10 +44,20 @@ function ButtonBase({
   size = "md",
   className = "",
   type = "button",
+  disabled,
   ...props
 }: ButtonProps) {
+  const formStatus = useFormStatus();
+  const isFormSubmitting = type === "submit" && formStatus.pending;
+  const isButtonDisabled = disabled || isFormSubmitting;
+
   return (
-    <button type={type} className={cn(buttonVariants({ variant, size, className }))} {...props}>
+    <button
+      type={type}
+      disabled={isButtonDisabled}
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    >
       <span className="inline-flex flex-row items-center justify-center gap-1.5 whitespace-nowrap leading-none shrink-0 w-max">
         {children}
       </span>

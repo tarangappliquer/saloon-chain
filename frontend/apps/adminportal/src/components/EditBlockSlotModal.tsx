@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import Select, { type MultiValue } from 'react-select';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@saloon/ui';
 import { adminSchedulingApi, schedulingApi, ApiError } from '../api/client';
@@ -151,7 +151,7 @@ export function EditBlockSlotModal({
     }
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!reason.trim()) {
       setError('Please provide a reason or select a Block Type.');
@@ -290,8 +290,8 @@ export function EditBlockSlotModal({
                     selectedTherapistIds.includes(ALL_STAFF_OPTION.id)
                       ? [{ value: String(ALL_STAFF_OPTION.id), label: ALL_STAFF_OPTION.name }]
                       : therapists
-                          .filter((t) => selectedTherapistIds.includes(t.id))
-                          .map((t) => ({ value: String(t.id), label: t.name }))
+                        .filter((t) => selectedTherapistIds.includes(t.id))
+                        .map((t) => ({ value: String(t.id), label: t.name }))
                   }
                   onChange={(picked: MultiValue<SelectOption>) => {
                     const ids = picked.map((o) => Number(o.value));

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../api/client';
 import type { LocationDaySchedule } from '../api/types';
@@ -96,7 +96,7 @@ export function DayScheduleModal({
     setEditingId(null);
   }
 
-  async function handleSave(e: FormEvent) {
+  async function handleSave(e: SyntheticEvent) {
     e.preventDefault();
     if (addingForBit === null) return;
     setError(null);

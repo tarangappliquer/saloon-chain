@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import { profileStreamUrl, subscribeToStream } from '../../api/sseClient';
 import type { AuthResponse } from '../../api/types';
@@ -31,11 +31,46 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = 'saloon_user';
 
+// Tiny external store over localStorage[STORAGE_KEY] for useSyncExternalStore. A plain
+// `window.addEventListener('storage', ...)` only fires in *other* tabs -- the tab that calls
+// localStorage.setItem never gets its own 'storage' event -- so writes from this tab notify the
+// in-memory listener set directly, while readUser() re-checks the raw string on every call so a
+// genuine cross-tab 'storage' event (e.g. another tab logging out) is picked up too. This also
+// fixes a real bug the previous plain useState-mirrors-localStorage version had: another tab
+// logging out never updated this tab (only the SSE 'user-logged-out' listener did).
+type StoreListener = () => void;
+const storeListeners = new Set<StoreListener>();
+let cachedRaw: string | null | undefined;
+let cachedSnapshot: AuthUser | null = null;
+
+function readUser(): AuthUser | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedSnapshot = raw ? (JSON.parse(raw) as AuthUser) : null;
+  }
+  return cachedSnapshot;
+}
+
+function writeUser(user: AuthUser | null) {
+  if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  else localStorage.removeItem(STORAGE_KEY);
+  cachedRaw = localStorage.getItem(STORAGE_KEY);
+  cachedSnapshot = user;
+  storeListeners.forEach((listener) => listener());
+}
+
+function subscribeToUserStore(listener: StoreListener) {
+  storeListeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    storeListeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
-  });
+  const user = useSyncExternalStore(subscribeToUserStore, readUser);
 
   const persist = useCallback((res: AuthResponse) => {
     setAuthToken(res.token);
@@ -52,8 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       photoVersion: Date.now(),
       isEmailVerified: res.isEmailVerified,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-    setUser(authUser);
+    writeUser(authUser);
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -83,17 +117,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setAuthToken(null);
     setRefreshToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-    setUser(null);
+    writeUser(null);
   }, []);
 
   const updateName = useCallback((name: string) => {
-    setUser((u) => {
-      if (!u) return u;
-      const updated = { ...u, name };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    const current = readUser();
+    if (!current) return;
+    writeUser({ ...current, name });
   }, []);
 
   // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
@@ -102,12 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     const { data } = await authApi.apiAuthMeGet();
     const res = data as unknown as AuthResponse;
-    setUser((u) => {
-      if (!u) return u;
-      const updated = { ...u, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    const current = readUser();
+    if (!current) return;
+    writeUser({ ...current, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified });
   }, []);
 
   useEffect(() => {

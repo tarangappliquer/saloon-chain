@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { startTransition, useActionState, useEffect, useOptimistic, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Calendar, CalendarOff, Clock, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
@@ -45,10 +45,13 @@ export function LocationsPage() {
   const [dayScheduleLocation, setDayScheduleLocation] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const [optimisticLocations, applyOptimisticToggle] = useOptimistic(
+    locations,
+    (current, updated: Location) => current.map((l) => (l.id === updated.id ? updated : l)),
+  );
 
   useEffect(() => {
     adminCatalogApi
@@ -115,7 +118,6 @@ export function LocationsPage() {
     setBreakStartError(null);
     setBreakEndError(null);
     setError(null);
-    setSubmitError(null);
   }
 
 
@@ -126,16 +128,13 @@ export function LocationsPage() {
     setBreakStartError(null);
     setBreakEndError(null);
     setError(null);
-    setSubmitError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  const [submitError, handleSubmit, submitting] = useActionState<unknown>(async () => {
     const targetChainId = formChainId ?? chainId;
-    if (targetChainId === null) return;
+    if (targetChainId === null) return null;
 
     setError(null);
-    setSubmitError(null);
     setBreakStartError(null);
     setBreakEndError(null);
 
@@ -144,15 +143,14 @@ export function LocationsPage() {
       setBreakStartError(breakErrors.startError);
       setBreakEndError(breakErrors.endError);
       setError('Please fix the validation errors below.');
-      return;
+      return null;
     }
 
     if (form.latitude === null || form.longitude === null) {
       setError('Enter latitude and longitude before saving.');
-      return;
+      return null;
     }
 
-    setSubmitting(true);
     try {
       const workingDaysMask = [...form.days].reduce((mask, bit) => mask | bit, 0);
       const breakStart = toApiTime(form.breakStartTime);
@@ -194,40 +192,43 @@ export function LocationsPage() {
       } else {
         await loadLocations(targetChainId);
       }
+      return null;
     } catch (err) {
-      setSubmitError(err);
       setError(err instanceof ApiError ? err.message : `Failed to ${editingLocation ? 'update' : 'create'} location`);
-    } finally {
-      setSubmitting(false);
+      return err;
     }
-  }
+  }, null);
 
-  async function toggleActive(loc: Location) {
-    setError(null);
-    try {
-      await adminCatalogApi.apiAdminCatalogLocationsIdPut(loc.id, {
-        name: loc.name,
-        address: loc.address,
-        // Generated request type for decimal? fields is a broken placeholder (openapi-generator
-        // quirk, see AdminBookingTreatmentDtoPrice) that structurally rejects `null` even though the
-        // field is genuinely nullable -- cast through, same as the `as unknown as X[]` casts already
-        // used for response bodies elsewhere in this file. A legacy location with no pin set yet will
-        // still get a real 400 from sp_Catalog_UpdateLocation's NotNull validator, which is correct:
-        // the map pin is compulsory for every save, this call included.
-        latitude: (loc.latitude ?? null) as number,
-        longitude: (loc.longitude ?? null) as number,
-        openTime: loc.openTime,
-        closeTime: loc.closeTime,
-        breakStartTime: loc.breakStartTime ?? null,
-        breakEndTime: loc.breakEndTime ?? null,
-        workingDaysMask: loc.workingDaysMask,
-        timeZoneId: loc.timeZoneId,
-        isActive: !loc.isActive,
-      });
-      if (chainId !== null) await loadLocations(chainId);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update location');
-    }
+  function toggleActive(loc: Location) {
+    const updated = { ...loc, isActive: !loc.isActive };
+    startTransition(async () => {
+      applyOptimisticToggle(updated);
+      setError(null);
+      try {
+        await adminCatalogApi.apiAdminCatalogLocationsIdPut(loc.id, {
+          name: updated.name,
+          address: updated.address,
+          // Generated request type for decimal? fields is a broken placeholder (openapi-generator
+          // quirk, see AdminBookingTreatmentDtoPrice) that structurally rejects `null` even though the
+          // field is genuinely nullable -- cast through, same as the `as unknown as X[]` casts already
+          // used for response bodies elsewhere in this file. A legacy location with no pin set yet will
+          // still get a real 400 from sp_Catalog_UpdateLocation's NotNull validator, which is correct:
+          // the map pin is compulsory for every save, this call included.
+          latitude: (updated.latitude ?? null) as number,
+          longitude: (updated.longitude ?? null) as number,
+          openTime: updated.openTime,
+          closeTime: updated.closeTime,
+          breakStartTime: updated.breakStartTime ?? null,
+          breakEndTime: updated.breakEndTime ?? null,
+          workingDaysMask: updated.workingDaysMask,
+          timeZoneId: updated.timeZoneId,
+          isActive: updated.isActive,
+        });
+        if (chainId !== null) await loadLocations(chainId);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to update location');
+      }
+    });
   }
 
   async function handleConfirmDelete() {
@@ -299,7 +300,7 @@ export function LocationsPage() {
           <CardTitle>{editingLocation ? `Edit Location: ${editingLocation.name}` : 'Add New Location'}</CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form action={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {/* Readonly Saloon Chain Label */}
               <div className="space-y-1">
@@ -435,14 +436,14 @@ export function LocationsPage() {
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
           <CardTitle>
-            Salon Locations {activeChain ? `for ${activeChain.name}` : ''} ({locations.length})
+            Salon Locations {activeChain ? `for ${activeChain.name}` : ''} ({optimisticLocations.length})
           </CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : locations.length === 0 ? (
+        ) : optimisticLocations.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
             No locations found.
           </CardContent>
@@ -459,7 +460,7 @@ export function LocationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {locations.map((l) => (
+                {optimisticLocations.map((l) => (
                   <tr key={l.id} className="hover:bg-accent/40 transition">
                     <td className="px-6 py-4 font-semibold text-foreground">{l.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{l.address ?? '-'}</td>

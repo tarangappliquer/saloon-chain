@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, useOptimistic, startTransition, type SyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
@@ -21,6 +21,10 @@ export function TreatmentCategoriesPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [categories, setCategories] = useState<TreatmentCategory[]>([]);
+  const [optimisticCategories, setOptimisticCategories] = useOptimistic(
+    categories,
+    (state, id: number) => state.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c)),
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,7 +100,7 @@ export function TreatmentCategoriesPage() {
     setSubmitError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (locationId === null) return;
     setError(null);
@@ -124,11 +128,15 @@ export function TreatmentCategoriesPage() {
 
   async function toggleActive(c: TreatmentCategory) {
     setError(null);
+    startTransition(() => {
+      setOptimisticCategories(c.id);
+    });
     try {
       await adminCatalogApi.apiAdminCatalogTreatmentCategoriesIdPut(c.id, { name: c.name, isActive: !c.isActive });
       if (locationId !== null) await loadCategories(locationId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update category');
+      if (locationId !== null) await loadCategories(locationId);
     }
   }
 
@@ -208,11 +216,11 @@ export function TreatmentCategoriesPage() {
           </form>
           {loading ? (
             <LoadingFallback />
-          ) : categories.length === 0 ? (
+          ) : optimisticCategories.length === 0 ? (
             <p className="text-xs text-muted-foreground">No categories yet.</p>
           ) : (
             <ul className="divide-y divide-border/50 text-xs">
-              {categories.map((c) => (
+              {optimisticCategories.map((c) => (
                 <li key={c.id} className="flex items-center justify-between py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-foreground">{c.name}</span>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
@@ -32,8 +32,10 @@ export function PaymentStep() {
   }, [locationId]);
 
   const [selectedProvider, setSelectedProvider] = useState<PaymentProviderType>('Stripe');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
+  // Owned by the mount-time Stripe-init effect below, separate from handlePaymentAndConfirm's own
+  // useActionState error/pending -- two independent triggers, merged only for display.
+  const [initializingStripe, setInitializingStripe] = useState(false);
+  const [stripeInitError, setStripeInitError] = useState<string | null>(null);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [stripePublishableKey, setStripePublishableKey] = useState<string | null>(null);
   const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
@@ -59,8 +61,8 @@ export function PaymentStep() {
 
   useEffect(() => {
     if (selectedProvider === 'Stripe' && bookingId && !stripeClientSecret) {
-      setIsProcessing(true);
-      setPaymentError(null);
+      setInitializingStripe(true);
+      setStripeInitError(null);
       paymentApi
         .apiPaymentsCreateIntentPost({
           bookingId: Number(bookingId),
@@ -73,57 +75,52 @@ export function PaymentStep() {
           if (checkoutUrl) setStripeCheckoutUrl(checkoutUrl);
         })
         .catch((err: AxiosError<{ title?: string }>) => {
-          setPaymentError(err.response?.data?.title ?? err.message ?? 'Failed to initialize payment.');
+          setStripeInitError(err.response?.data?.title ?? err.message ?? 'Failed to initialize payment.');
         })
-        .finally(() => setIsProcessing(false));
+        .finally(() => setInitializingStripe(false));
     }
   }, [selectedProvider, bookingId, stripeClientSecret]);
 
-  // setIsProcessing(true) below only disables the button after the next render -- a fast
-  // double-click can fire this twice before that repaint, creating duplicate payment intents.
-  // Guard synchronously with a ref, same pattern as useBookingFlow's confirmAll/selectSlot.
-  const paymentInFlight = useRef(false);
+  // useActionState's pending flag is derived from the action's own transition, so a fast
+  // double-click can't fire this twice -- no separate in-flight ref needed.
+  const [{ error: paymentError }, handlePaymentAndConfirm, isProcessing] = useActionState<{ error: string | null }>(
+    async (previous) => {
+      if (cashTenderedTooLow) return previous;
+      try {
+        const res = await paymentApi.apiPaymentsCreateIntentPost({
+          bookingId: Number(bookingId),
+          provider: selectedProvider,
+          tipAmount,
+        });
 
-  async function handlePaymentAndConfirm() {
-    if (cashTenderedTooLow || paymentInFlight.current) return;
-    paymentInFlight.current = true;
-    setIsProcessing(true);
-    setPaymentError(null);
-    try {
-      const res = await paymentApi.apiPaymentsCreateIntentPost({
-        bookingId: Number(bookingId),
-        provider: selectedProvider,
-        tipAmount,
-      });
+        const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
 
-      const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
+        // Stripe must never be confirmed here -- doing so used to mark the booking paid before the
+        // customer had actually completed (or even reached) Stripe's checkout page. Confirmation
+        // for Stripe only happens once ConfirmedStep verifies the real session after redirect back
+        // (or via the webhook), which is also all the backend now allows confirm-manual to do.
+        if (selectedProvider === 'Stripe') {
+          if (!checkoutUrl) return { error: 'Stripe did not return a checkout URL.' };
+          window.location.href = checkoutUrl;
+          return { error: null };
+        }
 
-      // Stripe must never be confirmed here -- doing so used to mark the booking paid before the
-      // customer had actually completed (or even reached) Stripe's checkout page. Confirmation
-      // for Stripe only happens once ConfirmedStep verifies the real session after redirect back
-      // (or via the webhook), which is also all the backend now allows confirm-manual to do.
-      if (selectedProvider === 'Stripe') {
-        if (!checkoutUrl) throw new Error('Stripe did not return a checkout URL.');
-        window.location.href = checkoutUrl;
-        return;
+        await paymentApi.apiPaymentsConfirmManualPost({
+          paymentId: res.data.paymentId,
+          success: true,
+          transactionId: res.data.transactionId,
+          amountTendered: selectedProvider === 'Cash' ? tenderedAmount : undefined,
+        });
+
+        navigate(routes.book.confirmed);
+        return { error: null };
+      } catch (err: unknown) {
+        const error = err as AxiosError<{ title?: string }>;
+        return { error: error.response?.data?.title ?? error.message ?? 'Payment failed. Please try again.' };
       }
-
-      await paymentApi.apiPaymentsConfirmManualPost({
-        paymentId: res.data.paymentId,
-        success: true,
-        transactionId: res.data.transactionId,
-        amountTendered: selectedProvider === 'Cash' ? tenderedAmount : undefined,
-      });
-
-      navigate(routes.book.confirmed);
-    } catch (err: unknown) {
-      const error = err as AxiosError<{ title?: string }>;
-      setPaymentError(error.response?.data?.title ?? error.message ?? 'Payment failed. Please try again.');
-    } finally {
-      paymentInFlight.current = false;
-      setIsProcessing(false);
-    }
-  }
+    },
+    { error: null },
+  );
 
   if (!booking || !allCovered) return null;
 
@@ -137,10 +134,10 @@ export function PaymentStep() {
           Choose your preferred payment method to finalize appointment confirmation.
         </p>
 
-        {paymentError && (
+        {(stripeInitError || paymentError) && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm flex items-center gap-3">
             <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{paymentError}</span>
+            <span>{stripeInitError || paymentError}</span>
           </div>
         )}
 
@@ -313,9 +310,9 @@ export function PaymentStep() {
         <BookingSummary
           lines={booking.treatments}
           treatments={treatments}
-          onConfirm={handlePaymentAndConfirm}
+          onConfirm={() => handlePaymentAndConfirm()}
           onEdit={() => navigate(routes.book.schedule(bookingId!))}
-          loading={state.loading || isProcessing}
+          loading={state.loading || initializingStripe || isProcessing}
         />
       </div>
     </div>

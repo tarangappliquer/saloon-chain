@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes, type Ref } from "react";
+import { useId, useState, type InputHTMLAttributes, type Ref } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -11,7 +11,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ label, error, helperText, showPasswordIcon, id, className = "", type, ref, ...props }: InputProps) {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+  const generatedId = useId();
+  const inputId = id || (label ? `${label.toLowerCase().replace(/\s+/g, "-")}-${generatedId}` : generatedId);
   const [revealed, setRevealed] = useState(false);
   const isPassword = type === "password";
 

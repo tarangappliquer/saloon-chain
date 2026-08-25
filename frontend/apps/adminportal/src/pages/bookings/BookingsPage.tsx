@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useOptimistic, useState } from 'react';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, adminInventoryApi, ApiError, paymentApi } from '../../api/client';
@@ -409,7 +409,7 @@ function ReassignTherapistModal({ target, locationId, onClose, onSuccess }: Reas
       .finally(() => setLoading(false));
   }, [locationId]);
 
-  async function handleReassign(e: React.FormEvent) {
+  async function handleReassign(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!newTherapistId) return;
     setSubmitting(true);
@@ -524,6 +524,11 @@ export function BookingsPage() {
   const [locationId, setLocationId] = useState<number | null>(null);
   const [date, setDate] = useState(today());
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
+  const [optimisticBookings, setOptimisticBookings] = useOptimistic(
+    bookings,
+    (state, action: { type: 'cancel' | 'noshow'; id: number }) =>
+      state.map((b) => (b.id === action.id ? { ...b, status: action.type === 'cancel' ? 'Cancelled' : 'NoShow' } : b)),
+  );
   const [selectedBooking, setSelectedBooking] = useState<AdminBooking | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<number | null>(null);
   const [reassignTarget, setReassignTarget] = useState<ReassignTarget | null>(null);
@@ -573,21 +578,29 @@ export function BookingsPage() {
 
   async function handleCancel(id: number) {
     setError(null);
+    startTransition(() => {
+      setOptimisticBookings({ type: 'cancel', id });
+    });
     try {
       await adminBookingsApi.apiAdminBookingsIdCancelPost(id);
       await loadBookings();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to cancel booking');
+      await loadBookings();
     }
   }
 
   async function handleNoShow(id: number) {
     setError(null);
+    startTransition(() => {
+      setOptimisticBookings({ type: 'noshow', id });
+    });
     try {
       await adminBookingsApi.apiAdminBookingsIdNoShowPost(id);
       await loadBookings();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to mark booking as a no-show');
+      await loadBookings();
     }
   }
 
@@ -684,13 +697,13 @@ export function BookingsPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Appointments ({bookings.length})</CardTitle>
+          <CardTitle>Appointments ({optimisticBookings.length})</CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : bookings.length === 0 ? (
+        ) : optimisticBookings.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
             No bookings found for this location and date.
           </CardContent>
@@ -708,7 +721,7 @@ export function BookingsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {bookings.map((b) => {
+                {optimisticBookings.map((b) => {
                   const firstStart = b.treatments.find((t) => t.startTime)?.startTime;
                   const formattedBookingDate = firstStart
                     ? new Date(firstStart).toLocaleDateString(undefined, {

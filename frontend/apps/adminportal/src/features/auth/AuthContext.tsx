@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import { profileStreamUrl, subscribeToStream } from '../../api/sseClient';
 import type { AuthResponse, UserRole } from '../../api/types';
@@ -25,11 +25,39 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = 'saloon_admin_user';
 
+type StoreListener = () => void;
+const storeListeners = new Set<StoreListener>();
+let cachedRaw: string | null | undefined;
+let cachedSnapshot: AuthUser | null = null;
+
+function readUser(): AuthUser | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedSnapshot = raw ? (JSON.parse(raw) as AuthUser) : null;
+  }
+  return cachedSnapshot;
+}
+
+function writeUser(user: AuthUser | null) {
+  if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  else localStorage.removeItem(STORAGE_KEY);
+  cachedRaw = localStorage.getItem(STORAGE_KEY);
+  cachedSnapshot = user;
+  storeListeners.forEach((listener) => listener());
+}
+
+function subscribeToUserStore(listener: StoreListener) {
+  storeListeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    storeListeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
-  });
+  const user = useSyncExternalStore(subscribeToUserStore, readUser);
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.apiAuthLoginPost({ email, password, portal: 'Admin' });
@@ -47,8 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       photoVersion: Date.now(),
       isEmailVerified: res.isEmailVerified,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-    setUser(authUser);
+    writeUser(authUser);
   }, []);
 
   const logout = useCallback(() => {
@@ -57,17 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setAuthToken(null);
     setRefreshToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-    setUser(null);
+    writeUser(null);
   }, []);
 
   const updateName = useCallback((name: string) => {
-    setUser((u) => {
-      if (!u) return u;
-      const updated = { ...u, name };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    const current = readUser();
+    if (!current) return;
+    writeUser({ ...current, name });
   }, []);
 
   // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
@@ -76,12 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     const { data } = await authApi.apiAuthMeGet();
     const res = data as unknown as AuthResponse;
-    setUser((u) => {
-      if (!u) return u;
-      const updated = { ...u, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    const current = readUser();
+    if (!current) return;
+    writeUser({ ...current, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified });
   }, []);
 
   useEffect(() => {

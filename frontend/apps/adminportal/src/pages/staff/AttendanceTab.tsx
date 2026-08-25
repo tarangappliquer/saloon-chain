@@ -84,8 +84,12 @@ export function AttendanceTab() {
     initialize();
   }, []);
 
-  useEffect(() => {
+  const handleLoadAttendance = useEffectEvent(() => {
     if (selectedLocationId) loadAttendance();
+  });
+
+  useEffect(() => {
+    handleLoadAttendance();
   }, [selectedLocationId, workDate]);
 
   // Shared by the single-row and bulk paths -- no confirm, no loading-state toggling, just the

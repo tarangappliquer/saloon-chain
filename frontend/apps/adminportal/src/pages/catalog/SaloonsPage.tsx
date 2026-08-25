@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
 import { Building2, CalendarOff, CheckCircle2, MapPin, UserPlus, XCircle } from 'lucide-react';
@@ -94,7 +94,7 @@ export function SaloonsPage() {
     setIsActive(true);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitError(null);
@@ -203,8 +203,8 @@ export function SaloonsPage() {
           isRootSuperAdmin
             ? 'Manage saloon chains, tenant boundaries, and chain users (RootSuperAdmin access).'
             : canEditChain
-            ? "View and edit your saloon chain's details."
-            : "View your saloon chain's details."
+              ? "View and edit your saloon chain's details."
+              : "View your saloon chain's details."
         }
         action={
           !showForm && isRootSuperAdmin && (

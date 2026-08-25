@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminPayrollApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
@@ -125,9 +125,8 @@ export function PayrollPage() {
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${
-              tab === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent'
-            }`}
+            className={`px-4 py-1.5 text-xs font-semibold capitalize transition-colors ${tab === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent'
+              }`}
           >
             {t.replace('-', ' ')}
           </button>
@@ -174,7 +173,7 @@ function CommissionRulesTab({ locationId, setError }: { locationId: number; setE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
@@ -353,7 +352,7 @@ function PayRunsTab({ locationId, setError }: { locationId: number; setError: (e
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
-  async function handleCreate(e: FormEvent) {
+  async function handleCreate(e: SyntheticEvent) {
     e.preventDefault();
     setCreating(true);
     setError(null);

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError } from '../api/client';
 import type { CustomerSummary } from '../api/types';
@@ -51,7 +51,7 @@ export function AddAppointmentModal({
     setError(null);
   }, [isOpen]);
 
-  async function handleSearch(e: FormEvent) {
+  async function handleSearch(e: SyntheticEvent) {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setSearching(true);

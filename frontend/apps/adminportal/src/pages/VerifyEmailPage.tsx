@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useActionState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card } from '@saloon/ui';
 import { authApi, ApiError } from '../api/client';
@@ -9,24 +9,18 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
 
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
-
-  async function handleConfirm(e: SyntheticEvent) {
-    e.preventDefault();
-    if (!token) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await authApi.apiAuthEmailConfirmPost({ token });
-      setDone(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const [{ error, done }, handleConfirm, submitting] = useActionState<{ error: string | null; done: boolean }>(
+    async () => {
+      if (!token) return { error: null, done: false };
+      try {
+        await authApi.apiAuthEmailConfirmPost({ token });
+        return { error: null, done: true };
+      } catch (err) {
+        return { error: err instanceof ApiError ? err.message : 'Something went wrong', done: false };
+      }
+    },
+    { error: null, done: false },
+  );
 
   return (
     <main className="flex min-h-[calc(100vh-6rem)] items-center justify-center p-4">
@@ -50,7 +44,7 @@ export function VerifyEmailPage() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleConfirm} className="space-y-4 text-center">
+          <form action={handleConfirm} className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">Click below to confirm this email address for your account.</p>
 
             {error && (

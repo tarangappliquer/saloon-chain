@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { X } from 'lucide-react';
@@ -166,7 +166,7 @@ export function ClientProfilePage() {
   const [tagError, setTagError] = useState<unknown>(null);
   const [savingTag, setSavingTag] = useState(false);
 
-  async function addTag(e: FormEvent) {
+  async function addTag(e: SyntheticEvent) {
     e.preventDefault();
     if (!newTag.trim()) return;
     setTagError(null);
@@ -196,7 +196,7 @@ export function ClientProfilePage() {
   const [noteError, setNoteError] = useState<unknown>(null);
   const [savingNote, setSavingNote] = useState(false);
 
-  async function addNote(e: FormEvent) {
+  async function addNote(e: SyntheticEvent) {
     e.preventDefault();
     if (!newNote.trim()) return;
     setNoteError(null);

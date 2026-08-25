@@ -1,8 +1,16 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useActionState, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { authApi, ApiError, getFieldError } from '../api/client';
 import { routes } from '../routes';
+
+interface ResetPasswordState {
+  error: string | null;
+  submitError: unknown;
+  done: boolean;
+}
+
+const INITIAL_RESET_STATE: ResetPasswordState = { error: null, submitError: null, done: false };
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -11,33 +19,20 @@ export function ResetPasswordPage() {
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
-
-  async function handleSubmit(e: SyntheticEvent) {
-    e.preventDefault();
-    if (!token) return;
-    setError(null);
-    setSubmitError(null);
+  const [{ error, submitError, done }, handleSubmit, submitting] = useActionState<ResetPasswordState>(async () => {
+    if (!token) return INITIAL_RESET_STATE;
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
+      return { error: 'Passwords do not match.', submitError: null, done: false };
     }
 
-    setSubmitting(true);
     try {
       await authApi.apiAuthResetPasswordPost({ token, newPassword: password });
-      setDone(true);
+      return { error: null, submitError: null, done: true };
     } catch (err) {
-      setSubmitError(err);
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmitting(false);
+      return { error: err instanceof ApiError ? err.message : 'Something went wrong', submitError: err, done: false };
     }
-  }
+  }, INITIAL_RESET_STATE);
 
   return (
     <main className="flex min-h-[calc(100vh-6rem)] items-center justify-center p-4">
@@ -61,7 +56,7 @@ export function ResetPasswordPage() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form action={handleSubmit} className="space-y-4">
             <Input
               required
               type="password"

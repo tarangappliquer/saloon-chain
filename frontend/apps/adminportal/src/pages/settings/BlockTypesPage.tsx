@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useOptimistic, startTransition, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminSchedulingApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -37,6 +37,14 @@ export function BlockTypesPage() {
   const isAdmin = currentUser ? ADMIN_ACCESS.includes(currentUser.role) : false;
 
   const [blockTypes, setBlockTypes] = useState<BlockTypeDto[]>([]);
+  const [optimisticBlockTypes, setOptimisticBlockTypes] = useOptimistic(
+    blockTypes,
+    (state, action: { type: 'toggle' | 'delete'; id: number }) => {
+      if (action.type === 'delete') return state.filter((b) => Number(b.id) !== action.id);
+      if (action.type === 'toggle') return state.map((b) => (Number(b.id) === action.id ? { ...b, isActive: !b.isActive } : b));
+      return state;
+    },
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,7 +100,7 @@ export function BlockTypesPage() {
     setSubmitError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSubmitError(null);
     setSubmitting(true);
@@ -126,6 +134,9 @@ export function BlockTypesPage() {
   async function toggleActive(b: BlockTypeDto) {
     setError(null);
     setSavingId(Number(b.id));
+    startTransition(() => {
+      setOptimisticBlockTypes({ type: 'toggle', id: Number(b.id) });
+    });
     try {
       await adminSchedulingApi.apiAdminSchedulingBlockTypesIdPut(Number(b.id), {
         name: b.name,
@@ -137,6 +148,7 @@ export function BlockTypesPage() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update block type');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -144,14 +156,19 @@ export function BlockTypesPage() {
 
   async function handleConfirmDelete() {
     if (!deletingType) return;
+    const targetId = Number(deletingType.id);
     setError(null);
-    setSavingId(Number(deletingType.id));
+    setSavingId(targetId);
+    startTransition(() => {
+      setOptimisticBlockTypes({ type: 'delete', id: targetId });
+    });
     try {
-      await adminSchedulingApi.apiAdminSchedulingBlockTypesIdDelete(Number(deletingType.id));
+      await adminSchedulingApi.apiAdminSchedulingBlockTypesIdDelete(targetId);
       setDeletingType(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete block type');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -207,11 +224,10 @@ export function BlockTypesPage() {
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, isPaid: false })}
-                    className={`flex-1 rounded-xl border p-3 text-xs font-bold transition-all text-left ${
-                      !form.isPaid
+                    className={`flex-1 rounded-xl border p-3 text-xs font-bold transition-all text-left ${!form.isPaid
                         ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400'
                         : 'border-border bg-card text-muted-foreground hover:bg-accent'
-                    }`}
+                      }`}
                   >
                     ⏸️ Unpaid Block Time
                     <p className="mt-0.5 text-[10px] font-normal opacity-80">Subtracted from payable shift hours (e.g. Unpaid Lunch)</p>
@@ -220,11 +236,10 @@ export function BlockTypesPage() {
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, isPaid: true })}
-                    className={`flex-1 rounded-xl border p-3 text-xs font-bold transition-all text-left ${
-                      form.isPaid
+                    className={`flex-1 rounded-xl border p-3 text-xs font-bold transition-all text-left ${form.isPaid
                         ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                         : 'border-border bg-card text-muted-foreground hover:bg-accent'
-                    }`}
+                      }`}
                   >
                     💰 Paid Block Time
                     <p className="mt-0.5 text-[10px] font-normal opacity-80">Included in paid shift hours (e.g. Paid Team Meeting)</p>
@@ -255,9 +270,8 @@ export function BlockTypesPage() {
                       key={c.hex}
                       type="button"
                       onClick={() => setForm({ ...form, colorHex: c.hex })}
-                      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                        form.colorHex === c.hex ? 'border-primary ring-2 ring-primary/30 font-bold' : 'border-border hover:border-primary/50'
-                      }`}
+                      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border transition-all ${form.colorHex === c.hex ? 'border-primary ring-2 ring-primary/30 font-bold' : 'border-border hover:border-primary/50'
+                        }`}
                     >
                       <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex }} />
                       <span>{c.label}</span>
@@ -281,13 +295,13 @@ export function BlockTypesPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Configured Block Types ({blockTypes.length})</CardTitle>
+          <CardTitle>Configured Block Types ({optimisticBlockTypes.length})</CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : blockTypes.length === 0 ? (
+        ) : optimisticBlockTypes.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">No block types configured.</CardContent>
         ) : (
           <div className="overflow-x-auto">
@@ -303,7 +317,7 @@ export function BlockTypesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {blockTypes.map((b) => (
+                {optimisticBlockTypes.map((b) => (
                   <tr key={String(b.id)} className="hover:bg-accent/40 transition">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2.5">

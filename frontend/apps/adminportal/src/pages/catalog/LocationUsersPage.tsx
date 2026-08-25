@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, type SyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
@@ -72,7 +72,7 @@ export function LocationUsersPage() {
           const found = cs.find((c) => c.id === chainId);
           if (found) setChain(found);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     if (chainId && locationId) {
@@ -83,7 +83,7 @@ export function LocationUsersPage() {
           const found = locs.find((l) => l.id === locationId);
           if (found) setLocation(found);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     loadUsers();
@@ -106,7 +106,7 @@ export function LocationUsersPage() {
     setError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (!chainId || !locationId) return;
     setError(null);

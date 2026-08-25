@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useCallback, useActionState, useOptimistic, startTransition } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Search } from 'lucide-react';
@@ -70,16 +70,19 @@ export function StaffPage() {
         : roleOptions;
 
   const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
+
+  const [optimisticStaff, applyOptimisticStaffUpdate] = useOptimistic(
+    staff,
+    (current, updated: StaffUser) => current.map((s) => (s.id === updated.id ? updated : s)),
+  );
 
   const [roleFilter, setRoleFilter] = useState<'All' | UserRole>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
   const [searchKey, setSearchKey] = useState('');
-  const roleFilterOptions: ('All' | UserRole)[] = ['All', ...Array.from(new Set(staff.map((u) => u.role)))];
-  const filteredStaff = staff.filter((u) => {
+  const roleFilterOptions: ('All' | UserRole)[] = ['All', ...Array.from(new Set(optimisticStaff.map((u) => u.role)))];
+  const filteredStaff = optimisticStaff.filter((u) => {
     if (roleFilter !== 'All' && u.role !== roleFilter) return false;
     if (statusFilter === 'Active' && !u.isActive) return false;
     if (statusFilter === 'Inactive' && u.isActive) return false;
@@ -184,80 +187,85 @@ export function StaffPage() {
     setError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(form.role) ? form.isEmulator : false;
-      if (editingUser) {
-        await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
-          name: form.name,
-          phone: form.phone || null,
-          role: form.role,
-          chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
-          locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
-          therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
-          isEmulator,
-          joiningDate: form.joiningDate,
-          isActive: editingUser.isActive,
-        });
-      } else {
-        const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
-        const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
-        await adminStaffApi.apiAdminStaffPost({
-          name: form.name,
-          email: form.email,
-          role: form.role,
-          chainId: cId,
-          locationId: lId,
-          therapistId: form.therapistId ? Number(form.therapistId) : null,
-          isEmulator,
-          joiningDate: form.joiningDate,
-        });
+  const [{ error: formError, submitError }, handleSubmit, submitting] = useActionState<{
+    error: string | null;
+    submitError: unknown;
+  }>(
+    async () => {
+      try {
+        const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(form.role) ? form.isEmulator : false;
+        if (editingUser) {
+          await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
+            name: form.name,
+            phone: form.phone || null,
+            role: form.role,
+            chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
+            locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
+            therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
+            isEmulator,
+            joiningDate: form.joiningDate,
+            isActive: editingUser.isActive,
+          });
+        } else {
+          const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
+          const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
+          await adminStaffApi.apiAdminStaffPost({
+            name: form.name,
+            email: form.email,
+            role: form.role,
+            chainId: cId,
+            locationId: lId,
+            therapistId: form.therapistId ? Number(form.therapistId) : null,
+            isEmulator,
+            joiningDate: form.joiningDate,
+          });
+        }
+        handleCancelEdit();
+        await loadStaff();
+        return { error: null, submitError: null };
+      } catch (err) {
+        return {
+          error: err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} staff user`,
+          submitError: err,
+        };
       }
-      handleCancelEdit();
-      await loadStaff();
-    } catch (err) {
-      setSubmitError(err);
-      setError(err instanceof ApiError ? err.message : `Failed to ${editingUser ? 'update' : 'create'} staff user`);
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    { error: null, submitError: null },
+  );
+
+  function toggleActive(u: StaffUser) {
+    updateStaff(u, { isActive: !u.isActive });
   }
 
-  async function toggleActive(u: StaffUser) {
-    await updateStaff(u, { isActive: !u.isActive });
+  function toggleEmulator(u: StaffUser) {
+    updateStaff(u, { isEmulator: !u.isEmulator });
   }
 
-  async function toggleEmulator(u: StaffUser) {
-    await updateStaff(u, { isEmulator: !u.isEmulator });
-  }
-
-  async function updateStaff(u: StaffUser, changes: Partial<Pick<StaffUser, 'isActive' | 'isEmulator'>>) {
+  function updateStaff(u: StaffUser, changes: Partial<Pick<StaffUser, 'isActive' | 'isEmulator'>>) {
     setError(null);
     setSavingId(u.id);
-    try {
-      const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(u.role)
-        ? (changes.isEmulator ?? u.isEmulator)
-        : false;
-      await adminStaffApi.apiAdminStaffIdPut(u.id, {
-        name: u.name,
-        phone: u.phone,
-        role: u.role,
-        chainId: u.chainId,
-        locationId: u.locationId,
-        therapistId: u.therapistId,
-        isEmulator,
-        isActive: changes.isActive ?? u.isActive,
-      });
-      await loadStaff();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update staff user');
-    } finally {
-      setSavingId(null);
-    }
+    const isEmulator = EMULATOR_ELIGIBLE_ROLES.includes(u.role) ? (changes.isEmulator ?? u.isEmulator) : false;
+    const updated: StaffUser = { ...u, isActive: changes.isActive ?? u.isActive, isEmulator };
+    startTransition(async () => {
+      applyOptimisticStaffUpdate(updated);
+      try {
+        await adminStaffApi.apiAdminStaffIdPut(u.id, {
+          name: u.name,
+          phone: u.phone,
+          role: u.role,
+          chainId: u.chainId,
+          locationId: u.locationId,
+          therapistId: u.therapistId,
+          isEmulator,
+          isActive: changes.isActive ?? u.isActive,
+        });
+        await loadStaff();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to update staff user');
+      } finally {
+        setSavingId(null);
+      }
+    });
   }
 
   const selectedChain = chains.find((c) => String(c.id) === (paramChainId ?? form.chainId));
@@ -345,9 +353,9 @@ export function StaffPage() {
         }
       />
 
-      {error && (
+      {(error || formError) && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-xs font-medium text-destructive">
-          {error}
+          {error || formError}
         </div>
       )}
 
@@ -365,7 +373,7 @@ export function StaffPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form action={handleSubmit} className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {/* Saloon Chain Scope / Read-only Label */}
                 {paramChainId && (
@@ -512,7 +520,7 @@ export function StaffPage() {
                   ? `Users for ${selectedChain?.name ?? 'Saloon Chain #' + paramChainId}`
                   : 'User Members'}{' '}
               <span className="text-muted-foreground font-normal">
-                ({filteredStaff.length}{filteredStaff.length !== staff.length ? ` of ${staff.length}` : ''})
+                ({filteredStaff.length}{filteredStaff.length !== optimisticStaff.length ? ` of ${optimisticStaff.length}` : ''})
               </span>
             </CardTitle>
             {(roleFilter !== 'All' || statusFilter !== 'All' || searchKey) && (
@@ -576,7 +584,7 @@ export function StaffPage() {
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : staff.length === 0 ? (
+        ) : optimisticStaff.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">
             No users found for this scope. Create your first user above.
           </CardContent>

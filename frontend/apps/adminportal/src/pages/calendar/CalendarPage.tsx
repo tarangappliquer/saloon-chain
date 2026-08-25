@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -406,22 +406,26 @@ export function CalendarPage() {
     loadRosterAndBookings(false);
   }, [loadRosterAndBookings]);
 
+  const handleSlotChangedEvent = useEffectEvent(() => {
+    loadRosterAndBookings(true);
+  });
+
   // Real-time EventSource SSE subscription + 15s fallback heartbeat polling (silent refetch)
   useEffect(() => {
     if (locationId === null) return;
     const unsubscribe = subscribeToStream(bookingStreamUrl(locationId, date), 'slot-changed', () => {
-      loadRosterAndBookings(true);
+      handleSlotChangedEvent();
     });
 
     const timer = setInterval(() => {
-      loadRosterAndBookings(true);
+      handleSlotChangedEvent();
     }, 15000);
 
     return () => {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [locationId, date, loadRosterAndBookings]);
+  }, [locationId, date]);
 
   async function handleUnblockSlot(id: number) {
     if (id <= 0) {
@@ -502,8 +506,8 @@ export function CalendarPage() {
     }
   }
 
-  const flatTreatments = extractFlatTreatments(bookings);
-  const timeSlots = generateTimeSlots(startTime, endTime, 15);
+  const flatTreatments = useMemo(() => extractFlatTreatments(bookings), [bookings]);
+  const timeSlots = useMemo(() => generateTimeSlots(startTime, endTime, 15), [startTime, endTime]);
   const selectedChain = chains.find((c) => c.id === chainId);
   const selectedLocation = locations.find((l) => l.id === locationId);
   const workOpen = selectedLocation?.openTime.slice(0, 5);
@@ -808,7 +812,10 @@ function ScheduleGridView({
   loadRosterAndBookings,
   workClose,
 }: ScheduleGridViewProps) {
-  const blockSpans = computeBlockSpans(rooms, roster.blockedSlots || [], timeSlots);
+  const blockSpans = useMemo(
+    () => computeBlockSpans(rooms, roster.blockedSlots || [], timeSlots),
+    [rooms, roster.blockedSlots, timeSlots],
+  );
 
   const [popover, setPopover] = useState<{
     isOpen: boolean;

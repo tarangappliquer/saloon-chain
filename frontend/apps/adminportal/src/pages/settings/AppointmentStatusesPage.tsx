@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useOptimistic, startTransition, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminAppointmentStatusesApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -23,6 +23,14 @@ export function AppointmentStatusesPage() {
   const isAdmin = currentUser ? ADMIN_ACCESS.includes(currentUser.role) : false;
 
   const [statuses, setStatuses] = useState<AppointmentStatusDto[]>([]);
+  const [optimisticStatuses, setOptimisticStatuses] = useOptimistic(
+    statuses,
+    (state, action: { type: 'toggle' | 'delete'; id: number }) => {
+      if (action.type === 'delete') return state.filter((s) => Number(s.id) !== action.id);
+      if (action.type === 'toggle') return state.map((s) => (Number(s.id) === action.id ? { ...s, isActive: !s.isActive } : s));
+      return state;
+    },
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +81,7 @@ export function AppointmentStatusesPage() {
     setSubmitError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSubmitError(null);
     setSubmitting(true);
@@ -105,6 +113,9 @@ export function AppointmentStatusesPage() {
   async function toggleActive(s: AppointmentStatusDto) {
     setError(null);
     setSavingId(Number(s.id));
+    startTransition(() => {
+      setOptimisticStatuses({ type: 'toggle', id: Number(s.id) });
+    });
     try {
       await adminAppointmentStatusesApi.apiAdminAppointmentStatusesIdPut(Number(s.id), {
         name: s.name,
@@ -115,6 +126,7 @@ export function AppointmentStatusesPage() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update appointment status');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -147,14 +159,19 @@ export function AppointmentStatusesPage() {
 
   async function handleConfirmDelete() {
     if (!deletingStatus) return;
+    const targetId = Number(deletingStatus.id);
     setError(null);
-    setSavingId(Number(deletingStatus.id));
+    setSavingId(targetId);
+    startTransition(() => {
+      setOptimisticStatuses({ type: 'delete', id: targetId });
+    });
     try {
-      await adminAppointmentStatusesApi.apiAdminAppointmentStatusesIdDelete(Number(deletingStatus.id));
+      await adminAppointmentStatusesApi.apiAdminAppointmentStatusesIdDelete(targetId);
       setDeletingStatus(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete appointment status');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -214,9 +231,8 @@ export function AppointmentStatusesPage() {
                       key={c.hex}
                       type="button"
                       onClick={() => setForm({ ...form, colorHex: c.hex })}
-                      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border transition-all ${
-                        form.colorHex === c.hex ? 'border-primary ring-2 ring-primary/30 font-bold' : 'border-border hover:border-primary/50'
-                      }`}
+                      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border transition-all ${form.colorHex === c.hex ? 'border-primary ring-2 ring-primary/30 font-bold' : 'border-border hover:border-primary/50'
+                        }`}
                     >
                       <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex }} />
                       <span>{c.label}</span>
@@ -240,13 +256,13 @@ export function AppointmentStatusesPage() {
 
       <Card>
         <CardHeader className="border-b border-border/50 pb-4">
-          <CardTitle>Configured Statuses ({statuses.length})</CardTitle>
+          <CardTitle>Configured Statuses ({optimisticStatuses.length})</CardTitle>
         </CardHeader>
         {loading ? (
           <CardContent className="py-8">
             <LoadingFallback />
           </CardContent>
-        ) : statuses.length === 0 ? (
+        ) : optimisticStatuses.length === 0 ? (
           <CardContent className="py-8 text-center text-xs text-muted-foreground">No appointment statuses configured.</CardContent>
         ) : (
           <div className="overflow-x-auto">
@@ -261,7 +277,7 @@ export function AppointmentStatusesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {statuses.map((s) => {
+                {optimisticStatuses.map((s) => {
                   const orderIdx = orderable.findIndex((o) => o.id === s.id);
                   return (
                     <tr key={String(s.id)} className="hover:bg-accent/40 transition">

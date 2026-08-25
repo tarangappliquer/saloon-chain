@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ApiError, getFieldError } from '../api/client';
@@ -10,9 +10,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -20,23 +17,21 @@ export function LoginPage() {
     }
   }, [user, navigate]);
 
-  if (user) return null;
+  const [submitState, handleSubmit, submitting] = useActionState<{ error: string | null; submitError: unknown }>(
+    async () => {
+      try {
+        await login(email, password);
+        navigate(routes.root);
+        return { error: null, submitError: null };
+      } catch (err) {
+        return { error: err instanceof ApiError ? err.message : 'Something went wrong', submitError: err };
+      }
+    },
+    { error: null, submitError: null },
+  );
+  const { error, submitError } = submitState;
 
-  async function handleSubmit(e: SyntheticEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      await login(email, password);
-      navigate(routes.root);
-    } catch (err) {
-      setSubmitError(err);
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  if (user) return null;
 
   return (
     <main className="flex min-h-[calc(100vh-6rem)] items-center justify-center p-4">
@@ -45,7 +40,7 @@ export function LoginPage() {
           <BrandMark label="Saloon Admin" subtitle="Management Portal Sign In" />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form action={handleSubmit} className="space-y-4">
           <Input
             required
             type="email"

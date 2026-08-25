@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useEffect, useState, useCallback, type SyntheticEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
@@ -132,7 +132,7 @@ export function TreatmentDurationsPage() {
     setEditDurationError(null);
   }
 
-  async function handleSubmitEditDuration(e: FormEvent) {
+  async function handleSubmitEditDuration(e: SyntheticEvent) {
     e.preventDefault();
     if (treatmentId === null || editingDurationId === null) return;
     setError(null);
@@ -194,7 +194,7 @@ export function TreatmentDurationsPage() {
     updateParams({ treatmentId: id });
   }
 
-  async function handleSubmitDuration(e: FormEvent) {
+  async function handleSubmitDuration(e: SyntheticEvent) {
     e.preventDefault();
     if (treatmentId === null) return;
     setError(null);

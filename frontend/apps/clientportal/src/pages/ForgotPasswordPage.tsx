@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useActionState, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { ArrowLeft, Loader2, MailCheck } from 'lucide-react';
@@ -7,23 +7,17 @@ import { routes } from '../routes';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: SyntheticEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      await authApi.apiAuthForgotPasswordPost({ email });
-      setSubmitted(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const [{ submitted, error }, handleSubmit, submitting] = useActionState<{ submitted: boolean; error: string | null }>(
+    async () => {
+      try {
+        await authApi.apiAuthForgotPasswordPost({ email });
+        return { submitted: true, error: null };
+      } catch (err) {
+        return { submitted: false, error: err instanceof ApiError ? err.message : 'Something went wrong' };
+      }
+    },
+    { submitted: false, error: null },
+  );
 
   return (
     <main className="min-h-[calc(100vh-5rem)] flex items-center justify-center p-4 sm:p-6">
@@ -48,7 +42,7 @@ export function ForgotPasswordPage() {
             </Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form action={handleSubmit} className="space-y-4">
             <p className="text-xs text-muted-foreground text-center">
               Enter the email address on your account and we'll send you a link to reset your password.
             </p>

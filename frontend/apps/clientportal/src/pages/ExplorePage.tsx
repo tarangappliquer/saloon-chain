@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
@@ -162,12 +162,19 @@ export function ExplorePage() {
     };
   }, [searchQuery, user?.isEmulated, user?.emulatorChainId, user?.emulatorLocationId]);
 
-  const filteredVenues = venues.filter((venue) => {
-    return (
-      selectedCategory === 'All' ||
-      venue.categories.some((cat) => cat.toLowerCase().includes(selectedCategory.toLowerCase()))
-    );
-  });
+  // Deferring just the category driving this filter (not the whole venues/selectedCategory pair)
+  // keeps a tab click's own highlight-state re-render immediate while the grid re-render behind it
+  // is allowed to lag a frame -- separate from the already-debounced network search above.
+  const deferredCategory = useDeferredValue(selectedCategory);
+  const filteredVenues = useMemo(
+    () =>
+      venues.filter(
+        (venue) =>
+          deferredCategory === 'All' ||
+          venue.categories.some((cat) => cat.toLowerCase().includes(deferredCategory.toLowerCase())),
+      ),
+    [venues, deferredCategory],
+  );
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-8">

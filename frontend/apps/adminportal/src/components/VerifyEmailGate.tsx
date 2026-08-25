@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { BrandMark, Button, Card } from '@saloon/ui';
 import { ApiError, profileApi } from '../api/client';
 import { profileStreamUrl, subscribeToStream } from '../api/sseClient';
@@ -10,27 +10,24 @@ import { useAuth } from '../features/auth/AuthContext';
 // without the user having to come back and reload.
 export function VerifyEmailGate() {
   const { user, refreshUser, logout } = useAuth();
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
+  const userId = user?.userId;
   useEffect(() => {
-    if (!user?.userId) return;
-    return subscribeToStream(profileStreamUrl(user.userId), 'email-verified', refreshUser);
-  }, [user?.userId, refreshUser]);
+    if (!userId) return;
+    return subscribeToStream(profileStreamUrl(userId), 'email-verified', refreshUser);
+  }, [userId, refreshUser]);
 
-  async function handleSend() {
-    setError(null);
-    setSending(true);
-    try {
-      await profileApi.apiProfileEmailVerifyRequestPost();
-      setSent(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to send verification email');
-    } finally {
-      setSending(false);
-    }
-  }
+  const [{ sent, error }, handleSend, sending] = useActionState<{ sent: boolean; error: string | null }>(
+    async () => {
+      try {
+        await profileApi.apiProfileEmailVerifyRequestPost();
+        return { sent: true, error: null };
+      } catch (err) {
+        return { sent: false, error: err instanceof ApiError ? err.message : 'Failed to send verification email' };
+      }
+    },
+    { sent: false, error: null },
+  );
 
   return (
     <main className="flex min-h-[calc(100vh-6rem)] items-center justify-center p-4">
@@ -53,7 +50,7 @@ export function VerifyEmailGate() {
             Verification link sent. Check your inbox — this page unlocks automatically once confirmed.
           </p>
         ) : (
-          <Button onClick={handleSend} disabled={sending} size="lg" className="w-full">
+          <Button onClick={() => handleSend()} disabled={sending} size="lg" className="w-full">
             {sending ? 'Sending...' : 'Send verification email'}
           </Button>
         )}

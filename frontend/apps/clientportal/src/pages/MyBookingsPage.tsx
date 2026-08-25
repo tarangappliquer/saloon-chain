@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Star } from 'lucide-react';
 import { Badge, Button, Card, ConfirmDialog, LoadingFallback } from '@saloon/ui';
@@ -30,22 +30,16 @@ function ReviewForm({ bookingId, onSubmitted }: { bookingId: number; onSubmitted
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (rating === 0) return;
-    setSubmitting(true);
-    setError(null);
+  const [error, submitAction, submitting] = useActionState<string | null>(async (previousError) => {
+    if (rating === 0) return previousError;
     try {
       await reviewApi.apiReviewsPost({ bookingId, rating, comment: comment.trim() || undefined });
       onSubmitted();
+      return null;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to submit review.');
-    } finally {
-      setSubmitting(false);
+      return err instanceof ApiError ? err.message : 'Failed to submit review.';
     }
-  }
+  }, null);
 
   return (
     <div className="rounded-lg border border-border/60 bg-accent/20 p-4 space-y-3">
@@ -77,7 +71,7 @@ function ReviewForm({ bookingId, onSubmitted }: { bookingId: number; onSubmitted
         className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
       />
       {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button size="sm" disabled={rating === 0 || submitting} onClick={submit}>
+      <Button size="sm" disabled={rating === 0 || submitting} onClick={() => submitAction()}>
         {submitting ? 'Submitting...' : 'Submit Review'}
       </Button>
     </div>
@@ -87,9 +81,6 @@ function ReviewForm({ bookingId, onSubmitted }: { bookingId: number; onSubmitted
 function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [justReviewed, setJustReviewed] = useState(false);
 
   const totalCost = b.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
@@ -107,21 +98,23 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
     };
   }, []);
 
-  async function handleConfirmCancel() {
-    setCancelling(true);
-    setActionError(null);
-    setActionSuccess(null);
-    try {
-      await bookingApi.apiBookingIdDelete(b.id);
-      setActionSuccess('Booking cancelled. Full refund issued to original payment method.');
-      setShowConfirmModal(false);
-      timerRef.current = setTimeout(() => onReload(), 1500);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Bookings cannot be cancelled within 48 hours of appointment.');
-    } finally {
-      setCancelling(false);
-    }
-  }
+  const [cancelState, cancelAction, cancelling] = useActionState<{ error: string | null; success: string | null }>(
+    async () => {
+      try {
+        await bookingApi.apiBookingIdDelete(b.id);
+        setShowConfirmModal(false);
+        timerRef.current = setTimeout(() => onReload(), 1500);
+        return { error: null, success: 'Booking cancelled. Full refund issued to original payment method.' };
+      } catch (err) {
+        return {
+          error: err instanceof ApiError ? err.message : 'Bookings cannot be cancelled within 48 hours of appointment.',
+          success: null,
+        };
+      }
+    },
+    { error: null, success: null },
+  );
+  const { error: actionError, success: actionSuccess } = cancelState;
 
   return (
     <>
@@ -133,7 +126,7 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
         cancelLabel="Keep Appointment"
         variant="danger"
         loading={cancelling}
-        onConfirm={handleConfirmCancel}
+        onConfirm={() => cancelAction()}
         onClose={() => setShowConfirmModal(false)}
       />
 
@@ -294,15 +287,21 @@ export function MyBookingsPage() {
     loadBookings();
   }, []);
 
+  const isDev = import.meta.env.DEV;
+  const { drafts, cancelled, upcoming, past } = useMemo(() => {
+    if (!bookings) return { drafts: [], cancelled: [], upcoming: [], past: [] };
+    const now = Date.now();
+    const confirmed = bookings.filter((b) => b.status === 'Confirmed');
+    return {
+      drafts: bookings.filter((b) => b.status === 'Draft'),
+      cancelled: bookings.filter((b) => b.status === 'Cancelled'),
+      upcoming: confirmed.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c)),
+      past: confirmed.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a)),
+    };
+  }, [bookings]);
+
   if (!bookings) return <LoadingFallback />;
 
-  const isDev = import.meta.env.DEV;
-  const now = Date.now();
-  const drafts = bookings.filter((b) => b.status === 'Draft');
-  const cancelled = bookings.filter((b) => b.status === 'Cancelled');
-  const confirmed = bookings.filter((b) => b.status === 'Confirmed');
-  const upcoming = confirmed.filter((b) => !isPast(b, now)).sort((a, c) => earliestStart(a) - earliestStart(c));
-  const past = confirmed.filter((b) => isPast(b, now)).sort((a, c) => latestEnd(c) - latestEnd(a));
   const shown = tab === 'draft' ? drafts : tab === 'cancelled' ? cancelled : tab === 'upcoming' ? upcoming : past;
 
   const tabs: [Tab, string][] = [

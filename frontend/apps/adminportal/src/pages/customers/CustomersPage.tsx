@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { startTransition, useCallback, useDeferredValue, useEffect, useOptimistic, useRef, useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError, getFieldError } from '../../api/client';
@@ -25,7 +25,16 @@ export function CustomersPage() {
   const canManage = currentUser ? ADMIN_ACCESS.includes(currentUser.role) : false;
 
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [optimisticCustomers, setOptimisticCustomers] = useOptimistic(
+    customers,
+    (state, action: { type: 'toggle' | 'delete'; id: number }) => {
+      if (action.type === 'delete') return state.filter((c) => c.id !== action.id);
+      if (action.type === 'toggle') return state.map((c) => (c.id === action.id ? { ...c, isActive: !c.isActive } : c));
+      return state;
+    },
+  );
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -54,7 +63,7 @@ export function CustomersPage() {
     setError(null);
     cursorRef.current = null;
     try {
-      const { data } = await adminCustomersApi.apiAdminCustomersGet(search || undefined, PAGE_SIZE);
+      const { data } = await adminCustomersApi.apiAdminCustomersGet(deferredSearch || undefined, PAGE_SIZE);
       const page = data as unknown as AdminCustomersPage;
       setCustomers(page.items);
       setHasMore(page.hasMore);
@@ -73,7 +82,7 @@ export function CustomersPage() {
     setLoadingMore(true);
     try {
       const { data } = await adminCustomersApi.apiAdminCustomersGet(
-        search || undefined, PAGE_SIZE, cursorRef.current.name, cursorRef.current.id,
+        deferredSearch || undefined, PAGE_SIZE, cursorRef.current.name, cursorRef.current.id,
       );
       const page = data as unknown as AdminCustomersPage;
       setCustomers((prev) => [...prev, ...page.items]);
@@ -87,7 +96,7 @@ export function CustomersPage() {
       setLoadingMore(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingMore, hasMore, search]);
+  }, [loadingMore, hasMore, deferredSearch]);
 
   useEffect(() => {
     if (canManage) load();
@@ -107,17 +116,17 @@ export function CustomersPage() {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  async function leanSearch(e?: FormEvent) {
+  async function leanSearch(e?: SyntheticEvent) {
     e?.preventDefault();
     setLeanSearched(true);
-    if (!search.trim()) {
+    if (!deferredSearch.trim()) {
       setLeanResults([]);
       return;
     }
     setLeanSearching(true);
     setError(null);
     try {
-      const { data } = await adminCustomersApi.apiAdminCustomersSearchGet(search.trim());
+      const { data } = await adminCustomersApi.apiAdminCustomersSearchGet(deferredSearch.trim());
       setLeanResults(data as unknown as CustomerSummary[]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to search customers');
@@ -126,7 +135,7 @@ export function CustomersPage() {
     }
   }
 
-  function handleSearchSubmit(e: FormEvent) {
+  function handleSearchSubmit(e: SyntheticEvent) {
     e.preventDefault();
     if (canManage) load();
     else leanSearch();
@@ -153,7 +162,7 @@ export function CustomersPage() {
     setSubmitError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setSubmitError(null);
     setSubmitting(true);
@@ -190,11 +199,15 @@ export function CustomersPage() {
   async function toggleActive(c: AdminCustomer) {
     setError(null);
     setSavingId(c.id);
+    startTransition(() => {
+      setOptimisticCustomers({ type: 'toggle', id: c.id });
+    });
     try {
       await adminCustomersApi.apiAdminCustomersIdPut(c.id, { name: c.name, phone: c.phone, isActive: !c.isActive });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update customer');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -202,14 +215,19 @@ export function CustomersPage() {
 
   async function handleConfirmDelete() {
     if (!deletingCustomer) return;
+    const targetId = deletingCustomer.id;
     setError(null);
-    setSavingId(deletingCustomer.id);
+    setSavingId(targetId);
+    startTransition(() => {
+      setOptimisticCustomers({ type: 'delete', id: targetId });
+    });
     try {
-      await adminCustomersApi.apiAdminCustomersIdDelete(deletingCustomer.id);
+      await adminCustomersApi.apiAdminCustomersIdDelete(targetId);
       setDeletingCustomer(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete customer');
+      await load();
     } finally {
       setSavingId(null);
     }
@@ -357,7 +375,7 @@ export function CustomersPage() {
             <CardContent className="py-8">
               <LoadingFallback />
             </CardContent>
-          ) : customers.length === 0 ? (
+          ) : optimisticCustomers.length === 0 ? (
             <CardContent className="py-8 text-center text-xs text-muted-foreground">No customers found.</CardContent>
           ) : (
             <div className="overflow-x-auto">
@@ -372,7 +390,7 @@ export function CustomersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {customers.map((c) => (
+                  {optimisticCustomers.map((c) => (
                     <tr key={c.id} className="hover:bg-accent/40 transition">
                       <td className="px-6 py-4 font-semibold text-foreground flex items-center gap-2">
                         <span>{c.name}</span>

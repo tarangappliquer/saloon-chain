@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useReducer, useRef } from 'react';
 import { ApiError, bookingApi } from '../../api/client';
 import type { AvailableSlot, BookingDetails, ScheduleResponse } from '../../api/types';
 
@@ -101,12 +101,21 @@ export function useBookingFlow(bookingId: number) {
   const inFlight = useRef(false);
   const lastDatesReq = useRef<string>('');
 
+  // Strikes a removed treatment line immediately instead of waiting for the DELETE to resolve --
+  // reconciled against the real value once TREATMENT_REMOVED (or ERROR, on failure) dispatches.
+  const [optimisticBooking, applyOptimisticRemoval] = useOptimistic(
+    state.booking,
+    (current, removedTreatmentId: number) =>
+      current ? { ...current, treatments: current.treatments.filter((t) => t.treatmentId !== removedTreatmentId) } : current,
+  );
+  const effectiveState = useMemo(() => ({ ...state, booking: optimisticBooking }), [state, optimisticBooking]);
+
   const allCovered = useMemo(
     () =>
-      state.booking !== null &&
-      state.booking.treatments.length > 0 &&
-      state.booking.treatments.every((t) => t.startTime !== null),
-    [state.booking],
+      optimisticBooking !== null &&
+      optimisticBooking.treatments.length > 0 &&
+      optimisticBooking.treatments.every((t) => t.startTime !== null),
+    [optimisticBooking],
   );
 
   useEffect(() => {
@@ -205,15 +214,18 @@ export function useBookingFlow(bookingId: number) {
   );
 
   const removeTreatment = useCallback(
-    async (treatmentId: number) => {
-      try {
-        await bookingApi.apiBookingIdTreatmentsTreatmentIdDelete(bookingId, treatmentId);
-        dispatch({ type: 'TREATMENT_REMOVED', treatmentId });
-      } catch (err) {
-        dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to remove treatment') });
-      }
+    (treatmentId: number) => {
+      startTransition(async () => {
+        applyOptimisticRemoval(treatmentId);
+        try {
+          await bookingApi.apiBookingIdTreatmentsTreatmentIdDelete(bookingId, treatmentId);
+          dispatch({ type: 'TREATMENT_REMOVED', treatmentId });
+        } catch (err) {
+          dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to remove treatment') });
+        }
+      });
     },
-    [bookingId],
+    [bookingId, applyOptimisticRemoval],
   );
 
   const confirmAll = useCallback(async (): Promise<boolean> => {
@@ -231,5 +243,5 @@ export function useBookingFlow(bookingId: number) {
     }
   }, [bookingId]);
 
-  return { state, allCovered, loadDates, loadSlots, selectSlot, addTreatment, removeTreatment, confirmAll };
+  return { state: effectiveState, allCovered, loadDates, loadSlots, selectSlot, addTreatment, removeTreatment, confirmAll };
 }

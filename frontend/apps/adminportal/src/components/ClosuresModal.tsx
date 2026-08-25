@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback } from '@saloon/ui';
 import { adminCatalogApi, ApiError } from '../api/client';
 import type { ClosureType, LocationClosure } from '../api/types';
@@ -135,7 +135,7 @@ export function ClosuresModal({
     setError(null);
   }
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { BrandMark, Button, Card } from '@saloon/ui';
 import { Loader2, MailCheck } from 'lucide-react';
 import { ApiError, profileApi } from '../api/client';
@@ -11,9 +11,6 @@ import { useAuth } from '../features/auth/AuthContext';
 // without the user having to come back and reload.
 export function VerifyEmailGate() {
   const { user, refreshUser, logout } = useAuth();
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const customerId = user?.customerId;
   useEffect(() => {
@@ -21,18 +18,17 @@ export function VerifyEmailGate() {
     return subscribeToStream(profileStreamUrl(customerId), 'email-verified', refreshUser);
   }, [customerId, refreshUser]);
 
-  async function handleSend() {
-    setError(null);
-    setSending(true);
-    try {
-      await profileApi.apiProfileEmailVerifyRequestPost();
-      setSent(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to send verification email');
-    } finally {
-      setSending(false);
-    }
-  }
+  const [{ sent, error }, handleSend, sending] = useActionState<{ sent: boolean; error: string | null }>(
+    async () => {
+      try {
+        await profileApi.apiProfileEmailVerifyRequestPost();
+        return { sent: true, error: null };
+      } catch (err) {
+        return { sent: false, error: err instanceof ApiError ? err.message : 'Failed to send verification email' };
+      }
+    },
+    { sent: false, error: null },
+  );
 
   return (
     <main className="min-h-[calc(100vh-5rem)] flex items-center justify-center p-4 sm:p-6">
@@ -60,7 +56,7 @@ export function VerifyEmailGate() {
             </p>
           </div>
         ) : (
-          <Button onClick={handleSend} disabled={sending} size="lg" className="w-full">
+          <Button onClick={() => handleSend()} disabled={sending} size="lg" className="w-full">
             {sending ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" /> Sending...

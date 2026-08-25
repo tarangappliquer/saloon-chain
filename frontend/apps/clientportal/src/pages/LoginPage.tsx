@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BrandMark, Button, Card, Input } from '@saloon/ui';
 import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
@@ -15,9 +15,6 @@ export function LoginPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<unknown>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -25,38 +22,33 @@ export function LoginPage() {
     }
   }, [user, navigate]);
 
-  if (user) return null;
+  const [submitState, handleSubmit, submitting] = useActionState<{ error: string | null; submitError: unknown }>(
+    async () => {
+      try {
+        if (mode === 'login') await login(email, password);
+        else await register(name, email, password);
+        navigate(routes.myBookings);
+        return { error: null, submitError: null };
+      } catch (err) {
+        return { error: err instanceof ApiError ? err.message : 'Something went wrong', submitError: err };
+      }
+    },
+    { error: null, submitError: null },
+  );
+  const { error, submitError } = submitState;
 
-  async function handleSubmit(e: SyntheticEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      if (mode === 'login') await login(email, password);
-      else await register(name, email, password);
-      navigate(routes.myBookings);
-    } catch (err) {
-      setSubmitError(err);
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  if (user) return null;
 
   function handleModeChange(newMode: 'login' | 'register') {
     setMode(newMode);
     setName('');
     setEmail('');
     setPassword('');
-    setError(null);
-    setSubmitError(null);
   }
 
   function handleFillDemo() {
     setEmail('client@saloon.com');
     setPassword('password123');
-    setError(null);
   }
 
   return (
@@ -94,7 +86,7 @@ export function LoginPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form action={handleSubmit} className="space-y-4">
           {mode === 'register' && (
             <Input
               required

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -123,7 +123,7 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChain?.id]);
 
-  async function handleSaveChain(e: FormEvent) {
+  async function handleSaveChain(e: SyntheticEvent) {
     e.preventDefault();
     if (!activeChain) return;
 
@@ -159,11 +159,11 @@ export function SettingsPage() {
         cs.map((c) =>
           c.id === activeChain.id
             ? {
-                ...c,
-                name: chainForm.name,
-                breakStartTime: breakStart,
-                breakEndTime: breakEnd,
-              }
+              ...c,
+              name: chainForm.name,
+              breakStartTime: breakStart,
+              breakEndTime: breakEnd,
+            }
             : c,
         ),
       );
@@ -279,7 +279,7 @@ export function SettingsPage() {
     );
   }
 
-  async function handleSaveLocationSettings(e: FormEvent) {
+  async function handleSaveLocationSettings(e: SyntheticEvent) {
     e.preventDefault();
     if (!selectedLocation) return;
 
@@ -350,11 +350,10 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={() => setTab("business")}
-          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${
-            tab === "business"
+          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${tab === "business"
               ? "border-primary text-primary font-bold"
               : "border-transparent hover:text-foreground"
-          }`}
+            }`}
         >
           <Store className="h-4 w-4" />
           Business Detail
@@ -362,11 +361,10 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={() => setTab("locations")}
-          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${
-            tab === "locations"
+          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${tab === "locations"
               ? "border-primary text-primary font-bold"
               : "border-transparent hover:text-foreground"
-          }`}
+            }`}
         >
           <MapPin className="h-4 w-4" />
           Locations & Opening Hours
@@ -374,11 +372,10 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={() => setTab("service-menu")}
-          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${
-            tab === "service-menu"
+          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${tab === "service-menu"
               ? "border-primary text-primary font-bold"
               : "border-transparent hover:text-foreground"
-          }`}
+            }`}
         >
           <Sparkles className="h-4 w-4" />
           Service Menu Catalog
@@ -386,11 +383,10 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={() => setTab("system")}
-          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${
-            tab === "system"
+          className={`flex items-center gap-2 pb-3 border-b-2 font-medium transition ${tab === "system"
               ? "border-primary text-primary font-bold"
               : "border-transparent hover:text-foreground"
-          }`}
+            }`}
         >
           <SettingsIcon className="h-4 w-4" />
           Chain & System Settings
@@ -613,11 +609,10 @@ export function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => handleLocationSelect(l.id)}
-                          className={`w-full rounded-lg px-3 py-2.5 text-left transition ${
-                            l.id === locationId
+                          className={`w-full rounded-lg px-3 py-2.5 text-left transition ${l.id === locationId
                               ? "bg-primary/10 border border-primary/30"
                               : "border border-transparent hover:bg-muted/40"
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-bold text-foreground truncate">
@@ -919,21 +914,19 @@ export function SettingsPage() {
                                   <button
                                     type="button"
                                     onClick={() => toggleDayOpen(day.bit)}
-                                    className={`rounded-full px-3 py-1 text-[11px] font-bold transition ${
-                                      day.isOpen
+                                    className={`rounded-full px-3 py-1 text-[11px] font-bold transition ${day.isOpen
                                         ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
                                         : "bg-muted text-muted-foreground border border-border"
-                                    }`}
+                                      }`}
                                   >
                                     {day.isOpen ? "Open" : "Closed"}
                                   </button>
                                 ) : (
                                   <span
-                                    className={`inline-block rounded-full px-3 py-1 text-[11px] font-bold ${
-                                      day.isOpen
+                                    className={`inline-block rounded-full px-3 py-1 text-[11px] font-bold ${day.isOpen
                                         ? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
                                         : "bg-muted text-muted-foreground border border-border"
-                                    }`}
+                                      }`}
                                   >
                                     {day.isOpen ? "Open" : "Closed"}
                                   </span>
