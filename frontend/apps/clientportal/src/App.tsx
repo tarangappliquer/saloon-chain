@@ -65,18 +65,20 @@ const EmulationBanner = memo(function EmulationBanner() {
   );
 });
 
-// Header only ever renders around routes that require a signed-in user -- login/forgot-password/
-// reset-password/verify-email/emulate stay outside this layout so they never get a nav bar, even if
-// the visitor happens to already hold a session (e.g. a verify-email link opened while logged in).
+// Sidebar only ever renders around routes that require a signed-in user -- login/forgot-password/
+// reset-password/verify-email/emulate stay outside this layout so they never get one, even if the
+// visitor happens to already hold a session (e.g. a verify-email link opened while logged in).
 function AuthedLayout() {
   return (
-    <>
-      <EmulationBanner />
+    <div className="flex h-screen overflow-hidden bg-background">
       <Nav />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-    </>
+      <div className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col">
+        <EmulationBanner />
+        <main className="flex-1">
+          <Outlet />
+        </main>
+      </div>
+    </div>
   );
 }
 

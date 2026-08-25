@@ -94,6 +94,16 @@ internal sealed class PaymentService(
             provider = PaymentProvider.Cash;
         }
 
+        // This endpoint exists only to record an offline/in-person payment a staff member
+        // witnessed directly (Cash, InHouse terminal). A Stripe payment must only ever be marked
+        // Succeeded by the checkout-session verification or the Stripe webhook, which independently
+        // confirm the charge with Stripe -- letting this path touch a Stripe payment would let
+        // anyone who can reach it mark an unpaid Stripe booking as paid.
+        if (provider == PaymentProvider.Stripe)
+        {
+            throw new InvalidOperationException("Stripe payments cannot be confirmed manually.");
+        }
+
         if (success && provider == PaymentProvider.Cash)
         {
             var owed = payment.Amount + payment.TipAmount;
@@ -173,6 +183,21 @@ internal sealed class PaymentService(
         var sessionService = new Stripe.Checkout.SessionService();
         var session = await sessionService.GetAsync(sessionId, cancellationToken: ct);
 
+        // Session id and bookingId are both caller-supplied and independent -- without this check
+        // a paid session for one (cheap) booking could be replayed against any other bookingId to
+        // confirm it for free. Metadata.bookingId is set server-side at session creation
+        // (StripePaymentGateway.CreatePaymentAsync) so it's the trustworthy side of the comparison.
+        var sessionBookingId = session?.Metadata != null
+            && session.Metadata.TryGetValue("bookingId", out var metaBookingId)
+            && int.TryParse(metaBookingId, System.Globalization.CultureInfo.InvariantCulture, out var parsedBookingId)
+                ? parsedBookingId
+                : (int?)null;
+
+        if (session != null && sessionBookingId != bookingId)
+        {
+            return new PaymentResultDto(false, 0, PaymentStatus.Failed, session.Id, "Session does not match booking.");
+        }
+
         if (session != null && string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
         {
             var payments = await repo.GetByBookingIdAsync(bookingId);
@@ -204,6 +229,8 @@ internal sealed class PaymentService(
     }
 
     public Task<IReadOnlyList<PaymentDto>> GetByBookingIdAsync(int bookingId) => repo.GetByBookingIdAsync(bookingId);
+
+    public async Task<int?> GetBookingIdAsync(int paymentId) => (await repo.GetByIdAsync(paymentId))?.BookingId;
 
     /// <summary>
     /// Resolves how much a new payment intent should charge given what's already been paid on the booking.

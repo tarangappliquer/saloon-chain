@@ -51,9 +51,20 @@ internal static class PaymentEndpoints
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Create a payment intent for a booking (Stripe, Cash, or InHouse terminal).");
 
-        group.MapPost("/confirm-manual", async (ConfirmManualEndpointRequest req, ICurrentUser currentUser, PaymentService svc, CancellationToken ct) =>
+        group.MapPost("/confirm-manual", async (
+            ConfirmManualEndpointRequest req, ICurrentUser currentUser, BookingRepository bookingRepo, PaymentService svc, CancellationToken ct) =>
         {
             var userId = currentUser.RequireUserId();
+
+            // Only ever a staff member witnessing a Cash/InHouse payment in person -- same
+            // role+location ownership guard as every other staff-on-behalf-of-customer action.
+            var bookingId = await svc.GetBookingIdAsync(req.PaymentId);
+            if (bookingId is { } id)
+            {
+                var error = await BookingEndpoints.AuthorizeActingOnBookingAsync(id, currentUser, bookingRepo);
+                if (error is not null) return error;
+            }
+
             var result = await svc.ProcessManualPaymentAsync(
                 paymentId: req.PaymentId,
                 userId: userId,
@@ -65,9 +76,10 @@ internal static class PaymentEndpoints
             );
 
             return Results.Ok(result);
-        }).RequireAuthorization()
+        }).RequireAuthorization("StaffAccess")
           .WithValidation<ConfirmManualEndpointRequest>()
           .Produces<PaymentResultDto>()
+          .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Confirm or record a manual/offline payment (Cash or POS Terminal).");
 
         group.MapPost("/verify-checkout-session", async (VerifyCheckoutSessionEndpointRequest req, PaymentService svc, CancellationToken ct) =>
@@ -83,9 +95,9 @@ internal static class PaymentEndpoints
         {
             var payments = await svc.GetByBookingIdAsync(bookingId);
             return Results.Ok(payments);
-        }).RequireAuthorization()
+        }).RequireAuthorization("StaffAccess")
           .Produces<IReadOnlyList<PaymentDto>>()
-          .WithDescription("Get payment details for a booking.");
+          .WithDescription("Get payment details for a booking (staff/back-office view -- customers see payment status via their own booking, not this endpoint).");
 
         app.MapPost("/api/payments/stripe-webhook", async (HttpContext ctx, PaymentService svc, CancellationToken ct) =>
         {

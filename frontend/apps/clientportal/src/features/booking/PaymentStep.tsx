@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
@@ -78,8 +78,14 @@ export function PaymentStep() {
     }
   }, [selectedProvider, bookingId, stripeClientSecret]);
 
+  // setIsProcessing(true) below only disables the button after the next render -- a fast
+  // double-click can fire this twice before that repaint, creating duplicate payment intents.
+  // Guard synchronously with a ref, same pattern as useBookingFlow's confirmAll/selectSlot.
+  const paymentInFlight = useRef(false);
+
   async function handlePaymentAndConfirm() {
-    if (cashTenderedTooLow) return;
+    if (cashTenderedTooLow || paymentInFlight.current) return;
+    paymentInFlight.current = true;
     setIsProcessing(true);
     setPaymentError(null);
     try {
@@ -91,23 +97,29 @@ export function PaymentStep() {
 
       const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
 
-      await paymentApi.apiPaymentsConfirmManualPost({
-        paymentId: res.data.paymentId,
-        success: true,
-        transactionId: res.data.transactionId ?? (selectedProvider === 'Stripe' ? `stripe_checkout_${Date.now()}` : undefined),
-        amountTendered: selectedProvider === 'Cash' ? tenderedAmount : undefined,
-      });
-
-      if (selectedProvider === 'Stripe' && checkoutUrl) {
+      // Stripe must never be confirmed here -- doing so used to mark the booking paid before the
+      // customer had actually completed (or even reached) Stripe's checkout page. Confirmation
+      // for Stripe only happens once ConfirmedStep verifies the real session after redirect back
+      // (or via the webhook), which is also all the backend now allows confirm-manual to do.
+      if (selectedProvider === 'Stripe') {
+        if (!checkoutUrl) throw new Error('Stripe did not return a checkout URL.');
         window.location.href = checkoutUrl;
         return;
       }
+
+      await paymentApi.apiPaymentsConfirmManualPost({
+        paymentId: res.data.paymentId,
+        success: true,
+        transactionId: res.data.transactionId,
+        amountTendered: selectedProvider === 'Cash' ? tenderedAmount : undefined,
+      });
 
       navigate(routes.book.confirmed);
     } catch (err: unknown) {
       const error = err as AxiosError<{ title?: string }>;
       setPaymentError(error.response?.data?.title ?? error.message ?? 'Payment failed. Please try again.');
     } finally {
+      paymentInFlight.current = false;
       setIsProcessing(false);
     }
   }

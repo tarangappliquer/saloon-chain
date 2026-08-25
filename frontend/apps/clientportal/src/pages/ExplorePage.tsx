@@ -31,8 +31,17 @@ export function ExplorePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const isFirstLoad = useRef(true);
+  // Per-location treatment lists rarely change -- cache across searches so re-typing a query
+  // doesn't re-fetch every already-seen venue's treatments on every keystroke.
+  const treatmentsCache = useRef(new Map<number, Treatment[]>());
+  // Bumped on every effect run so a slow, superseded search response can't overwrite a
+  // faster, newer one's results (e.g. "sp" resolving after "spa").
+  const requestId = useRef(0);
 
   useEffect(() => {
+    requestId.current += 1;
+    const myRequestId = requestId.current;
+
     async function loadVenues() {
       setLoading(true);
       try {
@@ -61,8 +70,12 @@ export function ExplorePage() {
             let startingPrice = 25;
 
             try {
-              const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
-              const treats = treatsRes.data as unknown as Treatment[];
+              let treats = treatmentsCache.current.get(loc.id);
+              if (!treats) {
+                const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
+                treats = treatsRes.data as unknown as Treatment[];
+                treatmentsCache.current.set(loc.id, treats);
+              }
               if (treats && treats.length > 0) {
                 locationCategories = Array.from(new Set(treats.map((t) => t.categoryName).filter(Boolean)));
                 treatmentNames = treats.map((t) => t.name).filter(Boolean);
@@ -90,9 +103,11 @@ export function ExplorePage() {
           }),
         );
 
+        if (requestId.current !== myRequestId) return;
         setAvailableCategories(['All', ...Array.from(allCatsSet)]);
         setVenues(venueList);
       } catch {
+        if (requestId.current !== myRequestId) return;
         // Fallback demo data if API call returns empty
         setVenues([
           {
@@ -132,11 +147,10 @@ export function ExplorePage() {
         ]);
         setAvailableCategories(['All', 'Hair & Styling', 'Barbershop', 'Nails & Manicure', 'Skincare & Facials']);
       } finally {
-        if (isMounted) setLoading(false);
+        if (requestId.current === myRequestId) setLoading(false);
       }
     }
 
-    let isMounted = true;
     const delay = isFirstLoad.current ? 0 : 300;
     isFirstLoad.current = false;
     const timer = setTimeout(() => {
@@ -144,7 +158,6 @@ export function ExplorePage() {
     }, delay);
 
     return () => {
-      isMounted = false;
       clearTimeout(timer);
     };
   }, [searchQuery, user?.isEmulated, user?.emulatorChainId, user?.emulatorLocationId]);

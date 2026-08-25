@@ -128,6 +128,7 @@ CREATE TABLE dbo.TreatmentCategories (
     UpdatedBy    INT NULL,
     UpdatedDate  DATETIME2 NULL
 );
+CREATE INDEX IX_TreatmentCategories_LocationId ON dbo.TreatmentCategories(LocationId) WHERE IsDelete = 0;
 
 CREATE TABLE dbo.Treatments (
     Id             INT IDENTITY(1,1) PRIMARY KEY,
@@ -145,6 +146,10 @@ CREATE TABLE dbo.Treatments (
     UpdatedBy      INT NULL,
     UpdatedDate    DATETIME2 NULL
 );
+-- Every hot-path catalog query filters by LocationId (sp_Catalog_Search, sp_Catalog_GetTreatments,
+-- sp_Admin_GetTreatments, plus the availability-cache warm-up) with no other index to fall back on
+-- -- unlike TreatmentPrices/TreatmentDurations below, this table had no LocationId index at all.
+CREATE INDEX IX_Treatments_LocationId ON dbo.Treatments(LocationId) WHERE IsDelete = 0;
 
 -- Effective-dated price list: a treatment's price as of any date is the row with the latest
 -- EffectiveFrom <= that date (see sp_Catalog_GetTreatments etc). A price change normally inserts a

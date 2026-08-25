@@ -141,8 +141,24 @@ internal sealed class BookingService(
                 return JsonSerializer.Deserialize<List<AvailableSlot>>(cached)!;
         }
 
-        var data = await repo.GetAvailabilityDataAsync(locationId, treatmentIds, date, excludeBookingId);
+        var dataTask = repo.GetAvailabilityDataAsync(locationId, treatmentIds, date, excludeBookingId);
+        var hasRoomOpeningsTask = repo.HasLocationRoomOpeningsAsync(locationId);
+        await Task.WhenAll(dataTask, hasRoomOpeningsTask);
+        var data = await dataTask;
         if (data.Location is null || data.Location.IsHoliday) return [];
+
+        // A location that hasn't adopted room-category-assignment scheduling is gated purely by its
+        // weekly WorkingDaysMask -- same rule GetAvailableDatesAsync uses to build the date picker
+        // (see its isDayMaskAllowed check). Without this, a day the mask says is closed could still
+        // return slots here even though the date picker never offered it. A location that HAS
+        // adopted RCA scheduling doesn't need this check: an ineligible day already yields zero
+        // EligiblePairs below (see sp_Booking_GetAvailabilityData's EligibleShifts).
+        if (!await hasRoomOpeningsTask)
+        {
+            var mask = data.Location.WorkingDaysMask == 0 ? (byte)127 : data.Location.WorkingDaysMask;
+            var dayBit = ((int)date.DayOfWeek + 6) % 7;
+            if ((mask & (1 << dayBit)) == 0) return [];
+        }
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd)).ToList();
@@ -287,8 +303,8 @@ internal sealed class BookingService(
             if (scheduledTimes.Count > 0)
             {
                 var earliest = scheduledTimes.Min();
-                // 2 days (48 hours) cancellation policy check
-                if (earliest <= DateTime.UtcNow.AddDays(2))
+                var location = await catalog.GetLocationByIdForAdminAsync(booking.LocationId);
+                if (IsWithinCancellationWindow(earliest, location?.TimeZoneId, DateTime.UtcNow))
                 {
                     throw new InvalidOperationException("Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.");
                 }
@@ -304,6 +320,37 @@ internal sealed class BookingService(
 
         if (details is not null)
             emailQueue.Enqueue(BuildCancellationEmail(details));
+    }
+
+    /// <summary>
+    /// True if venueLocalEarliestStart falls within the 48h cancellation cutoff. StartTime is
+    /// venue-local wall-clock (see BookingRepository.ScheduleTreatmentAsync comment) -- comparing
+    /// it straight against UTC "now" silently shifts the cutoff by the venue's UTC offset, so this
+    /// resolves the venue's timezone before comparing. Pure/no I-O so it's directly unit-testable,
+    /// same reasoning as ResolveChargeAmount above.
+    /// </summary>
+    internal static bool IsWithinCancellationWindow(DateTime venueLocalEarliestStart, string? timeZoneId, DateTime utcNow, int windowDays = 2)
+    {
+        var tz = TryGetTimeZone(timeZoneId);
+        var earliestUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(venueLocalEarliestStart, DateTimeKind.Unspecified), tz);
+        return earliestUtc <= utcNow.AddDays(windowDays);
+    }
+
+    private static TimeZoneInfo TryGetTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrEmpty(timeZoneId)) return TimeZoneInfo.Utc;
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
     }
 
     private async Task RefundSucceededPaymentsAsync(int bookingId, string reason)
@@ -375,19 +422,8 @@ internal sealed class BookingService(
             try
             {
                 using var scope = scopeFactory.CreateScope();
-                var catalogRepo = scope.ServiceProvider.GetRequiredService<CatalogRepository>();
                 var bookingService = scope.ServiceProvider.GetRequiredService<BookingService>();
-
-                var today = DateOnly.FromDateTime(DateTime.Now);
-                var to = today.AddDays(90);
-
-                await bookingService.GetAvailableDatesAsync(locationId, today, to);
-
-                var treatments = await catalogRepo.GetTreatmentsAsync(locationId, null);
-                foreach (var t in treatments)
-                {
-                    await bookingService.GetAvailableSlotsAsync(locationId, [t.Id], date);
-                }
+                await bookingService.WarmAvailabilityAsync(locationId, date);
             }
 #pragma warning disable CA1031
             catch (Exception ex)
@@ -396,5 +432,25 @@ internal sealed class BookingService(
             }
 #pragma warning restore CA1031
         });
+    }
+
+    // Pre-warms the availability cache for one location/date: the date-range cache plus one
+    // slots-cache entry per treatment (each treatment has its own eligible room/therapist set, so
+    // this can't collapse into a single DB round trip without reshaping the stored proc). Bounded
+    // concurrency instead of full sequential awaits -- a location with dozens of treatments no
+    // longer serializes dozens of DB round trips one at a time, and the cap keeps a single call
+    // from opening dozens of connections at once. Shared by the fire-and-forget mutation-triggered
+    // sync above and the startup pre-sync (AvailabilitySyncStartupHostedService), which awaits this
+    // directly per venue with its own bounded fan-out across venues.
+    public async Task WarmAvailabilityAsync(int locationId, DateOnly date)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var to = today.AddDays(90);
+
+        await GetAvailableDatesAsync(locationId, today, to);
+
+        var treatments = await catalog.GetTreatmentsAsync(locationId, null);
+        await Parallel.ForEachAsync(treatments, new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            async (t, _) => await GetAvailableSlotsAsync(locationId, [t.Id], date));
     }
 }

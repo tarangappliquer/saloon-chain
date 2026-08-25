@@ -678,7 +678,7 @@ function ShiftRow({
     return (
       <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs shadow-xs">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-foreground truncate max-w-[200px]" title={shift.therapistName}>
+          <span className="font-semibold text-foreground truncate max-w-50" title={shift.therapistName}>
             {shift.therapistName}
           </span>
           <span className="text-[10px] text-muted-foreground uppercase font-mono">Editing Shift</span>
@@ -963,7 +963,7 @@ function ScheduleGridView({
               <div role="row" className="contents">
                 <div
                   role="columnheader"
-                  className="sticky left-0 z-20 w-[6.5rem] border-r border-b border-border bg-accent/60 p-3.5 font-bold text-foreground flex items-center justify-center text-center"
+                  className="sticky left-0 z-20 w-26 border-r border-b border-border bg-accent/60 p-3.5 font-bold text-foreground flex items-center justify-center text-center"
                 >
                   Time Slot
                 </div>

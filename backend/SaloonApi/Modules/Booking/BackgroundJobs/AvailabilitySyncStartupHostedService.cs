@@ -26,20 +26,26 @@ internal sealed class AvailabilitySyncStartupHostedService(
                 logger.LogInformation("Starting initial Redis availability pre-sync for all locations...");
                 using var scope = scopeFactory.CreateScope();
                 var catalog = scope.ServiceProvider.GetRequiredService<CatalogRepository>();
-                var bookingSvc = scope.ServiceProvider.GetRequiredService<BookingService>();
 
                 var venues = await catalog.SearchVenuesAsync(null);
                 var today = DateOnly.FromDateTime(DateTime.Now);
 
-                foreach (var venue in venues)
-                {
-                    if (stoppingToken.IsCancellationRequested) break;
-
+                // Bounded concurrency across venues (each own scope, so each gets its own DB
+                // connections rather than sharing one BookingService instance). SyncAndNotifyAsync's
+                // fire-and-forget Task.Run isn't used here: awaiting it doesn't actually wait for the
+                // warm-up (the outer foreach used to race through every venue near-instantly, firing
+                // one untracked background task per venue -- an unthrottled stampede at every boot).
+                // WarmAvailabilityAsync is awaited directly so this loop's concurrency cap is real.
+                await Parallel.ForEachAsync(venues, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = stoppingToken },
+                    async (venue, _) =>
+                    {
 #pragma warning disable CA1873
-                    logger.LogInformation("Pre-syncing Redis availability for location {LocationId} ({LocationName})...", venue.Id, venue.Name);
+                        logger.LogInformation("Pre-syncing Redis availability for location {LocationId} ({LocationName})...", venue.Id, venue.Name);
 #pragma warning restore CA1873
-                    await bookingSvc.SyncAndNotifyAsync(venue.Id, today);
-                }
+                        using var venueScope = scopeFactory.CreateScope();
+                        var venueBookingSvc = venueScope.ServiceProvider.GetRequiredService<BookingService>();
+                        await venueBookingSvc.WarmAvailabilityAsync(venue.Id, today);
+                    });
                 logger.LogInformation("Redis availability pre-sync completed successfully.");
             });
 

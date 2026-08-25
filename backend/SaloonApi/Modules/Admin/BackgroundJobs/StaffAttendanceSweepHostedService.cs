@@ -61,9 +61,19 @@ internal sealed class StaffAttendanceSweepHostedService(
             logger.LogInformation("Found {AlertCount} unattended pre-booking alerts starting within lead time window.", alerts.Count);
         }
 
+        // Managers rarely change and several alerts often share a location (a busy location with
+        // multiple unattended bookings at once) -- fetch each distinct location's managers once
+        // per sweep tick instead of once per alert.
+        var managersByLocation = new Dictionary<int, IReadOnlyList<LocationManagerDto>>();
+
         foreach (var alert in alerts)
         {
-            var managers = await repo.GetLocationManagersAsync(alert.LocationId);
+            if (!managersByLocation.TryGetValue(alert.LocationId, out var managers))
+            {
+                managers = await repo.GetLocationManagersAsync(alert.LocationId);
+                managersByLocation[alert.LocationId] = managers;
+            }
+
             foreach (var mgr in managers.Where(m => !string.IsNullOrWhiteSpace(m.Email)))
             {
                 var email = new EmailMessage(

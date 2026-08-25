@@ -1,8 +1,3 @@
--- QUOTED_IDENTIFIER/ANSI_NULLS are baked into each object's metadata at CREATE time, not read from
--- the caller's session at execution time -- any tool whose default differs from ON (sqlcmd defaults
--- to OFF) silently miscompiles every proc in this file, breaking ones that touch tables with
--- filtered indexes/computed columns (e.g. dbo.Payments) with error 1934. Must stay the first
--- statement in this file.
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
 GO
@@ -172,7 +167,7 @@ BEGIN
         EligibleRooms
         AS
         (
-                            SELECT r.RoomId, rca.ShiftType
+                SELECT r.RoomId, rca.ShiftType
                 FROM ActiveRooms r
                     JOIN dbo.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = @WorkDate AND rca.IsDelete = 0 AND rca.IsActive = 1
                 WHERE rca.TreatmentCategoryId IN (SELECT CategoryId
@@ -192,7 +187,7 @@ BEGIN
         EligibleShifts
         AS
         (
-                            SELECT sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+                SELECT sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
                 FROM dbo.ShiftAssignments sa
                 WHERE sa.LocationId = @LocationId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0 AND sa.IsActive = 1
 
@@ -206,7 +201,7 @@ BEGIN
                     AND NOT EXISTS (
                         SELECT 1
                         FROM dbo.ShiftAssignments sa2
-                        WHERE sa2.TherapistId = tp.Id AND sa2.WorkDate = @WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
+                        WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = 0 AND sa2.IsActive = 1
                     )
         )
     -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift explicitly
@@ -372,6 +367,10 @@ BEGIN
 
         UNION ALL
 
+            -- "Ever" (not "not this date") -- see the matching comment in
+            -- sp_Booking_GetAvailabilityData's EligibleShifts. A per-date check here would make a
+            -- fully shift-scheduled therapist's day off look available all day in every room, for
+            -- every date in the range.
             SELECT d.WorkDate, CAST(NULL AS INT) AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, dh.OpenTime AS ShiftStart, dh.CloseTime AS ShiftEnd
             FROM Dates d
                 CROSS JOIN dbo.TherapistProfile tp
@@ -381,7 +380,7 @@ BEGIN
                 AND NOT EXISTS (
                     SELECT 1
                     FROM dbo.ShiftAssignments sa2
-                    WHERE sa2.TherapistId = tp.Id AND sa2.WorkDate = d.WorkDate AND sa2.IsDelete = 0 AND sa2.IsActive = 1
+                    WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = 0 AND sa2.IsActive = 1
                 )
     )
     -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift explicitly
@@ -506,6 +505,17 @@ BEGIN
     WHERE t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1
         AND t.EffectiveFrom <= CAST(GETUTCDATE() AS DATE);
 
+    -- CROSS APPLY silently drops any requested treatment with no currently-effective price/duration
+    -- row (a lapsed bounded window, or a treatment created before its first price was ever set) --
+    -- without this check the draft would silently end up with fewer treatments than the customer
+    -- actually selected, with no error telling them why. Same guard sp_Booking_AddTreatment already
+    -- has via its own @@ROWCOUNT check.
+    IF (SELECT COUNT(*) FROM dbo.BookingTreatments WHERE BookingId = @BookingId AND IsDelete = 0) < (SELECT COUNT(*) FROM @Treatments)
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 50009, 'One or more selected treatments are not currently available for booking.', 1;
+    END
+
     COMMIT TRANSACTION;
 END
 GO
@@ -613,6 +623,111 @@ GO
 -- (booking, treatment), scheduled or not. Re-picking a time is just scheduling the same row again,
 -- so the conflict check explicitly excludes that row (it's about to be overwritten, not a real
 -- conflict with itself).
+-- Server-side re-validation that a room/therapist/time is an actually-eligible combination, not
+-- just non-conflicting with another booking. GetAvailableSlotsAsync (sp_Booking_GetAvailabilityData)
+-- only ever offers legitimate combinations to the client, but nothing previously stopped a raw API
+-- call to sp_Booking_ScheduleTreatment/RescheduleConfirmed from committing any room/therapist/time
+-- that merely didn't conflict with an existing booking -- regardless of location hours, holidays,
+-- room-category eligibility, or whether that therapist/room was ever eligible for this treatment's
+-- category/shift at all. Mirrors EligibleRooms/EligibleShifts's pairing rules (including their
+-- legacy/bootstrap fallbacks) and the location-hours/holiday resolution, scoped down to just the one
+-- room/therapist/time being committed. Called from inside the caller's already-open transaction
+-- (which already has SET XACT_ABORT ON), so a THROW here rolls that transaction back same as any
+-- other error in it -- no BEGIN TRAN/ROLLBACK of its own.
+CREATE OR ALTER PROCEDURE dbo.sp_Booking_ValidateSlotEligibility
+    @LocationId  INT,
+    @TreatmentId INT,
+    @RoomId      INT,
+    @TherapistId INT,
+    @StartTime   DATETIME2,
+    @EndTime     DATETIME2
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @WorkDate DATE = CAST(@StartTime AS DATE);
+    DECLARE @DayBit TINYINT = CAST(POWER(2, DATEDIFF(DAY, 0, @WorkDate) % 7) AS TINYINT);
+    DECLARE @CategoryId INT, @LocOpenTime TIME, @LocCloseTime TIME, @BreakStart TIME, @BreakEnd TIME, @IsHoliday BIT;
+
+    SELECT @CategoryId = t.CategoryId
+    FROM dbo.Treatments t
+    WHERE t.Id = @TreatmentId AND t.LocationId = @LocationId AND t.IsDelete = 0 AND t.IsActive = 1;
+
+    IF @CategoryId IS NULL
+        THROW 50036, 'Treatment not offered at this location.', 1;
+
+    SELECT
+        @LocOpenTime = COALESCE(dh.OpenTime, l.OpenTime), @LocCloseTime = COALESCE(dh.CloseTime, l.CloseTime),
+        @BreakStart = COALESCE(l.BreakStartTime, c.BreakStartTime), @BreakEnd = COALESCE(l.BreakEndTime, c.BreakEndTime),
+        @IsHoliday = CASE WHEN dh.IsClosed = 1 OR EXISTS (
+            SELECT 1 FROM dbo.LocationHolidays h
+            WHERE h.LocationId = l.Id AND h.HolidayDate = @WorkDate AND h.IsDelete = 0 AND h.IsActive = 1
+        ) THEN 1 ELSE 0 END
+    FROM dbo.Locations l
+        JOIN dbo.SaloonChains c ON c.Id = l.ChainId
+        OUTER APPLY (
+            SELECT TOP 1 ds.OpenTime, ds.CloseTime, ds.IsClosed
+            FROM dbo.LocationDaySchedule ds
+            WHERE ds.LocationId = l.Id AND ds.DayBit = @DayBit AND ds.EffectiveFrom <= @WorkDate
+                AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= @WorkDate) AND ds.IsDelete = 0
+            ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
+        ) dh
+    WHERE l.Id = @LocationId AND l.IsDelete = 0 AND l.IsActive = 1;
+
+    IF @LocOpenTime IS NULL
+        THROW 50037, 'Location not found.', 1;
+
+    IF @IsHoliday = 1
+        OR CAST(@StartTime AS TIME) < @LocOpenTime OR CAST(@EndTime AS TIME) > @LocCloseTime
+        OR (@BreakStart IS NOT NULL AND @BreakEnd IS NOT NULL AND CAST(@StartTime AS TIME) < @BreakEnd AND CAST(@EndTime AS TIME) > @BreakStart)
+        THROW 50038, 'Location is not open at the requested time.', 1;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM dbo.Rooms r WHERE r.Id = @RoomId AND r.LocationId = @LocationId AND r.IsDelete = 0 AND r.IsActive = 1
+    )
+        THROW 50039, 'Room is not available at this location.', 1;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM dbo.TherapistProfile tp
+        WHERE tp.Id = @TherapistId AND tp.IsDelete = 0 AND tp.IsActive = 1
+            AND (tp.LocationId = @LocationId OR tp.LocationId IS NULL)
+    )
+        THROW 50040, 'Therapist is not available at this location.', 1;
+
+    -- Room-category eligibility paired with an actual therapist shift window covering the requested
+    -- time (same ShiftType-compatible join as EligibleRooms/EligibleShifts), unless the location has
+    -- never adopted room-category assignments at all, or this therapist has never used shift
+    -- assignments at all -- both legacy/bootstrap fallbacks, matching the read path exactly.
+    IF EXISTS (
+        SELECT 1 FROM dbo.RoomCategoryAssignments rcaAny
+            JOIN dbo.Rooms rAny ON rAny.Id = rcaAny.RoomId
+        WHERE rAny.LocationId = @LocationId AND rcaAny.IsDelete = 0 AND rcaAny.IsActive = 1
+    )
+    AND EXISTS (
+        SELECT 1 FROM dbo.ShiftAssignments saAny WHERE saAny.TherapistId = @TherapistId AND saAny.IsDelete = 0 AND saAny.IsActive = 1
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM dbo.RoomCategoryAssignments rca
+            JOIN dbo.ShiftAssignments sa
+                ON (sa.ShiftType = rca.ShiftType OR sa.ShiftType = 'FullDay' OR rca.ShiftType = 'FullDay')
+                AND (sa.RoomId IS NULL OR sa.RoomId = rca.RoomId)
+        WHERE rca.RoomId = @RoomId AND rca.WorkDate = @WorkDate AND rca.TreatmentCategoryId = @CategoryId
+            AND rca.IsDelete = 0 AND rca.IsActive = 1
+            AND sa.TherapistId = @TherapistId AND sa.WorkDate = @WorkDate AND sa.IsDelete = 0 AND sa.IsActive = 1
+            AND CAST(@StartTime AS TIME) >= sa.StartTime AND CAST(@EndTime AS TIME) <= sa.EndTime
+    )
+        THROW 50041, 'This room/therapist/time is not a valid combination for the requested treatment.', 1;
+
+    IF EXISTS (
+        SELECT 1 FROM dbo.BlockedSlots bs
+        WHERE bs.RoomId = @RoomId AND bs.WorkDate = @WorkDate AND bs.IsDelete = 0
+            AND bs.StartTime < CAST(@EndTime AS TIME) AND bs.EndTime > CAST(@StartTime AS TIME)
+    )
+        THROW 50043, 'Requested time is blocked.', 1;
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.sp_Booking_ScheduleTreatment
     @BookingId   INT,
     @CustomerId  INT,
@@ -678,6 +793,8 @@ BEGIN
         ROLLBACK TRANSACTION;
         THROW 50002, 'Slot no longer available.', 1;
     END
+
+    EXEC dbo.sp_Booking_ValidateSlotEligibility @LocationId, @TreatmentId, @RoomId, @TherapistId, @StartTime, @EndTime;
 
     SET @ExpiresAt = DATEADD(MINUTE, 5, SYSUTCDATETIME());
 
@@ -763,6 +880,8 @@ BEGIN
         THROW 50002, 'Slot no longer available.', 1;
     END
 
+    EXEC dbo.sp_Booking_ValidateSlotEligibility @LocationId, @TreatmentId, @RoomId, @TherapistId, @StartTime, @EndTime;
+
     UPDATE dbo.BookingTreatments
     SET RoomId = @RoomId, TherapistId = @TherapistId, StartTime = @StartTime, EndTime = @EndTime,
         UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
@@ -790,12 +909,14 @@ BEGIN
     DECLARE @StartTime DATETIME2;
     DECLARE @EndTime DATETIME2;
     DECLARE @OldTherapistId INT;
+    DECLARE @RoomId INT;
 
     SELECT TOP 1
         @LocationId = b.LocationId,
         @StartTime = bt.StartTime,
         @EndTime = bt.EndTime,
-        @OldTherapistId = bt.TherapistId
+        @OldTherapistId = bt.TherapistId,
+        @RoomId = bt.RoomId
     FROM dbo.BookingTreatments bt
         JOIN dbo.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = @BookingId AND bt.TreatmentId = @TreatmentId AND bt.IsDelete = 0
@@ -831,6 +952,11 @@ BEGIN
         ROLLBACK TRANSACTION;
         THROW 50002, 'Alternate therapist is not available for this time slot.', 1;
     END
+
+    -- Room/time are unchanged here, only who's doing the treatment -- re-validate just the new
+    -- therapist against the existing room/time rather than the full location-hours/room checks
+    -- (those were already valid when this booking was originally scheduled).
+    EXEC dbo.sp_Booking_ValidateSlotEligibility @LocationId, @TreatmentId, @RoomId, @NewTherapistId, @StartTime, @EndTime;
 
     UPDATE dbo.BookingTreatments
     SET TherapistId = @NewTherapistId, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
@@ -1640,6 +1766,43 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @Coordinates GEOGRAPHY = CASE WHEN @Latitude IS NOT NULL AND @Longitude IS NOT NULL
         THEN geography::Point(@Latitude, @Longitude, 4326) ELSE NULL END;
+
+    -- Deactivating closes the whole location outright -- block if any non-cancelled future booking
+    -- still exists, same "don't retroactively invalidate a real appointment" guard used everywhere
+    -- else hours/openings change (LocationDaySchedule, room openings, shift assignments).
+    IF @IsActive = 0 AND EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE b.LocationId = @Id AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL AND bt.StartTime >= SYSUTCDATETIME()
+    )
+        THROW 50034, 'Cannot deactivate this location -- it has existing bookings.', 1;
+
+    -- Shrinking default hours or dropping a working day can orphan a future booking on any date that
+    -- doesn't have its own LocationDaySchedule override still covering it -- a per-date override
+    -- always wins over these base defaults, so a booking covered by one is unaffected by this change.
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE b.LocationId = @Id AND bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL AND bt.StartTime >= SYSUTCDATETIME()
+            AND NOT EXISTS (
+                SELECT 1 FROM dbo.LocationDaySchedule ds
+                WHERE ds.LocationId = @Id
+                    AND ds.DayBit = CAST(POWER(2, DATEDIFF(DAY, 0, CAST(bt.StartTime AS DATE)) % 7) AS TINYINT)
+                    AND ds.EffectiveFrom <= CAST(bt.StartTime AS DATE)
+                    AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= CAST(bt.StartTime AS DATE))
+                    AND ds.IsDelete = 0
+            )
+            AND (
+                (@WorkingDaysMask & CAST(POWER(2, DATEDIFF(DAY, 0, CAST(bt.StartTime AS DATE)) % 7) AS TINYINT)) = 0
+                OR CAST(bt.StartTime AS TIME) < @OpenTime
+                OR CAST(bt.EndTime AS TIME) > @CloseTime
+            )
+    )
+        THROW 50035, 'Cannot change these hours -- a booking already exists outside the new hours (or on a day being closed).', 1;
 
     UPDATE dbo.Locations
     SET Name = @Name, Address = @Address, Coordinates = @Coordinates,
@@ -2884,6 +3047,10 @@ BEGIN
 END
 GO
 
+-- Shrinking a shift's window can orphan an existing booking that falls in the now-excluded time --
+-- the endpoint only ever checked HasShiftOverlapAsync (another therapist colliding in the same
+-- room), never whether this therapist's own already-booked appointments still fit. Same
+-- "don't retroactively invalidate a real appointment" guard as sp_Catalog_UpdateLocationDaySchedule.
 CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_UpdateTherapistShift
     @Id        INT,
     @StartTime TIME,
@@ -2892,12 +3059,29 @@ CREATE OR ALTER PROCEDURE dbo.sp_Scheduling_UpdateTherapistShift
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    DECLARE @TherapistId INT, @RoomId INT, @WorkDate DATE;
+    SELECT @TherapistId = TherapistId, @RoomId = RoomId, @WorkDate = WorkDate
+    FROM dbo.ShiftAssignments
+    WHERE Id = @Id AND IsDelete = 0;
+
+    IF @TherapistId IS NULL
+        THROW 50031, 'Shift assignment not found.', 1;
+
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.BookingTreatments bt
+            JOIN dbo.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = 0
+        WHERE bt.IsDelete = 0 AND b.Status <> 'Cancelled'
+            AND bt.StartTime IS NOT NULL AND CAST(bt.StartTime AS DATE) = @WorkDate
+            AND (bt.TherapistId = @TherapistId OR (@RoomId IS NOT NULL AND bt.RoomId = @RoomId))
+            AND (CAST(bt.StartTime AS TIME) < @StartTime OR CAST(bt.EndTime AS TIME) > @EndTime)
+    )
+        THROW 50032, 'Cannot change this shift -- a booking already exists outside the new time window.', 1;
+
     UPDATE dbo.ShiftAssignments
     SET StartTime = @StartTime, EndTime = @EndTime, UpdatedBy = @UpdatedBy, UpdatedDate = SYSUTCDATETIME()
     WHERE Id = @Id AND IsDelete = 0;
-
-    IF @@ROWCOUNT = 0
-        THROW 50031, 'Shift assignment not found.', 1;
 END
 GO
 
@@ -3582,20 +3766,25 @@ BEGIN
 END;
 GO
 
+-- Was a LEFT JOIN to Treatments/TreatmentCategories (fanning out one row per treatment) collapsed
+-- back down with SELECT DISTINCT -- correct, but on every call, including the common empty-search
+-- "browse all" case, it materialized and sorted that full fan-out just to throw the duplicates
+-- away. EXISTS-based matching only touches Treatments/TreatmentCategories when @Search is actually
+-- non-empty, and never fans the row set out in the first place.
 CREATE OR ALTER PROCEDURE dbo.sp_Catalog_Search
     @Search NVARCHAR(200) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    SELECT DISTINCT
+    DECLARE @Term NVARCHAR(200) = NULLIF(LTRIM(RTRIM(@Search)), '');
+
+    SELECT
         l.Id, l.ChainId, c.Name AS ChainName, l.Name, l.Address,
         l.OpenTime, l.CloseTime, l.WorkingDaysMask, l.TimeZoneId,
         r.AverageRating, r.ReviewCount
     FROM dbo.Locations l
         JOIN dbo.SaloonChains c ON c.Id = l.ChainId
-        LEFT JOIN dbo.Treatments t ON t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
-        LEFT JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId AND tc.IsDelete = 0 AND tc.IsActive = 1
         LEFT JOIN (
             SELECT LocationId, AVG(CAST(Rating AS DECIMAL(3,2))) AS AverageRating, COUNT(*) AS ReviewCount
             FROM dbo.Reviews WHERE IsDelete = 0
@@ -3603,12 +3792,21 @@ BEGIN
         ) r ON r.LocationId = l.Id
     WHERE l.IsDelete = 0 AND l.IsActive = 1 AND c.IsDelete = 0 AND c.IsActive = 1
         AND (
-            @Search IS NULL OR TRIM(@Search) = '' OR
-            c.Name LIKE '%' + @Search + '%' OR
-            l.Name LIKE '%' + @Search + '%' OR
-            l.Address LIKE '%' + @Search + '%' OR
-            t.Name LIKE '%' + @Search + '%' OR
-            tc.Name LIKE '%' + @Search + '%'
+            @Term IS NULL OR
+            c.Name LIKE '%' + @Term + '%' OR
+            l.Name LIKE '%' + @Term + '%' OR
+            l.Address LIKE '%' + @Term + '%' OR
+            EXISTS (
+                SELECT 1 FROM dbo.Treatments t
+                WHERE t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
+                    AND t.Name LIKE '%' + @Term + '%'
+            ) OR
+            EXISTS (
+                SELECT 1 FROM dbo.Treatments t
+                    JOIN dbo.TreatmentCategories tc ON tc.Id = t.CategoryId AND tc.IsDelete = 0 AND tc.IsActive = 1
+                WHERE t.LocationId = l.Id AND t.IsDelete = 0 AND t.IsActive = 1
+                    AND tc.Name LIKE '%' + @Term + '%'
+            )
         )
     ORDER BY l.Name;
 END;
