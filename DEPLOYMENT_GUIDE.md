@@ -32,7 +32,7 @@ flowchart TD
     end
 
     subgraph DatabaseHost ["Host PC or Remote SQL Server"]
-        SQLServer["SaloonChainsDb (Port 1433)"]
+        SQLServer["SaloonChainDb (Port 1433)"]
     end
 
     LocalCode -->|1. Build & Push| PushScript
@@ -154,7 +154,7 @@ SQL_DATA_DIR=/opt/saloonchains/data/mssql
 # DATABASE CONNECTION STRING (Targeting Host PC or Remote SQL Server)
 # -------------------------------------------------------------------------
 # Example for Remote SQL Server / Containerized SQL Server / Host PC:
-SALOON_DB_CONN_STRING=Server=your-sql-server-ip-or-domain,1433;Database=SaloonChainsDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
+SALOON_DB_CONN_STRING=Server=your-sql-server-ip-or-domain,1433;Database=SaloonChainDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
 
 # -------------------------------------------------------------------------
 # SECURITY CONFIGURATION

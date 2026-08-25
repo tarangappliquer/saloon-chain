@@ -13,7 +13,7 @@ services:
       - "5127:5127"
     environment:
       ASPNETCORE_URLS: "http://+:5127"
-      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Server=host.docker.internal,1433;Database=SaloonChainsDb;User Id=sa;Password=SaloonChains_Dev123!;TrustServerCertificate=True;}"
+      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Server=host.docker.internal,1433;Database=SaloonChainDb;User Id=sa;Password=SaloonChains_Dev123!;TrustServerCertificate=True;}"
       Redis__ConnectionString: "saloonchains-redis:6379"
       Redis__Enabled: "true"
       Jwt__SigningKey: "${JWT_SIGNING_KEY:-SaloonChains_Production_Or_Dev_Secret_Signing_Key_32_Bytes_Min}"
