@@ -10,22 +10,23 @@
     "./styles/globals.css": "./src/styles/globals.css"
   },
   "dependencies": {
+    "@radix-ui/react-tooltip": "^1.2.16",
+    "@uppy/core": "^4.4.1",
+    "@uppy/dashboard": "^4.1.2",
+    "@uppy/drag-drop": "^4.1.2",
+    "@uppy/file-input": "^4.1.2",
+    "@uppy/image-editor": "^4.1.2",
+    "@uppy/progress-bar": "^4.1.2",
+    "@uppy/react": "^4.2.1",
+    "@uppy/status-bar": "^4.1.2",
+    "@uppy/tus": "^4.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
     "sweetalert2": "^11.17.2",
     "sweetalert2-react-content": "^5.1.0",
     "tailwind-merge": "^3.0.1",
-    "tus-js-client": "^4.3.1",
-    "@uppy/core": "^4.4.1",
-    "@uppy/react": "^4.2.1",
-    "@uppy/tus": "^4.1.2",
-    "@uppy/image-editor": "^4.1.2",
-    "@uppy/dashboard": "^4.1.2",
-    "@uppy/drag-drop": "^4.1.2",
-    "@uppy/status-bar": "^4.1.2",
-    "@uppy/progress-bar": "^4.1.2",
-    "@uppy/file-input": "^4.1.2"
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import { usePortalConfig } from '../../features/config/PortalConfigContext';
@@ -393,15 +393,21 @@ export function CustomersPage() {
                             View
                           </Button>
                           {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
-                              onClick={() => emulate(c)}
-                              title={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : undefined}
-                            >
-                              {emulatingId === c.id ? 'Opening...' : '⚡ Emulate & Book'}
-                            </Button>
+                            // Wrapped in a span, not tooltipped directly on the Button -- a disabled
+                            // button doesn't reliably fire hover events, so the span (never disabled
+                            // itself) is what actually triggers the tooltip explaining why.
+                            <Tooltip content={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
+                              <span className="inline-flex">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
+                                  onClick={() => emulate(c)}
+                                >
+                                  {emulatingId === c.id ? 'Opening...' : '⚡ Emulate & Book'}
+                                </Button>
+                              </span>
+                            </Tooltip>
                           )}
                           <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(c)}>
                             Edit
@@ -438,14 +444,17 @@ export function CustomersPage() {
                     View
                   </Button>
                   {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
-                    <Button
-                      size="sm"
-                      disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
-                      onClick={() => emulate(c)}
-                      title={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : undefined}
-                    >
-                      {emulatingId === c.id ? 'Opening...' : 'Start Booking'}
-                    </Button>
+                    <Tooltip content={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
+                      <span className="inline-flex">
+                        <Button
+                          size="sm"
+                          disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
+                          onClick={() => emulate(c)}
+                        >
+                          {emulatingId === c.id ? 'Opening...' : 'Start Booking'}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   )}
                 </div>
               </div>

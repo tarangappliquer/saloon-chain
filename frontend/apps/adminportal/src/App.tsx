@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider } from '@saloon/ui';
+import { ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, TooltipProvider } from '@saloon/ui';
 import { API_BASE } from './api/client';
 import { routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
@@ -285,13 +285,15 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <AuthProvider>
-          <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
-            <PortalConfigProvider>
-              <AppRoutes />
-            </PortalConfigProvider>
-          </Suspense>
-        </AuthProvider>
+        <TooltipProvider delayDuration={300} skipDelayDuration={300}>
+          <AuthProvider>
+            <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
+              <PortalConfigProvider>
+                <AppRoutes />
+              </PortalConfigProvider>
+            </Suspense>
+          </AuthProvider>
+        </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

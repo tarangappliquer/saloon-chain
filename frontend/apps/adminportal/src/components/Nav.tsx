@@ -1,6 +1,6 @@
 import { memo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Badge, BrandMark, ThemeToggle } from '@saloon/ui';
+import { Badge, BrandMark, ThemeToggle, Tooltip } from '@saloon/ui';
 import { API_BASE } from '../api/client';
 import { appConfig } from '../config';
 import { routes } from '../routes';
@@ -19,19 +19,20 @@ const NavLink = memo(function NavLink({ to, icon, children, onClick, collapsed }
   const location = useLocation();
   const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(`${to}/`));
   return (
-    <Link
-      to={to}
-      onClick={onClick}
-      title={collapsed && typeof children === 'string' ? children : undefined}
-      className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${
-        active
-          ? 'bg-primary text-primary-foreground shadow-xs shadow-primary/20 font-bold'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-      }`}
-    >
-      <span className="shrink-0 text-current">{icon}</span>
-      {!collapsed && <span className="truncate">{children}</span>}
-    </Link>
+    <Tooltip content={collapsed ? children : null} side="right">
+      <Link
+        to={to}
+        onClick={onClick}
+        className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${
+          active
+            ? 'bg-primary text-primary-foreground shadow-xs shadow-primary/20 font-bold'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        }`}
+      >
+        <span className="shrink-0 text-current">{icon}</span>
+        {!collapsed && <span className="truncate">{children}</span>}
+      </Link>
+    </Tooltip>
   );
 });
 
@@ -72,27 +73,28 @@ function NavGroup({ title, icon, children, defaultOpen = false, collapsed }: Nav
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="space-y-1">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        title={collapsed ? title : undefined}
-        className={`flex w-full items-center rounded-xl px-3.5 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition ${collapsed ? 'justify-center px-2' : 'justify-between'}`}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="shrink-0 text-current">{icon}</span>
-          {!collapsed && <span className="truncate font-bold">{title}</span>}
-        </div>
-        {!collapsed && (
-          <svg
-            className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-90 text-primary' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-          </svg>
-        )}
-      </button>
+      <Tooltip content={collapsed ? title : null} side="right">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={`flex w-full items-center rounded-xl px-3.5 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition ${collapsed ? 'justify-center px-2' : 'justify-between'}`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="shrink-0 text-current">{icon}</span>
+            {!collapsed && <span className="truncate font-bold">{title}</span>}
+          </div>
+          {!collapsed && (
+            <svg
+              className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-90 text-primary' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+            </svg>
+          )}
+        </button>
+      </Tooltip>
       {open && !collapsed && <div className="space-y-0.5 pt-0.5">{children}</div>}
     </div>
   );
@@ -336,46 +338,48 @@ export const Nav = memo(function Nav() {
           )}
 
           <div className={`flex items-center gap-2 rounded-xl border border-border/80 bg-accent/40 p-2.5 ${isCollapsed ? 'flex-col' : 'justify-between'}`}>
-            <Link
-              to={routes.profile}
-              onClick={() => setMobileOpen(false)}
-              title={isCollapsed ? currentUser.name : undefined}
-              className={`flex items-center gap-2.5 min-w-0 overflow-hidden group ${isCollapsed ? '' : 'flex-1'}`}
-            >
-              {currentUser.photoPath ? (
-                <img
-                  src={`${API_BASE}${currentUser.photoPath}?v=${currentUser.photoVersion}`}
-                  alt={currentUser.name}
-                  loading="lazy"
-                  decoding="async"
-                  className="h-8 w-8 rounded-full object-cover shrink-0"
-                />
-              ) : (
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary shrink-0">
-                  {initials}
-                </span>
-              )}
-              {!isCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-bold text-foreground group-hover:text-primary transition">
-                    {currentUser.name}
-                  </p>
-                  <div className="mt-0.5">
-                    <Badge status={currentUser.role} />
+            <Tooltip content={isCollapsed ? currentUser.name : null} side="right">
+              <Link
+                to={routes.profile}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2.5 min-w-0 overflow-hidden group ${isCollapsed ? '' : 'flex-1'}`}
+              >
+                {currentUser.photoPath ? (
+                  <img
+                    src={`${API_BASE}${currentUser.photoPath}?v=${currentUser.photoVersion}`}
+                    alt={currentUser.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-8 w-8 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary shrink-0">
+                    {initials}
+                  </span>
+                )}
+                {!isCollapsed && (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold text-foreground group-hover:text-primary transition">
+                      {currentUser.name}
+                    </p>
+                    <div className="mt-0.5">
+                      <Badge status={currentUser.role} />
+                    </div>
                   </div>
-                </div>
-              )}
-            </Link>
-            <button
-              type="button"
-              onClick={logout}
-              title="Sign out"
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
+                )}
+              </Link>
+            </Tooltip>
+            <Tooltip content="Sign out">
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -390,16 +394,17 @@ export const Nav = memo(function Nav() {
         className={`hidden md:flex shrink-0 flex-col border-r border-border bg-card h-screen sticky top-0 z-30 transition-all duration-200 ${collapsed ? 'w-20' : 'w-72'}`}
       >
         {renderNavContent(collapsed)}
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="hidden md:flex absolute top-6 -right-3 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground transition z-40"
-        >
-          <svg className={`h-3.5 w-3.5 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+        <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="right">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="hidden md:flex absolute top-6 -right-3 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground transition z-40"
+          >
+            <svg className={`h-3.5 w-3.5 transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        </Tooltip>
       </aside>
 
       {/* Mobile Header Bar */}

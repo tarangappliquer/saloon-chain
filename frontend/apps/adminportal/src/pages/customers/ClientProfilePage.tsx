@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { X } from 'lucide-react';
 import type { MyBookingDto } from '@saloon/api-client';
 import { adminCatalogApi, adminCustomersApi, ApiError } from '../../api/client';
@@ -332,16 +332,14 @@ export function ClientProfilePage() {
           <div className="flex flex-wrap gap-2">
             {tags.length === 0 && <p className="text-sm text-muted-foreground">No tags yet.</p>}
             {tags.map((t) => (
-              <span
-                key={t.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
-                title={scopeLabel(t.chainName, t.locationName)}
-              >
-                {t.tag}
-                <button type="button" onClick={() => removeTag(t.id)} className="hover:text-destructive transition">
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
+              <Tooltip key={t.id} content={scopeLabel(t.chainName, t.locationName)}>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  {t.tag}
+                  <button type="button" onClick={() => removeTag(t.id)} className="hover:text-destructive transition">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              </Tooltip>
             ))}
           </div>
           <form onSubmit={addTag} className="flex gap-2 max-w-sm">

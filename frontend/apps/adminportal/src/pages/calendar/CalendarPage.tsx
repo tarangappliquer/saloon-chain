@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader } from '@saloon/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -678,9 +678,9 @@ function ShiftRow({
     return (
       <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs shadow-xs">
         <div className="flex items-center justify-between">
-          <span className="font-semibold text-foreground truncate max-w-50" title={shift.therapistName}>
-            {shift.therapistName}
-          </span>
+          <Tooltip content={shift.therapistName}>
+            <span className="font-semibold text-foreground truncate max-w-50">{shift.therapistName}</span>
+          </Tooltip>
           <span className="text-[10px] text-muted-foreground uppercase font-mono">Editing Shift</span>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -733,9 +733,9 @@ function ShiftRow({
         <span className="shrink-0 rounded bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
           {shift.startTime.slice(0, 5)} – {shift.endTime.slice(0, 5)}
         </span>
-        <span className="truncate text-xs font-medium text-foreground" title={shift.therapistName}>
-          {shift.therapistName}
-        </span>
+        <Tooltip content={shift.therapistName}>
+          <span className="truncate text-xs font-medium text-foreground">{shift.therapistName}</span>
+        </Tooltip>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button
@@ -984,26 +984,27 @@ function ScheduleGridView({
                       className="border-r border-b border-border bg-card/90 p-3.5 font-semibold text-center flex flex-col items-center justify-between sticky top-0 z-10 space-y-2.5"
                     >
                       {/* Fresha Staff Avatar Icon -- Clickable to see/manage assigned staff */}
-                      <div
-                        onClick={(e) => openStaffPopover(e, room)}
-                        className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-primary hover:scale-105 transition-all"
-                        title={`Click to view assigned staff for ${room.name}`}
-                      >
-                        {getInitials(primaryName)}
-                        {roomShifts.length > 1 && (
-                          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">
-                            +{roomShifts.length - 1}
-                          </span>
-                        )}
-                      </div>
+                      <Tooltip content={`Click to view assigned staff for ${room.name}`}>
+                        <div
+                          onClick={(e) => openStaffPopover(e, room)}
+                          className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-primary hover:scale-105 transition-all"
+                        >
+                          {getInitials(primaryName)}
+                          {roomShifts.length > 1 && (
+                            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">
+                              +{roomShifts.length - 1}
+                            </span>
+                          )}
+                        </div>
+                      </Tooltip>
 
                       <div className="w-full text-center min-w-0">
-                        <div className="text-sm font-bold text-foreground truncate w-full" title={primaryName}>
-                          {primaryName}
-                        </div>
-                        <div className="text-xs font-medium text-muted-foreground truncate w-full" title={room.name}>
-                          {room.name}
-                        </div>
+                        <Tooltip content={primaryName}>
+                          <div className="text-sm font-bold text-foreground truncate w-full">{primaryName}</div>
+                        </Tooltip>
+                        <Tooltip content={room.name}>
+                          <div className="text-xs font-medium text-muted-foreground truncate w-full">{room.name}</div>
+                        </Tooltip>
                       </div>
 
                       {/* Category picker & Staff button */}
@@ -1080,73 +1081,75 @@ function ScheduleGridView({
                       >
                         {matchedTreatment ? (
                             /* FRESHA SKY-BLUE BOOKED APPOINTMENT CARD */
-                            <div
-                              className="rounded-xl border p-2.5 shadow-2xs cursor-pointer hover:brightness-95 transition space-y-0.5"
-                              style={getStatusCardStyle(matchedTreatment.appointmentStatusColorHex)}
-                              onClick={() => onOpenBookingDetail(matchedTreatment.bookingId)}
-                              title={`Booking #${matchedTreatment.bookingId}: ${matchedTreatment.treatmentName} — ${matchedTreatment.customerName}`}
-                            >
-                              <div className="text-xs font-extrabold flex items-center justify-between gap-1">
-                                <span>{matchedTreatment.startTimeStr} – {matchedTreatment.endTimeStr}</span>
-                                <span className="text-xs font-mono font-extrabold opacity-95">#{matchedTreatment.bookingId}</span>
+                            <Tooltip content={`Booking #${matchedTreatment.bookingId}: ${matchedTreatment.treatmentName} — ${matchedTreatment.customerName}`}>
+                              <div
+                                className="rounded-xl border p-2.5 shadow-2xs cursor-pointer hover:brightness-95 transition space-y-0.5"
+                                style={getStatusCardStyle(matchedTreatment.appointmentStatusColorHex)}
+                                onClick={() => onOpenBookingDetail(matchedTreatment.bookingId)}
+                              >
+                                <div className="text-xs font-extrabold flex items-center justify-between gap-1">
+                                  <span>{matchedTreatment.startTimeStr} – {matchedTreatment.endTimeStr}</span>
+                                  <span className="text-xs font-mono font-extrabold opacity-95">#{matchedTreatment.bookingId}</span>
+                                </div>
+                                <div className="text-xs font-extrabold truncate">
+                                  {matchedTreatment.treatmentName}
+                                </div>
+                                <div className="text-xs font-bold opacity-100 truncate">
+                                  👤 {matchedTreatment.customerName}
+                                </div>
                               </div>
-                              <div className="text-xs font-extrabold truncate">
-                                {matchedTreatment.treatmentName}
-                              </div>
-                              <div className="text-xs font-bold opacity-100 truncate">
-                                👤 {matchedTreatment.customerName}
-                              </div>
-                            </div>
+                            </Tooltip>
                           ) : blockCell ? (
                             /* BLOCKED SLOT -- every 15-min row the block covers keeps its own visible
                                cell (content repeats per row); border-t/rounded-t only on the group's
                                first row and border-b/rounded-b only on its last stitch the individual
                                rows into one rectangle outline for the whole group. */
-                            <div
-                              className={`h-full border-l border-r border-violet-500/50 bg-violet-500/15 p-2.5 space-y-1.5 shadow-2xs cursor-pointer hover:bg-violet-500/25 transition ${blockCell.position === 'only'
-                                ? 'rounded-lg border-t border-b'
-                                : blockCell.position === 'first'
-                                  ? 'rounded-t-lg border-t'
-                                  : blockCell.position === 'last'
-                                    ? 'rounded-b-lg border-b'
-                                    : ''
-                                }`}
-                              title={blockCell.blocks.length === 1 ? `Click to edit: ${blockCell.blocks[0].reason}` : `${blockCell.blocks.length} overlapping blocked ranges`}
-                              onClick={() => blockCell.blocks.length > 0 && handleEditBlockSlot(blockCell.blocks[0])}
-                            >
-                              {blockCell.blocks.map((block) => (
-                                <div key={block.id} className="space-y-1">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
-                                      block.id <= 0
-                                        ? 'bg-amber-500/25 border-amber-500/50 text-amber-900 dark:text-amber-100'
-                                        : 'bg-violet-500/25 border-violet-500/50 text-violet-900 dark:text-violet-100'
-                                    }`}>
-                                      {block.id <= 0 ? 'Lunch Break' : 'Blocked'}
-                                    </span>
-                                    {block.id > 0 ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUnblockSlot(block.id)}
-                                        className="text-xs font-bold text-violet-700 dark:text-violet-300 underline cursor-pointer"
-                                      >
-                                        Unblock
-                                      </button>
-                                    ) : (
-                                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
-                                        🔒 Locked
+                            <Tooltip content={blockCell.blocks.length === 1 ? `Click to edit: ${blockCell.blocks[0].reason}` : `${blockCell.blocks.length} overlapping blocked ranges`}>
+                              <div
+                                className={`h-full border-l border-r border-violet-500/50 bg-violet-500/15 p-2.5 space-y-1.5 shadow-2xs cursor-pointer hover:bg-violet-500/25 transition ${blockCell.position === 'only'
+                                  ? 'rounded-lg border-t border-b'
+                                  : blockCell.position === 'first'
+                                    ? 'rounded-t-lg border-t'
+                                    : blockCell.position === 'last'
+                                      ? 'rounded-b-lg border-b'
+                                      : ''
+                                  }`}
+                                onClick={() => blockCell.blocks.length > 0 && handleEditBlockSlot(blockCell.blocks[0])}
+                              >
+                                {blockCell.blocks.map((block) => (
+                                  <div key={block.id} className="space-y-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
+                                        block.id <= 0
+                                          ? 'bg-amber-500/25 border-amber-500/50 text-amber-900 dark:text-amber-100'
+                                          : 'bg-violet-500/25 border-violet-500/50 text-violet-900 dark:text-violet-100'
+                                      }`}>
+                                        {block.id <= 0 ? 'Lunch Break' : 'Blocked'}
                                       </span>
-                                    )}
+                                      {block.id > 0 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUnblockSlot(block.id)}
+                                          className="text-xs font-bold text-violet-700 dark:text-violet-300 underline cursor-pointer"
+                                        >
+                                          Unblock
+                                        </button>
+                                      ) : (
+                                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
+                                          🔒 Locked
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs font-mono font-extrabold text-violet-900 dark:text-violet-100">
+                                      {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}
+                                    </p>
+                                    <p className="text-xs font-semibold text-violet-950 dark:text-violet-100 line-clamp-2">
+                                      {block.reason}
+                                    </p>
                                   </div>
-                                  <p className="text-xs font-mono font-extrabold text-violet-900 dark:text-violet-100">
-                                    {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}
-                                  </p>
-                                  <p className="text-xs font-semibold text-violet-950 dark:text-violet-100 line-clamp-2">
-                                    {block.reason}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
+                                ))}
+                              </div>
+                            </Tooltip>
                           ) : isStaffed ? (
                             /* OPEN AVAILABLE SLOT WITH CATEGORY & ASSIGNED THERAPIST */
                             <div
@@ -1164,9 +1167,9 @@ function ScheduleGridView({
                                 <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                                   Available
                                 </span>
-                                <span className="text-xs font-semibold text-foreground truncate" title={opening?.categoryName}>
-                                  {opening?.categoryName}
-                                </span>
+                                <Tooltip content={opening?.categoryName}>
+                                  <span className="text-xs font-semibold text-foreground truncate">{opening?.categoryName}</span>
+                                </Tooltip>
                               </div>
                               <div className="text-xs font-medium text-foreground flex items-center gap-1.5 pt-0.5">
                                 <span className="text-muted-foreground text-[11px] uppercase font-bold">Staff:</span>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreditCard, Banknote, Terminal, ShieldCheck, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import type { AxiosError } from 'axios';
+import { Tooltip } from '@saloon/ui';
 import { catalogApi, paymentApi } from '../../api/client';
 import type { Treatment } from '../../api/types';
 import { routes } from '../../routes';
@@ -166,9 +167,9 @@ export function PaymentStep() {
                 Stripe Checkout Link
               </span>
               {stripePublishableKey && (
-                <span className="text-[10px] text-slate-400 font-mono" title={stripePublishableKey}>
-                  Key Ready
-                </span>
+                <Tooltip content={stripePublishableKey}>
+                  <span className="text-[10px] text-slate-400 font-mono">Key Ready</span>
+                </Tooltip>
               )}
             </div>
           </button>

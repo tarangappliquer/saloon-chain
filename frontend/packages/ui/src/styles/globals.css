@@ -351,6 +351,22 @@
     border: 1px solid var(--color-border);
   }
 
+  .tooltip-content {
+    transform-origin: var(--radix-tooltip-content-transform-origin);
+    animation: tooltip-in var(--duration-fast) var(--ease-out-quart);
+  }
+
+  @keyframes tooltip-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   /* SweetAlert2 Theme Integration -- colors/spacing go through SweetAlert2's own `--swal2-*`
      custom properties (https://sweetalert2.github.io/#make-it-yours) wherever one exists, so its
      default button padding/border-radius/etc. still apply. SweetAlert2 injects its stylesheet as
