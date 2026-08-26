@@ -91,8 +91,13 @@ internal static class PaymentEndpoints
           .Produces<PaymentResultDto>()
           .WithDescription("Verify Stripe Checkout Session status and confirm booking if paid.");
 
-        group.MapGet("/booking/{bookingId:int}", async (int bookingId, PaymentService svc) =>
+        group.MapGet("/booking/{bookingId:int}", async (int bookingId, ICurrentUser currentUser, BookingRepository bookingRepo, PaymentService svc) =>
         {
+            // Same location-ownership guard as every other staff-on-behalf-of-customer action on a
+            // booking -- without it, any staff account could read any other location's payment data.
+            var error = await BookingEndpoints.AuthorizeActingOnBookingAsync(bookingId, currentUser, bookingRepo);
+            if (error is not null) return error;
+
             var payments = await svc.GetByBookingIdAsync(bookingId);
             return Results.Ok(payments);
         }).RequireAuthorization("StaffAccess")

@@ -115,8 +115,14 @@ internal sealed class StripePaymentGateway(IOptionsMonitor<StripeOptions> option
         try
         {
             Event stripeEvent;
-            if (!string.IsNullOrEmpty(signatureHeader) && !string.IsNullOrEmpty(_options.WebhookSecret))
+            if (!string.IsNullOrEmpty(_options.WebhookSecret))
             {
+                // Fail closed: a configured secret means every event must carry a valid signature.
+                // Falling back to unverified parsing on a missing header would let anyone forge payment events.
+                if (string.IsNullOrEmpty(signatureHeader))
+                {
+                    return new WebhookProcessResult(false, "missing_signature", null, null, null);
+                }
                 stripeEvent = EventUtility.ConstructEvent(payload, signatureHeader, _options.WebhookSecret, throwOnApiVersionMismatch: false);
             }
             else
