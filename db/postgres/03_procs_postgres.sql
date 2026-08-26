@@ -152,11 +152,11 @@ $$;
 CREATE OR REPLACE FUNCTION public.sp_Catalog_GetLocationHolidays(p_LocationId int, p_FromDate date, p_ToDate date)
 RETURNS TABLE(HolidayDate date, Reason varchar)
 LANGUAGE sql STABLE AS $$
-    SELECT HolidayDate, Reason
-    FROM public.LocationHolidays
-    WHERE LocationId = p_LocationId AND HolidayDate BETWEEN p_FromDate AND p_ToDate
-        AND IsDelete = FALSE AND IsActive = TRUE
-    ORDER BY HolidayDate;
+    SELECT h.HolidayDate, h.Reason
+    FROM public.LocationHolidays h
+    WHERE h.LocationId = p_LocationId AND h.HolidayDate BETWEEN p_FromDate AND p_ToDate
+        AND h.IsDelete = FALSE AND h.IsActive = TRUE
+    ORDER BY h.HolidayDate;
 $$;
 
 CREATE OR REPLACE FUNCTION public.sp_Catalog_GetTreatments(p_LocationId int, p_CategoryId int DEFAULT NULL)

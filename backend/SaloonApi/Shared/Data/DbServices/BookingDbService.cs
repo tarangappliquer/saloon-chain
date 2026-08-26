@@ -41,13 +41,13 @@ internal sealed class BookingDbService
         return db.ExecuteScalarAsync<bool>("SELECT * FROM public.sp_Booking_HasLocationRoomOpenings(@LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<IEnumerable<DateTime>> sp_Booking_GetLocationOpenDatesAsync(IDbConnection db, int locationId, DateOnly from, DateOnly to)
+    public Task<IEnumerable<DateOnly>> sp_Booking_GetLocationOpenDatesAsync(IDbConnection db, int locationId, DateOnly from, DateOnly to)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("FromDate", from.ToDateTime(TimeOnly.MinValue), DbType.Date);
         args.Add("ToDate", to.ToDateTime(TimeOnly.MinValue), DbType.Date);
-        return db.QueryAsync<DateTime>("SELECT * FROM public.sp_Booking_GetLocationOpenDates(@LocationId, @FromDate, @ToDate)", args, commandType: CommandType.Text);
+        return db.QueryAsync<DateOnly>("SELECT * FROM public.sp_Booking_GetLocationOpenDates(@LocationId, @FromDate, @ToDate)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Booking_CreateDraftAsync(IDbConnection db, int locationId, int customerId, int[] treatments, int? createdBy)

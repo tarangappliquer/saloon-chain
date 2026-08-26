@@ -76,10 +76,12 @@ internal sealed class RefCursorGridReader : IDisposable, IAsyncDisposable
 
         try
         {
-            var paramNames = dynamicParams.ParameterNames
-                .Select(p => p.StartsWith('@') ? p[1..] : p)
-                .Select(p => p.StartsWith("p_", StringComparison.OrdinalIgnoreCase) ? p : "p_" + p);
-            var callArgs = string.Join(", ", paramNames.Select(p => $"{p} => @{p}"));
+            var callArgs = string.Join(", ", dynamicParams.ParameterNames.Select(raw =>
+            {
+                var clean = raw.StartsWith('@') ? raw[1..] : raw;
+                var procParam = clean.StartsWith("p_", StringComparison.OrdinalIgnoreCase) ? clean : "p_" + clean;
+                return $"{procParam} => @{clean}";
+            }));
             var callSql = string.IsNullOrEmpty(callArgs) ? $"CALL {spName}()" : $"CALL {spName}({callArgs})";
 
             var cursorNames = new List<string>();

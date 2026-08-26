@@ -82,7 +82,7 @@ internal sealed class BookingService(
         var pairsByDate = rangeData.EligiblePairs
             .GroupBy(p => p.WorkDate)
             .ToDictionary(g => g.Key, IReadOnlyList<EligiblePair> (g) =>
-                [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd))]);
+                [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart.ToTimeSpan(), p.ShiftEnd.ToTimeSpan()))]);
 
         var bookingsByDate = rangeData.ExistingBookings
             .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
@@ -92,7 +92,7 @@ internal sealed class BookingService(
         var blockedByDate = rangeData.BlockedRanges
             .GroupBy(b => b.WorkDate)
             .ToDictionary(g => g.Key, IReadOnlyList<BlockedRange> (g) =>
-                [.. g.Select(b => new BlockedRange(b.RoomId, b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), b.WorkDate.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime))))]);
+                [.. g.Select(b => new BlockedRange(b.RoomId, b.WorkDate.ToDateTime(b.StartTime), b.WorkDate.ToDateTime(b.EndTime)))]);
 
         var availableDates = new List<DateOnly>();
         foreach (var d in candidates)
@@ -107,8 +107,8 @@ internal sealed class BookingService(
             foreach (var treatment in rangeData.Treatments)
             {
                 var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, hours.OpenTime, hours.CloseTime, treatment.DurationSlots, pairs, bookings, blocked,
-                    breakStart: rangeData.Location.BreakStartTime, breakEnd: rangeData.Location.BreakEndTime);
+                    d, hours.OpenTime.ToTimeSpan(), hours.CloseTime.ToTimeSpan(), treatment.DurationSlots, pairs, bookings, blocked,
+                    breakStart: rangeData.Location.BreakStartTime?.ToTimeSpan(), breakEnd: rangeData.Location.BreakEndTime?.ToTimeSpan());
 
                 if (slots.Count == 0)
                 {
@@ -160,14 +160,14 @@ internal sealed class BookingService(
         }
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
-        var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart, p.ShiftEnd)).ToList();
+        var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart.ToTimeSpan(), p.ShiftEnd.ToTimeSpan())).ToList();
         var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft")).ToList();
         var blocked = data.BlockedRanges.Select(b =>
-            new BlockedRange(b.RoomId, date.ToDateTime(TimeOnly.FromTimeSpan(b.StartTime)), date.ToDateTime(TimeOnly.FromTimeSpan(b.EndTime)))).ToList();
+            new BlockedRange(b.RoomId, date.ToDateTime(b.StartTime), date.ToDateTime(b.EndTime))).ToList();
 
         var slots = SlotCalculator.ComputeAvailableSlots(
-            date, data.Location.OpenTime, data.Location.CloseTime, totalSlots, pairs, existing, blocked,
-            breakStart: data.Location.BreakStartTime, breakEnd: data.Location.BreakEndTime);
+            date, data.Location.OpenTime.ToTimeSpan(), data.Location.CloseTime.ToTimeSpan(), totalSlots, pairs, existing, blocked,
+            breakStart: data.Location.BreakStartTime?.ToTimeSpan(), breakEnd: data.Location.BreakEndTime?.ToTimeSpan());
 
         if (excludeBookingId is null)
         {
@@ -188,7 +188,7 @@ internal sealed class BookingService(
     {
         var freed = await repo.RemoveTreatmentAsync(bookingId, customerId, treatmentId);
         if (freed is not null)
-            _ = SyncAndNotifyAsync(freed.LocationId, DateOnly.FromDateTime(freed.WorkDate));
+            _ = SyncAndNotifyAsync(freed.LocationId, freed.WorkDate);
     }
 
     public async Task<DateTime> ScheduleTreatmentAsync(
@@ -218,7 +218,7 @@ internal sealed class BookingService(
     public async Task ConfirmAsync(int bookingId, int customerId = 0)
     {
         var affected = await repo.ConfirmAsync(bookingId, customerId);
-        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+        foreach (var group in affected.Select(a => (a.LocationId, a.WorkDate)).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
@@ -309,7 +309,7 @@ internal sealed class BookingService(
 
         await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled >48h prior to appointment");
 
-        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: a.WorkDate)).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
@@ -384,7 +384,7 @@ internal sealed class BookingService(
 
         await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled by admin");
 
-        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: a.WorkDate)).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
@@ -402,7 +402,7 @@ internal sealed class BookingService(
     public async Task SweepExpiredHoldsAsync()
     {
         var affected = await repo.ExpireStaleHoldsAsync();
-        foreach (var group in affected.Select(a => (a.LocationId, WorkDate: DateOnly.FromDateTime(a.WorkDate))).Distinct())
+        foreach (var group in affected.Select(a => (a.LocationId, a.WorkDate)).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
     }
 

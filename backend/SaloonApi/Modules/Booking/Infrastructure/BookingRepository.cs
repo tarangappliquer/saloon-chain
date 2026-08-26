@@ -4,11 +4,12 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Booking.Infrastructure;
 
-internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, bool IsHoliday);
+internal sealed record LocationHoursRow(TimeOnly OpenTime, TimeOnly CloseTime, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask, bool IsHoliday);
+internal sealed record LocationHoursRangeHeaderRow(TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask);
 internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
-internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd, DateOnly WorkDate);
+internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeOnly ShiftStart, TimeOnly ShiftEnd, DateOnly WorkDate);
 internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
-internal sealed record BlockedRangeRangeRow(int RoomId, TimeSpan StartTime, TimeSpan EndTime, bool IsLocationBreak, DateOnly WorkDate);
+internal sealed record BlockedRangeRangeRow(int RoomId, TimeOnly StartTime, TimeOnly EndTime, DateOnly WorkDate);
 
 internal sealed record AvailabilityData(
     LocationHoursRow Location,
@@ -17,10 +18,10 @@ internal sealed record AvailabilityData(
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
     IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
-internal sealed record LocationHoursRangeRow(DateOnly WorkDate, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, bool IsHoliday);
+internal sealed record LocationHoursRangeRow(DateOnly WorkDate, TimeOnly OpenTime, TimeOnly CloseTime);
 
 internal sealed record AvailabilityRangeData(
-    LocationHoursRow Location,
+    LocationHoursRangeHeaderRow Location,
     IReadOnlyList<LocationHoursRangeRow> DayHours,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRow> EligiblePairs,
@@ -72,7 +73,7 @@ internal sealed record AdminBookingDto(
     int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
     int? CancelReasonId = null, string? CancelReasonName = null, bool IsPaid = false, string? PaymentProvider = null);
 
-internal sealed record BookingLocationRow(int BookingId, int LocationId, DateTime WorkDate);
+internal sealed record BookingLocationRow(int LocationId, int? RoomId, DateOnly WorkDate);
 
 internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
 
@@ -99,7 +100,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         using var multi = await bookingDb.sp_Booking_GetAvailabilityDataRangeAsync(db, locationId, treatmentIds.ToArray(), from, to, excludeBookingId);
 
-        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRow>()
+        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRangeHeaderRow>()
             ?? throw new InvalidOperationException($"Location {locationId} not found.");
         var dayHours = (await multi.ReadAsync<LocationHoursRangeRow>()).ToList();
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
@@ -120,8 +121,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var openDates = await bookingDb.sp_Booking_GetLocationOpenDatesAsync(db, locationId, from, to);
-
-        return openDates.Select(DateOnly.FromDateTime).ToHashSet();
+        return openDates.ToHashSet();
     }
 
     public async Task<int> CreateDraftAsync(int locationId, int customerId, IEnumerable<int> treatmentIds)

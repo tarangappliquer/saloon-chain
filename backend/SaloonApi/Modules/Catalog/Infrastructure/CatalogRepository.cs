@@ -12,13 +12,13 @@ internal sealed record LocationDto(
 
 internal sealed record VenueSearchResultDto(
     int Id, int ChainId, string ChainName, string Name, string? Address,
-    TimeSpan OpenTime, TimeSpan CloseTime, byte WorkingDaysMask, string TimeZoneId,
-    decimal? AverageRating = null, int? ReviewCount = null);
+    TimeOnly OpenTime, TimeOnly CloseTime, short WorkingDaysMask, string TimeZoneId,
+    decimal AverageRating = 0, long ReviewCount = 0);
 
 internal sealed record TreatmentDto(
     int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes);
 
-internal sealed record LocationHolidayRow(int Id, int LocationId, DateTime HolidayDate, string? Reason);
+internal sealed record LocationHolidayRow(DateOnly HolidayDate, string? Reason);
 
 internal sealed record LocationClosureDto(int Id, int LocationId, string LocationName, int ChainId, DateOnly HolidayDate, string? Reason, string Type);
 
@@ -68,7 +68,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await catalogDb.sp_Catalog_GetLocationHolidaysAsync(db, locationId, from, to);
-        return rows.Select(r => DateOnly.FromDateTime(r.HolidayDate)).ToList();
+        return rows.Select(r => r.HolidayDate).ToList();
     }
 
     public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId = null)
