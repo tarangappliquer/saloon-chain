@@ -48,7 +48,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using System.Text;
 
-StaticLogger.Initialize();
+StaticLogger.Initialize(cleanLogs: true);
 
 try
 {

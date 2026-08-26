@@ -13,7 +13,7 @@ internal sealed class RazorTemplateEngine(IWebHostEnvironment env, ILogger<Razor
     public async Task<string> RenderAsync<TModel>(string templateName, TModel model, CancellationToken ct = default)
     {
         var compiledTemplate = await GetOrCompileTemplateAsync(templateName, ct).ConfigureAwait(false);
-        return await compiledTemplate.RunAsync((Action<dynamic>)(instance => instance.Model = model)).ConfigureAwait(false);
+        return await compiledTemplate.RunAsync(model).ConfigureAwait(false);
     }
 
     [SuppressMessage("Reliability", "CA2016:Forward the 'CancellationToken' parameter to methods that take one", Justification = "RazorEngineCore CompileAsync does not accept CancellationToken.")]

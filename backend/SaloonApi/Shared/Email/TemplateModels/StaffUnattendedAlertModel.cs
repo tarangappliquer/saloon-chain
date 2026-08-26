@@ -1,6 +1,6 @@
 namespace SaloonApi.Shared.Email.TemplateModels;
 
-internal sealed class StaffUnattendedAlertModel
+public sealed class StaffUnattendedAlertModel
 {
     public required string ManagerName { get; init; }
     public required string AssignedStaffName { get; init; }

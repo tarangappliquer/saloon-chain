@@ -8,13 +8,58 @@ internal static class StaticLogger
 {
     private static JsonFormatter SerilogFormatter => new(renderMessage: true, formatProvider: CultureInfo.InvariantCulture);
 
-    public static void Initialize()
+    private static bool _cleanedLogs;
+
+    public static void Initialize(bool cleanLogs = false)
     {
+        if (cleanLogs && !_cleanedLogs)
+        {
+            _cleanedLogs = true;
+            CleanupLogs();
+        }
+
         if (Log.Logger is not Serilog.Core.Logger)
         {
             Log.Logger = new LoggerConfiguration()
                 .GetLoggerConfiguration(false)
                 .CreateBootstrapLogger();
+        }
+    }
+
+    public static void CleanupLogs(string? logsDirectory = null)
+    {
+        try
+        {
+            var dir = logsDirectory ?? Path.Combine(Directory.GetCurrentDirectory(), "Logs");
+            if (!Directory.Exists(dir)) return;
+
+            var files = Directory.GetFiles(dir, "*.*")
+                .Where(f => f.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (IOException)
+                {
+                    // Ignore locked files
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Ignore permission failures
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Ignore I/O exceptions during startup log cleanup
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Ignore permission exceptions during startup log cleanup
         }
     }
 

@@ -1,6 +1,6 @@
 namespace SaloonApi.Shared.Email.TemplateModels;
 
-internal sealed class DeveloperErrorNotificationModel
+public sealed class DeveloperErrorNotificationModel
 {
     public required string ContextName { get; init; }
     public required string Timestamp { get; init; }

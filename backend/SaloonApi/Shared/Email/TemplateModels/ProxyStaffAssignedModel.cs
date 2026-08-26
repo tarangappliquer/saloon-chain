@@ -1,6 +1,6 @@
 namespace SaloonApi.Shared.Email.TemplateModels;
 
-internal sealed class ProxyStaffAssignedModel
+public sealed class ProxyStaffAssignedModel
 {
     public required string ManagerName { get; init; }
     public required string ProxyTherapistName { get; init; }
