@@ -5,6 +5,7 @@ using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 using Xunit;
 
 namespace SaloonApi.Tests;
@@ -20,7 +21,7 @@ public class StripeCustomerServiceTests
             .Build();
         var sqlFactory = new SqlConnectionFactory(config);
         var currentUser = new TestCurrentUser();
-        var userRepo = new UserRepository(sqlFactory, currentUser);
+        var userRepo = new UserRepository(sqlFactory, currentUser, new StaffDbService(), new AuthDbService(), new AdminDbService());
         var service = new StripeCustomerService(userRepo, options);
 
         // When user is null from DB, it should handle fallback / creation

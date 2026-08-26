@@ -1,6 +1,7 @@
 using FluentValidation;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 using SaloonApi.Shared.Validation;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
@@ -41,23 +42,19 @@ internal static class AdminBlockTypesEndpoints
             .WithTags("AdminScheduling")
             .RequireAuthorization("StaffAccess");
 
-        group.MapGet("", async (int? chainId, int? locationId, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapGet("", async (int? chainId, int? locationId, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             var effectiveChainId = chainId ?? currentUser.ChainId;
             var effectiveLocationId = locationId ?? currentUser.LocationId;
 
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<BlockTypeDto>("public.sp_Admin_GetBlockTypes", new
-            {
-                ChainId = effectiveChainId,
-                LocationId = effectiveLocationId
-            });
+            var items = await adminDb.sp_Admin_GetBlockTypesAsync(db, effectiveChainId, effectiveLocationId);
             return Results.Ok(items);
         })
         .Produces<IReadOnlyList<BlockTypeDto>>()
         .WithDescription("Get block types (saloon level, location level, and global defaults).");
 
-        group.MapPost("", async (CreateBlockTypeRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapPost("", async (CreateBlockTypeRequest req, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             int? targetChainId = req.ChainId;
             int? targetLocationId = req.LocationId;
@@ -72,16 +69,8 @@ internal static class AdminBlockTypesEndpoints
             }
 
             using var db = factory.Create();
-            var id = await db.QuerySingleSpAsync<int>("public.sp_Admin_CreateBlockType", new
-            {
-                Name = req.Name,
-                ChainId = targetChainId,
-                LocationId = targetLocationId,
-                IsPaid = req.IsPaid,
-                DefaultDurationMinutes = req.DefaultDurationMinutes,
-                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex,
-                CreatedBy = currentUser.UserId
-            });
+            var id = await adminDb.sp_Admin_CreateBlockTypeAsync(
+                db, targetChainId, targetLocationId, req.Name, req.IsPaid, currentUser.RequireUserId());
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateBlockTypeRequest>()
@@ -89,19 +78,11 @@ internal static class AdminBlockTypesEndpoints
         .Produces<IdResponse>()
         .WithDescription("Create a custom block type at saloon level or location level.");
 
-        group.MapPut("/{id:int}", async (int id, UpdateBlockTypeRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapPut("/{id:int}", async (int id, UpdateBlockTypeRequest req, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("public.sp_Admin_UpdateBlockType", new
-            {
-                Id = id,
-                Name = req.Name,
-                IsPaid = req.IsPaid,
-                DefaultDurationMinutes = req.DefaultDurationMinutes,
-                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex,
-                IsActive = req.IsActive,
-                UpdatedBy = currentUser.UserId
-            });
+            await adminDb.sp_Admin_UpdateBlockTypeAsync(
+                db, id, req.Name, req.IsPaid, req.IsActive, currentUser.RequireUserId());
             return Results.NoContent();
         })
         .WithValidation<UpdateBlockTypeRequest>()
@@ -109,14 +90,10 @@ internal static class AdminBlockTypesEndpoints
         .Produces(StatusCodes.Status204NoContent)
         .WithDescription("Update an existing block type.");
 
-        group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("public.sp_Admin_DeleteBlockType", new
-            {
-                Id = id,
-                UpdatedBy = currentUser.UserId
-            });
+            await adminDb.sp_Admin_DeleteBlockTypeAsync(db, id, currentUser.RequireUserId());
             return Results.NoContent();
         })
         .RequireAuthorization("AdminAccess")

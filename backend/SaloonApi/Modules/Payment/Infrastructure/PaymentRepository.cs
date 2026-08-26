@@ -1,28 +1,18 @@
 using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Payment.Infrastructure;
 
-internal sealed class PaymentRepository(SqlConnectionFactory factory)
+internal sealed class PaymentRepository(SqlConnectionFactory factory, PaymentDbService paymentDb)
 {
     public async Task<int> CreateAsync(
         int bookingId, decimal amount, string currency, string provider, string paymentMethod, string status,
         string? transactionId = null, string? clientSecret = null, int? createdBy = null, decimal tipAmount = 0)
     {
         using var conn = factory.Create();
-        return await conn.QuerySingleSpAsync<int>("public.sp_Payment_Create", new
-        {
-            BookingId = bookingId,
-            Amount = amount,
-            Currency = currency,
-            Provider = provider,
-            PaymentMethod = paymentMethod,
-            Status = status,
-            TransactionId = transactionId,
-            ClientSecret = clientSecret,
-            CreatedBy = createdBy,
-            TipAmount = tipAmount
-        });
+        return await paymentDb.sp_Payment_CreateAsync(
+            conn, bookingId, amount, currency, provider, paymentMethod, status, transactionId, clientSecret, createdBy, tipAmount);
     }
 
     public async Task UpdateStatusAsync(
@@ -30,26 +20,18 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         decimal? amountTendered = null)
     {
         using var conn = factory.Create();
-        await conn.ExecuteSpAsync("public.sp_Payment_UpdateStatus", new
-        {
-            PaymentId = paymentId,
-            Status = status,
-            TransactionId = transactionId,
-            FailureReason = failureReason,
-            UpdatedBy = updatedBy,
-            AmountTendered = amountTendered
-        });
+        await paymentDb.sp_Payment_UpdateStatusAsync(conn, paymentId, status, transactionId, failureReason, updatedBy, amountTendered);
     }
 
     public async Task<IReadOnlyList<PaymentDto>> GetByBookingIdAsync(int bookingId)
     {
         using var conn = factory.Create();
-        return (await conn.QuerySpAsync<PaymentDto>("public.sp_Payment_GetByBookingId", new { BookingId = bookingId })).ToList();
+        return (await paymentDb.sp_Payment_GetByBookingIdAsync(conn, bookingId)).ToList();
     }
 
     public async Task<PaymentDto?> GetByIdAsync(int paymentId)
     {
         using var conn = factory.Create();
-        return await conn.QuerySingleSpAsync<PaymentDto>("public.sp_Payment_GetById", new { Id = paymentId });
+        return await paymentDb.sp_Payment_GetByIdAsync(conn, paymentId);
     }
 }

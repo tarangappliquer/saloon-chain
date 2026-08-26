@@ -1,6 +1,7 @@
 using System.Globalization;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Identity.Infrastructure;
 
@@ -17,9 +18,6 @@ internal sealed record CustomerSummaryDto(int Id, string Name, string Email, str
 
 internal sealed record AdminCustomerDto(int Id, string Name, string Email, string? Phone, bool IsActive, DateTime CreatedDate, bool CanEmulate = true, bool IsWalkIn = false);
 
-// Keyset pagination, not page-number/offset -- see sp_Admin_GetCustomers' own comment for why.
-// NextCursorName/NextCursorId are the last item's own Name/Id, echoed straight back by the caller
-// as @CursorName/@CursorId to fetch the next page; both null once HasMore is false.
 internal sealed record AdminCustomersPageDto(
     IReadOnlyList<AdminCustomerDto> Items, string? NextCursorName, int? NextCursorId, bool HasMore);
 
@@ -50,19 +48,31 @@ internal sealed record ProxyAssignmentResultDto(
     int OriginalTherapistId, string OriginalTherapistName,
     int ProxyTherapistId, string ProxyTherapistName, string ProxyTherapistEmail, string CustomerName);
 
-internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
+internal sealed record StaffUserRow(
+    int Id, string Name, string Email, string? Phone, string Role,
+    int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate, DateTime CreatedDate);
+
+internal sealed record StaffAttendanceRow(
+    int UserId, string StaffName, string StaffEmail, string StaffRole,
+    int? AttendanceId, int LocationId, DateTime WorkDate,
+    TimeSpan? ArrivalTime, TimeSpan? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
+
+internal sealed record UserRow(
+    int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
+    string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
+    string? PhotoPath, bool IsEmailVerified);
+
+internal sealed class UserRepository(
+    SqlConnectionFactory factory, ICurrentUser currentUser, StaffDbService staffDb, AuthDbService authDb, AdminDbService adminDb)
 {
     public async Task<IReadOnlyList<StaffAttendanceDto>> GetStaffAttendanceAsync(int locationId, DateOnly workDate)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<StaffAttendanceRow>("public.sp_Staff_GetAttendance", new
-        {
-            LocationId = locationId,
-            WorkDate = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-        });
+        var workDateStr = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var rows = await staffDb.sp_Staff_GetAttendanceAsync(db, locationId, workDateStr);
         return rows.Select(r => new StaffAttendanceDto(
             r.UserId, r.StaffName, r.StaffEmail, r.StaffRole,
-            r.AttendanceId, locationId, workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            r.AttendanceId, locationId, workDateStr,
             r.ArrivalTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LeftTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LoggedDate, r.LoggedByUserId
         )).ToList();
     }
@@ -70,44 +80,27 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task LogStaffAttendanceAsync(int locationId, int userId, DateOnly workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedByUserId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Staff_LogAttendance", new
-        {
-            LocationId = locationId,
-            UserId = userId,
-            WorkDate = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ArrivalTime = arrivalTime,
-            LeftTime = leftTime,
-            LoggedBy = loggedByUserId
-        });
+        var workDateStr = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        await staffDb.sp_Staff_LogAttendanceAsync(db, locationId, userId, workDateStr, arrivalTime, leftTime, loggedByUserId);
     }
 
     public async Task<IReadOnlyList<LocationManagerDto>> GetLocationManagersAsync(int locationId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<LocationManagerDto>("public.sp_Staff_GetLocationManagers", new { LocationId = locationId })).ToList();
+        return (await staffDb.sp_Staff_GetLocationManagersAsync(db, locationId)).ToList();
     }
 
     public async Task<IReadOnlyList<UnattendedPreBookingAlertDto>> GetUnattendedPreBookingAlertsAsync()
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<UnattendedPreBookingAlertDto>("public.sp_Staff_GetUnattendedPreBookingAlerts")).ToList();
+        return (await staffDb.sp_Staff_GetUnattendedPreBookingAlertsAsync(db)).ToList();
     }
 
     public async Task<ProxyAssignmentResultDto?> AssignProxyTherapistAsync(int bookingTreatmentId, int proxyTherapistId, int updatedByUserId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<ProxyAssignmentResultDto>("public.sp_Booking_AssignProxyTherapist", new
-        {
-            BookingTreatmentId = bookingTreatmentId,
-            ProxyTherapistId = proxyTherapistId,
-            UpdatedBy = updatedByUserId
-        });
+        return await staffDb.sp_Booking_AssignProxyTherapistAsync(db, bookingTreatmentId, proxyTherapistId, updatedByUserId);
     }
-
-    private sealed record StaffAttendanceRow(
-        int UserId, string StaffName, string StaffEmail, string StaffRole,
-        int? AttendanceId, int LocationId, DateTime WorkDate,
-        TimeSpan? ArrivalTime, TimeSpan? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
 
     public async Task<int> CreateAsync(
         string name, string email, byte[] hash, byte[] salt, string? phone,
@@ -115,62 +108,35 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         bool isEmulator = false, DateOnly? joiningDate = null, bool isEmailVerified = false, bool isWalkIn = false)
     {
         using var db = factory.Create();
-        // sp_Auth_CreateUser's OUT p_UserId comes back as the function's own single-row/single-
-        // column result -- not an ADO.NET output parameter -- so this reads it as a query result
-        // (QuerySingleSpAsync<int>), not via ExecuteSpAsync + a bound Output parameter.
-        return await db.QuerySingleSpAsync<int>("public.sp_Auth_CreateUser", new
-        {
-            Name = name,
-            Email = email,
-            PasswordHash = hash,
-            PasswordSalt = salt,
-            Phone = phone,
-            Role = role.ToString(),
-            ChainId = chainId,
-            LocationId = locationId,
-            TherapistId = therapistId,
-            IsEmulator = isEmulator,
-            JoiningDate = joiningDate,
-            IsWalkIn = isWalkIn,
-            // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
-            CreatedBy = currentUser.UserId,
-            // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal
-            // change-email-verify flow to prove they own their address.
-            IsEmailVerified = isEmailVerified
-        });
+        return await authDb.sp_Auth_CreateUserAsync(
+            db, name, email, hash, salt, phone, role.ToString(), chainId, locationId, therapistId, isEmulator, joiningDate, isWalkIn, currentUser.UserId, isEmailVerified);
     }
 
     public async Task<UserRecord?> GetByEmailAsync(string email)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Auth_GetUserByEmail", new { Email = email });
+        var row = await authDb.sp_Auth_GetUserByEmailAsync(db, email);
         return row is null ? null : ToRecord(row);
     }
 
-    // Used by the emulation exchange to re-check the acting staff member's IsEmulator flag (and
-    // load the target customer) straight from the database rather than trusting a JWT claim --
-    // that flag can be toggled after the staff member's token was issued.
     public async Task<UserRecord?> GetByIdAsync(int id)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Auth_GetUserById", new { Id = id });
+        var row = await authDb.sp_Auth_GetUserByIdAsync(db, id);
         return row is null ? null : ToRecord(row);
     }
 
-    // Same as GetByIdAsync but doesn't exclude deactivated users -- see AdminStaffEndpoints' PUT
-    // handler, which needs to find a staff member regardless of IsActive (that's the very field
-    // it's often being called to flip back on).
     public async Task<UserRecord?> GetStaffByIdAsync(int id)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Admin_GetUserById", new { Id = id });
+        var row = await adminDb.sp_Admin_GetUserByIdAsync(db, id);
         return row is null ? null : ToRecord(row);
     }
 
     public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerSummaryDto>("public.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId, LocationId = locationId });
+        var rows = await adminDb.sp_Admin_SearchCustomersAsync(db, search, chainId, locationId);
         return rows.ToList();
     }
 
@@ -178,15 +144,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         string? search, int? chainId = null, int? locationId = null, int pageSize = 50, string? cursorName = null, int? cursorId = null)
     {
         using var db = factory.Create();
-        var rows = (await db.QuerySpAsync<AdminCustomerDto>("public.sp_Admin_GetCustomers", new
-        {
-            Search = search,
-            ChainId = chainId,
-            LocationId = locationId,
-            PageSize = pageSize,
-            CursorName = cursorName,
-            CursorId = cursorId
-        })).ToList();
+        var rows = (await adminDb.sp_Admin_GetCustomersAsync(db, search, chainId, locationId, pageSize, cursorName, cursorId)).ToList();
 
         var last = rows.Count > 0 ? rows[^1] : null;
         return new AdminCustomersPageDto(rows, last?.Name, last?.Id, rows.Count == pageSize);
@@ -195,109 +153,87 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<CustomerProfileDto?> GetCustomerProfileAsync(int customerId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<CustomerProfileDto>("public.sp_Admin_GetCustomerProfile", new { CustomerId = customerId });
+        return await adminDb.sp_Admin_GetCustomerProfileAsync(db, customerId);
     }
 
     public async Task<IReadOnlyList<CustomerNoteDto>> GetCustomerNotesAsync(int customerId, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerNoteDto>("public.sp_CustomerNote_GetForCustomer",
-            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        var rows = await adminDb.sp_CustomerNote_GetForCustomerAsync(db, customerId, chainId, locationId);
         return rows.ToList();
     }
 
     public async Task<int> AddCustomerNoteAsync(int customerId, int? chainId, int? locationId, string note)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_CustomerNote_Create",
-            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Note = note, CreatedBy = currentUser.RequireUserId() });
+        return await adminDb.sp_CustomerNote_CreateAsync(db, customerId, chainId, locationId, note, currentUser.RequireUserId());
     }
 
     public async Task DeleteCustomerNoteAsync(int noteId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_CustomerNote_Delete", new { Id = noteId, UpdatedBy = currentUser.RequireUserId() });
+        await adminDb.sp_CustomerNote_DeleteAsync(db, noteId, currentUser.RequireUserId());
     }
 
     public async Task<IReadOnlyList<CustomerTagDto>> GetCustomerTagsAsync(int customerId, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerTagDto>("public.sp_CustomerTag_GetForCustomer",
-            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        var rows = await adminDb.sp_CustomerTag_GetForCustomerAsync(db, customerId, chainId, locationId);
         return rows.ToList();
     }
 
     public async Task<int> AddCustomerTagAsync(int customerId, int? chainId, int? locationId, string tag)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_CustomerTag_Add",
-            new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Tag = tag, CreatedBy = currentUser.RequireUserId() });
+        return await adminDb.sp_CustomerTag_AddAsync(db, customerId, chainId, locationId, tag, currentUser.RequireUserId());
     }
 
     public async Task DeleteCustomerTagAsync(int tagId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_CustomerTag_Delete", new { Id = tagId, UpdatedBy = currentUser.RequireUserId() });
+        await adminDb.sp_CustomerTag_DeleteAsync(db, tagId, currentUser.RequireUserId());
     }
 
     public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_User_HasCustomerBookingInChain", new { CustomerId = customerId, ChainId = chainId });
+        return await authDb.sp_User_HasCustomerBookingInChainAsync(db, customerId, chainId);
     }
 
     public async Task<bool> IsLocationInChainAsync(int locationId, int chainId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_User_IsLocationInChain", new { LocationId = locationId, ChainId = chainId });
+        return await authDb.sp_User_IsLocationInChainAsync(db, locationId, chainId);
     }
 
-    // Backs AdminSeeder -- skip creating the bootstrap account if a RootSuperAdmin already exists
-    // under ANY email, not just the currently configured SeedAdmin:Email, so changing that setting
-    // later doesn't spawn a second root account.
     public async Task<bool> ExistsWithRoleAsync(UserRole role)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_User_ExistsWithRole", new { Role = role.ToString() });
+        return await authDb.sp_User_ExistsWithRoleAsync(db, role.ToString());
     }
 
     public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Admin_UpdateCustomer", new
-        {
-            Id = id,
-            Name = name,
-            Phone = phone,
-            IsActive = isActive,
-            UpdatedBy = currentUser.RequireUserId()
-        });
+        await adminDb.sp_Admin_UpdateCustomerAsync(db, id, name, phone, isActive, currentUser.RequireUserId());
     }
 
     public async Task DeleteCustomerAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Admin_DeleteCustomer", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await adminDb.sp_Admin_DeleteCustomerAsync(db, id, currentUser.RequireUserId());
     }
 
-    // Self-service (own password) and reset-password (via a redeemed token, no logged-in caller)
-    // both land here -- deliberately narrow, mirrors sp_Profile_UpdateSelf's "never touch Role/scope"
-    // discipline.
     public async Task UpdatePasswordAsync(int userId, byte[] hash, byte[] salt)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Auth_UpdatePassword", new { UserId = userId, PasswordHash = hash, PasswordSalt = salt });
+        await authDb.sp_Auth_UpdatePasswordAsync(db, userId, hash, salt);
     }
 
     public async Task<IReadOnlyList<StaffUserDto>> GetStaffAsync(UserRole? role, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<StaffUserRow>("public.sp_Admin_GetUsers", new
-        {
-            Role = role?.ToString(),
-            ChainId = chainId,
-            LocationId = locationId
-        });
+        var rows = await staffDb.sp_Admin_GetUsersAsync(db, role?.ToString(), chainId, locationId);
         return rows.Select(r => new StaffUserDto(
             r.Id, r.Name, r.Email, r.Phone, Enum.Parse<UserRole>(r.Role),
             r.ChainId, r.LocationId, r.TherapistId, r.IsEmulator, r.IsActive, r.JoiningDate, r.CreatedDate)).ToList();
@@ -308,41 +244,17 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         bool isEmulator, DateOnly? joiningDate, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Admin_UpdateUser", new
-        {
-            Id = id,
-            Name = name,
-            Phone = phone,
-            Role = role,
-            ChainId = chainId,
-            LocationId = locationId,
-            TherapistId = therapistId,
-            IsEmulator = isEmulator,
-            JoiningDate = joiningDate,
-            IsActive = isActive,
-            UpdatedBy = currentUser.RequireUserId()
-        });
+        await adminDb.sp_Admin_UpdateUserAsync(db, id, name, phone, role, chainId, locationId, therapistId, isEmulator, joiningDate, isActive, currentUser.RequireUserId());
     }
 
     public async Task UpdateStripeCustomerIdAsync(int userId, string stripeCustomerId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_User_UpdateStripeCustomerId", new { UserId = userId, StripeCustomerId = stripeCustomerId });
+        await authDb.sp_User_UpdateStripeCustomerIdAsync(db, userId, stripeCustomerId);
     }
 
     private static UserRecord ToRecord(UserRow row) => new(
         row.Id, row.Name, row.Email, row.PasswordHash, row.PasswordSalt,
         Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator, row.StripeCustomerId,
         row.PhotoPath, row.IsEmailVerified);
-
-    // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- UserRecord/
-    // StaffUserDto expose it as the enum, converted just above.
-    private sealed record UserRow(
-        int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
-        string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, string? StripeCustomerId,
-        string? PhotoPath, bool IsEmailVerified);
-
-    private sealed record StaffUserRow(
-        int Id, string Name, string Email, string? Phone, string Role,
-        int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate, DateTime CreatedDate);
 }

@@ -1,8 +1,3 @@
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Modules.Payment.Application;
@@ -11,6 +6,8 @@ using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.Email.TemplateModels;
 using SaloonApi.Shared.Realtime;
+using System.Globalization;
+using System.Text.Json;
 
 namespace SaloonApi.Modules.Booking.Application;
 
@@ -294,7 +291,7 @@ internal sealed class BookingService(
         {
             var scheduledTimes = booking.Treatments
                 .Where(t => t.StartTime.HasValue)
-                .Select(t => t.StartTime!.Value)
+                .Select(t => t.StartTime.GetValueOrDefault())
                 .ToList();
 
             if (scheduledTimes.Count > 0)

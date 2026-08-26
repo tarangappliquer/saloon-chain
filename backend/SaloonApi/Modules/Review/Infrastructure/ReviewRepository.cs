@@ -1,20 +1,13 @@
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Review.Infrastructure;
 
-internal sealed class ReviewRepository(SqlConnectionFactory factory)
+internal sealed class ReviewRepository(SqlConnectionFactory factory, ReviewDbService reviewDb)
 {
-    // Eligibility (Confirmed + every treatment's EndTime passed) and the one-review-per-booking
-    // rule are both enforced in sp_Review_Create, not here -- see that proc's comment.
     public async Task<int> CreateAsync(int bookingId, int customerId, byte rating, string? comment)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Review_Create", new
-        {
-            BookingId = bookingId,
-            CustomerId = customerId,
-            Rating = rating,
-            Comment = comment
-        });
+        return await reviewDb.sp_Review_CreateAsync(db, bookingId, rating, comment, customerId);
     }
 }

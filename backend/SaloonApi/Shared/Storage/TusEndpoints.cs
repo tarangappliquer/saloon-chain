@@ -91,7 +91,14 @@ internal static class TusEndpoints
                         if (string.Equals(category, "profile-photos", StringComparison.OrdinalIgnoreCase) && currentUser.UserId.HasValue)
                         {
                             var userId = currentUser.UserId.Value;
-                            await profileRepo.SetPhotoPathAsync(userId, currentUser.Role!.Value, photoPath);
+                            if (currentUser.Role == UserRole.Customer)
+                            {
+                                await profileRepo.SetCustomerPhotoPathAsync(userId, photoPath);
+                            }
+                            else
+                            {
+                                await profileRepo.SetStaffPhotoPathAsync(userId, photoPath);
+                            }
                         }
 
                         var terminationStore = (ITusTerminationStore)ctx.Store;

@@ -36,6 +36,7 @@ using SaloonApi.Shared.Bootstrap;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Cors;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Logging;
@@ -161,6 +162,19 @@ try
     builder.Services.AddTransient<SecurityHeadersMiddleware>();
     builder.Services.AddScoped<CurrentUser>();
     builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+
+    builder.Services.AddSingleton<StaffDbService>();
+    builder.Services.AddSingleton<CatalogDbService>();
+    builder.Services.AddSingleton<BookingDbService>();
+    builder.Services.AddSingleton<SchedulingDbService>();
+    builder.Services.AddSingleton<InventoryDbService>();
+    builder.Services.AddSingleton<PayrollDbService>();
+    builder.Services.AddSingleton<ReportsDbService>();
+    builder.Services.AddSingleton<PaymentDbService>();
+    builder.Services.AddSingleton<AdminDbService>();
+    builder.Services.AddSingleton<AuthDbService>();
+    builder.Services.AddSingleton<ProfileDbService>();
+    builder.Services.AddSingleton<ReviewDbService>();
 
     builder.Services.AddSingleton<SqlConnectionFactory>();
 

@@ -1,4 +1,5 @@
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
 
@@ -10,10 +11,10 @@ internal static class AdminCancelReasonsEndpoints
     {
         // Fixed global master list (see db/01_tables.sql) -- no create/update/delete, just the read
         // every "cancel booking" UI needs to populate its reason picker.
-        app.MapGet("/api/admin/cancel-reasons", async (SqlConnectionFactory factory) =>
+        app.MapGet("/api/admin/cancel-reasons", async (SqlConnectionFactory factory, AdminDbService adminDb) =>
         {
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<CancelReasonDto>("public.sp_Admin_GetCancelReasons");
+            var items = await adminDb.sp_Admin_GetCancelReasonsAsync(db);
             return Results.Ok(items);
         })
         .WithTags("AdminCancelReasons")

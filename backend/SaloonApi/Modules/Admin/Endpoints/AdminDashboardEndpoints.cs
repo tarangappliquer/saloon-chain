@@ -1,5 +1,6 @@
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
 
@@ -29,21 +30,17 @@ internal static class AdminDashboardEndpoints
 {
     public static void MapAdminDashboardEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/admin/dashboard", async (ICurrentUser currentUser, SqlConnectionFactory factory, string? startDate = null, string? endDate = null) =>
+        app.MapGet("/api/admin/dashboard", async (ICurrentUser currentUser, SqlConnectionFactory factory, AdminDbService adminDb, string? startDate = null, string? endDate = null) =>
         {
             using var db = factory.Create();
             string roleName = currentUser.Role?.ToString() ?? "Customer";
             int? chainId = currentUser.ChainId;
             int? locationId = currentUser.LocationId;
 
-            using var multi = await db.QueryMultipleSpAsync("public.sp_Admin_GetDashboardStats", new
-            {
-                Role = roleName,
-                ChainId = chainId,
-                LocationId = locationId,
-                StartDate = string.IsNullOrWhiteSpace(startDate) ? (object)DBNull.Value : DateTime.Parse(startDate, System.Globalization.CultureInfo.InvariantCulture).Date,
-                EndDate = string.IsNullOrWhiteSpace(endDate) ? (object)DBNull.Value : DateTime.Parse(endDate, System.Globalization.CultureInfo.InvariantCulture).Date
-            });
+            object start = string.IsNullOrWhiteSpace(startDate) ? (object)DBNull.Value : DateTime.Parse(startDate, System.Globalization.CultureInfo.InvariantCulture).Date;
+            object end = string.IsNullOrWhiteSpace(endDate) ? (object)DBNull.Value : DateTime.Parse(endDate, System.Globalization.CultureInfo.InvariantCulture).Date;
+
+            using var multi = await adminDb.sp_Admin_GetDashboardStatsAsync(db, roleName, chainId, locationId, start, end);
 
             var kpis = await multi.ReadSingleAsync<DashboardKpiDto>();
             var upcoming = (await multi.ReadAsync<DashboardUpcomingAppointmentDto>()).ToList();

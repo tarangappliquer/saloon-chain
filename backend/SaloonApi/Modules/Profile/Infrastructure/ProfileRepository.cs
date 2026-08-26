@@ -1,21 +1,22 @@
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Profile.Infrastructure;
 
 internal sealed record ProfileDto(int Id, string Name, string Email, string? Phone, UserRole Role, string? PhotoPath, bool IsEmailVerified);
 
-// Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- ProfileDto exposes
-// it as the enum, converted in the two Get* methods below (same convention as UserRepository.UserRow).
 internal sealed record ProfileRow(int Id, string Name, string Email, string? Phone, string Role, string? PhotoPath, bool IsEmailVerified);
 
-internal sealed class ProfileRepository(SqlConnectionFactory factory)
+internal sealed class ProfileRepository(SqlConnectionFactory factory, ProfileDbService profileDb)
 {
     public async Task<ProfileDto?> GetMyProfileAsync(int userId, UserRole role)
     {
         using var db = factory.Create();
-        var proc = role == UserRole.Customer ? "public.sp_Profile_GetCustomer" : "public.sp_Profile_GetStaff";
-        var row = await db.QuerySingleSpAsync<ProfileRow>(proc, new { UserId = userId });
+        var row = role == UserRole.Customer
+            ? await profileDb.sp_Profile_GetCustomerAsync(db, userId)
+            : await profileDb.sp_Profile_GetStaffAsync(db, userId);
+
         return row is null
             ? null
             : new ProfileDto(row.Id, row.Name, row.Email, row.Phone, Enum.Parse<UserRole>(row.Role), row.PhotoPath, row.IsEmailVerified);
@@ -24,13 +25,18 @@ internal sealed class ProfileRepository(SqlConnectionFactory factory)
     public async Task UpdateSelfAsync(int userId, string name, string? phone)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Profile_UpdateSelf", new { UserId = userId, Name = name, Phone = phone });
+        await profileDb.sp_Profile_UpdateSelfAsync(db, userId, name, phone);
     }
 
-    public async Task SetPhotoPathAsync(int userId, UserRole role, string photoPath)
+    public async Task SetCustomerPhotoPathAsync(int userId, string photoPath)
     {
         using var db = factory.Create();
-        var proc = role == UserRole.Customer ? "public.sp_Profile_SetCustomerPhoto" : "public.sp_Profile_SetStaffPhoto";
-        await db.ExecuteSpAsync(proc, new { UserId = userId, PhotoPath = photoPath });
+        await profileDb.sp_Profile_SetCustomerPhotoAsync(db, userId, photoPath);
+    }
+
+    public async Task SetStaffPhotoPathAsync(int userId, string photoPath)
+    {
+        using var db = factory.Create();
+        await profileDb.sp_Profile_SetStaffPhotoAsync(db, userId, photoPath);
     }
 }

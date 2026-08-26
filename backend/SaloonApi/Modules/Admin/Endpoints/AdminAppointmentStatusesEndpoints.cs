@@ -1,6 +1,7 @@
 using FluentValidation;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 using SaloonApi.Shared.Validation;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
@@ -39,23 +40,19 @@ internal static class AdminAppointmentStatusesEndpoints
             .WithTags("AdminAppointmentStatuses")
             .RequireAuthorization("StaffAccess");
 
-        group.MapGet("", async (int? chainId, int? locationId, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapGet("", async (int? chainId, int? locationId, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             var effectiveChainId = chainId ?? currentUser.ChainId;
             var effectiveLocationId = locationId ?? currentUser.LocationId;
 
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<AppointmentStatusDto>("public.sp_Admin_GetAppointmentStatuses", new
-            {
-                ChainId = effectiveChainId,
-                LocationId = effectiveLocationId
-            });
+            var items = await adminDb.sp_Admin_GetAppointmentStatusesAsync(db, effectiveChainId, effectiveLocationId);
             return Results.Ok(items);
         })
         .Produces<IReadOnlyList<AppointmentStatusDto>>()
         .WithDescription("Get appointment progress statuses (saloon level, location level, and global defaults).");
 
-        group.MapPost("", async (CreateAppointmentStatusRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapPost("", async (CreateAppointmentStatusRequest req, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             int? targetChainId = req.ChainId;
             int? targetLocationId = req.LocationId;
@@ -70,15 +67,8 @@ internal static class AdminAppointmentStatusesEndpoints
             }
 
             using var db = factory.Create();
-            var id = await db.QuerySingleSpAsync<int>("public.sp_Admin_CreateAppointmentStatus", new
-            {
-                Name = req.Name,
-                ChainId = targetChainId,
-                LocationId = targetLocationId,
-                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex,
-                SortOrder = req.SortOrder,
-                CreatedBy = currentUser.UserId
-            });
+            var id = await adminDb.sp_Admin_CreateAppointmentStatusAsync(
+                db, targetChainId, targetLocationId, req.Name, string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex, req.SortOrder, currentUser.RequireUserId());
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateAppointmentStatusRequest>()
@@ -86,18 +76,11 @@ internal static class AdminAppointmentStatusesEndpoints
         .Produces<IdResponse>()
         .WithDescription("Create a custom appointment status at saloon level or location level.");
 
-        group.MapPut("/{id:int}", async (int id, UpdateAppointmentStatusRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapPut("/{id:int}", async (int id, UpdateAppointmentStatusRequest req, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("public.sp_Admin_UpdateAppointmentStatus", new
-            {
-                Id = id,
-                Name = req.Name,
-                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex,
-                SortOrder = req.SortOrder,
-                IsActive = req.IsActive,
-                UpdatedBy = currentUser.UserId
-            });
+            await adminDb.sp_Admin_UpdateAppointmentStatusAsync(
+                db, id, req.Name, string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex, req.SortOrder, req.IsActive, currentUser.RequireUserId());
             return Results.NoContent();
         })
         .WithValidation<UpdateAppointmentStatusRequest>()
@@ -105,14 +88,10 @@ internal static class AdminAppointmentStatusesEndpoints
         .Produces(StatusCodes.Status204NoContent)
         .WithDescription("Update an existing appointment status.");
 
-        group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser) =>
+        group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser, AdminDbService adminDb) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("public.sp_Admin_DeleteAppointmentStatus", new
-            {
-                Id = id,
-                UpdatedBy = currentUser.UserId
-            });
+            await adminDb.sp_Admin_DeleteAppointmentStatusAsync(db, id, currentUser.RequireUserId());
             return Results.NoContent();
         })
         .RequireAuthorization("AdminAccess")

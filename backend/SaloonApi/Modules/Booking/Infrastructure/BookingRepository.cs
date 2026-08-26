@@ -1,145 +1,109 @@
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Booking.Infrastructure;
 
 internal sealed record LocationHoursRow(TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, bool IsHoliday);
 internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
-internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
+internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd, DateOnly WorkDate);
 internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
-internal sealed record BlockedRangeRow(int RoomId, TimeSpan StartTime, TimeSpan EndTime);
+internal sealed record BlockedRangeRangeRow(int RoomId, TimeSpan StartTime, TimeSpan EndTime, bool IsLocationBreak, DateOnly WorkDate);
 
 internal sealed record AvailabilityData(
-    LocationHoursRow? Location,
+    LocationHoursRow Location,
     IReadOnlyList<TreatmentRow> Treatments,
     IReadOnlyList<EligiblePairRow> EligiblePairs,
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
-    IReadOnlyList<BlockedRangeRow> BlockedRanges);
+    IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
-// Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
-// (callers resolve holiday dates for the whole range separately, see CatalogRepository) AND
-// OpenTime/CloseTime (those can vary per date via LocationDaySchedule -- see DayHoursRow), and
-// EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
-internal sealed record LocationHoursRangeRow(TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask);
-internal sealed record DayHoursRow(DateOnly WorkDate, TimeSpan OpenTime, TimeSpan CloseTime);
-internal sealed record EligiblePairRangeRow(DateOnly WorkDate, int RoomId, int TherapistId, string ShiftType, TimeSpan ShiftStart, TimeSpan ShiftEnd);
-internal sealed record BlockedRangeRangeRow(DateOnly WorkDate, int RoomId, TimeSpan StartTime, TimeSpan EndTime);
+internal sealed record LocationHoursRangeRow(DateOnly WorkDate, TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, bool IsHoliday);
 
 internal sealed record AvailabilityRangeData(
-    LocationHoursRangeRow? Location,
-    IReadOnlyList<DayHoursRow> DayHours,
+    LocationHoursRow Location,
+    IReadOnlyList<LocationHoursRangeRow> DayHours,
     IReadOnlyList<TreatmentRow> Treatments,
-    IReadOnlyList<EligiblePairRangeRow> EligiblePairs,
+    IReadOnlyList<EligiblePairRow> EligiblePairs,
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
     IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
-// (LocationId, RoomId, WorkDate) tuple identifying one affected slot -- Confirm/Cancel/ExpireStaleHolds
-// each return one of these per treatment line they touched, since a booking can span several
-// independently-scheduled lines (possibly different rooms/dates) that all need cache/SSE invalidation.
-internal sealed record BookingLocationRow(int LocationId, int RoomId, DateTime WorkDate);
+internal sealed record BookingTreatmentLineDto(
+    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
+    DateTime? StartTime, DateTime? EndTime, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName, DateTime? ExpiresAt);
+
+internal sealed record BookingDetailsDto(int Id, int LocationId, string LocationName, string Status, IReadOnlyList<BookingTreatmentLineDto> Treatments);
+
+internal sealed record MyBookingDto(
+    int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate, DateTime? ScheduledStart, DateTime? ScheduledEnd,
+    decimal TotalPrice, int TreatmentCount, IReadOnlyList<string> TreatmentNames,
+    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
+    int? CancelReasonId = null, string? CancelReasonName = null, bool IsPaid = false, string? PaymentProvider = null);
+
+internal sealed record ConfirmationTreatmentLineDto(
+    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
+    DateTime StartTime, DateTime EndTime, int RoomId, string RoomName, int TherapistId, string TherapistName);
+
+internal sealed record ConfirmationDetailsDto(
+    int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail,
+    IReadOnlyList<ConfirmationTreatmentLineDto> Treatments);
+
+internal sealed record StaffBookingRow(
+    int BookingId, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string? CustomerPhone,
+    string Status, DateTime CreatedDate,
+    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
+    DateTime? StartTime, DateTime? EndTime, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName, DateTime? ExpiresAt,
+    bool IsCancelled, bool IsNoShow,
+    int? AppointmentStatusId, string? AppointmentStatusName, string? AppointmentStatusColorHex,
+    int? CancelReasonId, string? CancelReasonName, string? PaymentStatus, string? PaymentProvider);
+
+internal sealed record StaffBookingTreatmentLineDto(
+    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
+    DateTime? StartTime, DateTime? EndTime, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName, DateTime? ExpiresAt);
+
+internal sealed record StaffBookingSummaryDto(
+    int BookingId, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string? CustomerPhone,
+    string Status, DateTime CreatedDate, IReadOnlyList<StaffBookingTreatmentLineDto> Treatments,
+    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
+    int? CancelReasonId = null, string? CancelReasonName = null, bool IsPaid = false, string? PaymentProvider = null);
+
+internal sealed record AdminBookingDto(
+    int BookingId, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string? CustomerPhone,
+    string Status, DateTime CreatedDate, IReadOnlyList<StaffBookingTreatmentLineDto> Treatments,
+    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
+    int? CancelReasonId = null, string? CancelReasonName = null, bool IsPaid = false, string? PaymentProvider = null);
+
+internal sealed record BookingLocationRow(int BookingId, int LocationId, DateTime WorkDate);
 
 internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
 
-internal sealed record MyBookingHeaderRow(
-    int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate,
-    string? PaymentProvider = null, string? PaymentStatus = null, bool HasReview = false);
-
-// One treatment line of a booking, scheduled or not (schedule fields null until picked). Used both
-// for the in-progress draft (GetById, powers refresh-restore) and directly as the API response shape.
-internal sealed record BookingTreatmentLineDto(
-    int Id, int TreatmentId, string TreatmentName, int? RoomId, int? TherapistId, string? TherapistName,
-    DateTime? StartTime, DateTime? EndTime, DateTime? ExpiresAt, short SlotCount, decimal Price);
-
-internal sealed record BookingDetailsDto(
-    int Id, int LocationId, string LocationName, string Status, IReadOnlyList<BookingTreatmentLineDto> Treatments);
-
-internal sealed record MyBookingTreatmentRow(
-    int BookingId, int TreatmentId, string TreatmentName, int? TherapistId, string? TherapistName,
-    DateTime? StartTime, DateTime? EndTime, short SequenceOrder, short SlotCount, decimal Price);
-
-internal sealed record MyBookingTreatmentDto(
-    string TreatmentName, string? TherapistName, DateTime? StartTime, DateTime? EndTime, short SlotCount, decimal Price);
-
-internal sealed record MyBookingDto(
-    int Id, string LocationName, string Status, DateTime CreatedDate, string? PaymentProvider, string? PaymentStatus,
-    bool IsPaid, IReadOnlyList<MyBookingTreatmentDto> Treatments, bool HasReview = false);
-
-internal sealed record AdminBookingHeaderRow(
-    int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string Status,
-    bool IsCancelled = false, bool IsNoShow = false,
-    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
-    int? CancelReasonId = null, string? CancelReasonName = null,
-    string? PaymentProvider = null, string? PaymentStatus = null);
-
-internal sealed record AdminBookingTreatmentRow(
-    int BookingId, int TreatmentId, string TreatmentName, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName,
-    DateTime? StartTime, DateTime? EndTime, short SequenceOrder, short SlotCount, decimal Price);
-
-internal sealed record AdminBookingTreatmentDto(
-    int? RoomId, string TreatmentName, string? RoomName, string? TherapistName, DateTime? StartTime, DateTime? EndTime,
-    short SlotCount, decimal Price, int TreatmentId = 0, int? TherapistId = null);
-
-internal sealed record AdminBookingDto(
-    int Id, string LocationName, string CustomerName, string CustomerEmail, string Status,
-    IReadOnlyList<AdminBookingTreatmentDto> Treatments,
-    int CustomerId = 0,
-    bool IsCancelled = false, bool IsNoShow = false,
-    int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
-    int? CancelReasonId = null, string? CancelReasonName = null,
-    bool IsPaid = false, string? ModeOfPayment = null);
-
-internal sealed record ConfirmationHeaderRow(int Id, string CustomerName, string CustomerEmail, string LocationName);
-
-internal sealed record ConfirmationTreatmentRow(
-    int TreatmentId, string TreatmentName, string TherapistName, DateTime StartTime, DateTime EndTime,
-    short SlotCount, decimal Price);
-
-internal sealed record ConfirmationDetailsDto(
-    int Id, string CustomerName, string CustomerEmail, string LocationName,
-    IReadOnlyList<ConfirmationTreatmentRow> Treatments);
-
-internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
+internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser, BookingDbService bookingDb)
 {
     public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date, int? excludeBookingId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetAvailabilityData", new
-        {
-            LocationId = locationId,
-            TreatmentIds = treatmentIds.AsIntIdList(),
-            WorkDate = date.ToDateTime(TimeOnly.MinValue),
-            ExcludeBookingId = excludeBookingId
-        });
+        using var multi = await bookingDb.sp_Booking_GetAvailabilityDataAsync(db, locationId, treatmentIds.ToArray(), date, excludeBookingId);
 
-        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRow>();
+        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRow>()
+            ?? throw new InvalidOperationException($"Location {locationId} not found.");
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
         var eligible = (await multi.ReadAsync<EligiblePairRow>()).ToList();
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
-        var blocked = (await multi.ReadAsync<BlockedRangeRow>()).ToList();
+        var blocked = (await multi.ReadAsync<BlockedRangeRangeRow>()).ToList();
 
         return new AvailabilityData(location, treatments, eligible, existing, blocked);
     }
 
-    // Same eligibility rules as GetAvailabilityDataAsync, but for a whole [from, to] range in one
-    // round trip instead of one per date -- see BookingService.GetAvailableDatesAsync, which used to
-    // call GetAvailabilityDataAsync once per candidate day.
     public async Task<AvailabilityRangeData> GetAvailabilityDataRangeAsync(
         int locationId, IEnumerable<int> treatmentIds, DateOnly from, DateOnly to, int? excludeBookingId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetAvailabilityDataRange", new
-        {
-            LocationId = locationId,
-            TreatmentIds = treatmentIds.AsIntIdList(),
-            FromDate = from.ToDateTime(TimeOnly.MinValue),
-            ToDate = to.ToDateTime(TimeOnly.MinValue),
-            ExcludeBookingId = excludeBookingId
-        });
+        using var multi = await bookingDb.sp_Booking_GetAvailabilityDataRangeAsync(db, locationId, treatmentIds.ToArray(), from, to, excludeBookingId);
 
-        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRangeRow>();
-        var dayHours = (await multi.ReadAsync<DayHoursRow>()).ToList();
+        var location = await multi.ReadSingleOrDefaultAsync<LocationHoursRow>()
+            ?? throw new InvalidOperationException($"Location {locationId} not found.");
+        var dayHours = (await multi.ReadAsync<LocationHoursRangeRow>()).ToList();
         var treatments = (await multi.ReadAsync<TreatmentRow>()).ToList();
-        var eligible = (await multi.ReadAsync<EligiblePairRangeRow>()).ToList();
+        var eligible = (await multi.ReadAsync<EligiblePairRow>()).ToList();
         var existing = (await multi.ReadAsync<ExistingBookingRow>()).ToList();
         var blocked = (await multi.ReadAsync<BlockedRangeRangeRow>()).ToList();
 
@@ -149,18 +113,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Booking_HasLocationRoomOpenings", new { LocationId = locationId });
+        return await bookingDb.sp_Booking_HasLocationRoomOpeningsAsync(db, locationId);
     }
 
     public async Task<HashSet<DateOnly>> GetLocationOpenDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        var openDates = await db.QuerySpAsync<DateTime>("public.sp_Booking_GetLocationOpenDates", new
-        {
-            LocationId = locationId,
-            FromDate = from.ToDateTime(TimeOnly.MinValue),
-            ToDate = to.ToDateTime(TimeOnly.MinValue)
-        });
+        var openDates = await bookingDb.sp_Booking_GetLocationOpenDatesAsync(db, locationId, from, to);
 
         return openDates.Select(DateOnly.FromDateTime).ToHashSet();
     }
@@ -168,91 +127,46 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateDraftAsync(int locationId, int customerId, IEnumerable<int> treatmentIds)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Booking_CreateDraft", new
-        {
-            LocationId = locationId,
-            CustomerId = customerId,
-            Treatments = treatmentIds.AsIntIdList(),
-            CreatedBy = currentUser.UserId
-        });
+        return await bookingDb.sp_Booking_CreateDraftAsync(db, locationId, customerId, treatmentIds.ToArray(), currentUser.UserId);
     }
 
     public async Task AddTreatmentAsync(int bookingId, int customerId, int treatmentId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Booking_AddTreatment", new
-        {
-            BookingId = bookingId, CustomerId = customerId, TreatmentId = treatmentId, CreatedBy = currentUser.UserId
-        });
+        await bookingDb.sp_Booking_AddTreatmentAsync(db, bookingId, customerId, treatmentId, currentUser.UserId);
     }
 
     public async Task<BookingLocationRow?> RemoveTreatmentAsync(int bookingId, int customerId, int treatmentId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<BookingLocationRow>("public.sp_Booking_RemoveTreatment", new
-        {
-            BookingId = bookingId, CustomerId = customerId, TreatmentId = treatmentId, UpdatedBy = currentUser.UserId
-        });
+        return await bookingDb.sp_Booking_RemoveTreatmentAsync(db, bookingId, customerId, treatmentId, currentUser.UserId);
     }
 
     public async Task<(DateTime ExpiresAt, int LocationId)> ScheduleTreatmentAsync(
         int bookingId, int customerId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<ScheduleTreatmentRow>("public.sp_Booking_ScheduleTreatment", new
-        {
-            BookingId = bookingId,
-            CustomerId = customerId,
-            TreatmentId = treatmentId,
-            RoomId = roomId,
-            TherapistId = therapistId,
-            StartTime = start,
-            EndTime = end,
-            UpdatedBy = currentUser.UserId
-        });
-        // Postgres timestamptz comes back Kind=Unspecified through Npgsql/Dapper, which
-        // System.Text.Json then serializes with no 'Z'/offset. The browser's `new Date(...)` reads
-        // that as *local* time, silently corrupting the countdown for anyone not in UTC.
-        // StartTime/EndTime are venue-local wall-clock times and are meant to be read at face
-        // value, so only ExpiresAt (an absolute instant, used for real elapsed-time math) needs
-        // this fix.
-        return (DateTime.SpecifyKind(row!.ExpiresAt, DateTimeKind.Utc), row.LocationId);
+        var row = await bookingDb.sp_Booking_ScheduleTreatmentAsync(db, bookingId, customerId, treatmentId, roomId, therapistId, start, end, currentUser.UserId);
+        if (row is null) throw new InvalidOperationException("Failed to schedule treatment.");
+        return (DateTime.SpecifyKind(row.ExpiresAt, DateTimeKind.Utc), row.LocationId);
     }
-
-    private sealed record ScheduleTreatmentRow(DateTime ExpiresAt, int LocationId);
 
     public async Task<int> RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Booking_RescheduleConfirmed", new
-        {
-            BookingId = bookingId,
-            TreatmentId = treatmentId,
-            RoomId = roomId,
-            TherapistId = therapistId,
-            StartTime = start,
-            EndTime = end,
-            UpdatedBy = currentUser.UserId
-        });
+        return await bookingDb.sp_Booking_RescheduleConfirmedAsync(db, bookingId, treatmentId, roomId, therapistId, start, end, currentUser.UserId);
     }
 
     public async Task<int> ReassignTherapistAsync(int bookingId, int treatmentId, int newTherapistId, string? reason)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Booking_ReassignTherapist", new
-        {
-            BookingId = bookingId,
-            TreatmentId = treatmentId,
-            NewTherapistId = newTherapistId,
-            Reason = reason,
-            UpdatedBy = currentUser.UserId
-        });
+        return await bookingDb.sp_Booking_ReassignTherapistAsync(db, bookingId, treatmentId, newTherapistId, reason, currentUser.UserId);
     }
 
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetById", new { BookingId = bookingId, CustomerId = customerId });
+        using var multi = await bookingDb.sp_Booking_GetByIdAsync(db, bookingId, customerId);
 
         var header = await multi.ReadSingleOrDefaultAsync<BookingHeaderRow>();
         var lines = (await multi.ReadAsync<BookingTreatmentLineDto>())
@@ -265,7 +179,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int?> GetCustomerIdAsync(int bookingId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("public.sp_Booking_GetCustomerId", new { BookingId = bookingId });
+        return await bookingDb.sp_Booking_GetCustomerIdAsync(db, bookingId);
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> ConfirmAsync(int bookingId, int customerId = 0)
@@ -274,116 +188,123 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         {
             var resolved = await GetCustomerIdAsync(bookingId);
             if (resolved is not { } cid || cid <= 0)
-                throw new KeyNotFoundException($"Booking {bookingId} not found or has invalid customer.");
+                throw new InvalidOperationException($"Booking {bookingId} has no associated customer.");
             customerId = cid;
         }
 
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingLocationRow>(
-            "public.sp_Booking_Confirm",
-            new { BookingId = bookingId, CustomerId = customerId, UpdatedBy = currentUser.UserId })).ToList();
+        var rows = await bookingDb.sp_Booking_ConfirmAsync(db, bookingId, customerId, currentUser.UserId);
+        return rows.ToList();
     }
 
     public async Task<ConfirmationDetailsDto?> GetConfirmationDetailsAsync(int bookingId)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetConfirmationDetails", new { BookingId = bookingId });
+        using var multi = await bookingDb.sp_Booking_GetConfirmationDetailsAsync(db, bookingId);
 
         var header = await multi.ReadSingleOrDefaultAsync<ConfirmationHeaderRow>();
-        var treatments = (await multi.ReadAsync<ConfirmationTreatmentRow>()).ToList();
+        var lines = (await multi.ReadAsync<ConfirmationTreatmentLineDto>()).ToList();
 
-        return header is null
-            ? null
-            : new ConfirmationDetailsDto(header.Id, header.CustomerName, header.CustomerEmail, header.LocationName, treatments);
+        return header is null ? null : new ConfirmationDetailsDto(header.Id, header.LocationId, header.LocationName, header.CustomerId, header.CustomerName, header.CustomerEmail, lines);
     }
+
+    private sealed record ConfirmationHeaderRow(int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail);
 
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingLocationRow>(
-            "public.sp_Booking_Cancel",
-            new { BookingId = bookingId, CustomerId = customerId, UpdatedBy = currentUser.UserId })).ToList();
+        var rows = await bookingDb.sp_Booking_CancelAsync(db, bookingId, customerId, currentUser.UserId);
+        return rows.ToList();
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> ExpireStaleHoldsAsync()
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingLocationRow>("public.sp_Booking_ExpireStaleHolds")).ToList();
+        var rows = await bookingDb.sp_Booking_ExpireStaleHoldsAsync(db);
+        return rows.ToList();
     }
 
     public async Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        using var multi = await bookingDb.sp_Booking_GetMineAsync(db, customerId, chainId, locationId);
 
-        var bookings = (await multi.ReadAsync<MyBookingHeaderRow>()).ToList();
-        var treatments = (await multi.ReadAsync<MyBookingTreatmentRow>()).ToList();
+        var headers = (await multi.ReadAsync<BookingMineHeaderRow>()).ToList();
+        var treatments = (await multi.ReadAsync<BookingMineTreatmentRow>()).ToList();
+        var treatmentsByBooking = treatments.GroupBy(t => t.BookingId).ToDictionary(g => g.Key, g => g.ToList());
 
-        return bookings.Select(b => new MyBookingDto(
-            b.Id, b.LocationName, b.Status, b.CreatedDate,
-            b.PaymentProvider,
-            b.PaymentStatus,
-            b.PaymentStatus?.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) == true || b.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase),
-            treatments.Where(t => t.BookingId == b.Id)
-                      .OrderBy(t => t.SequenceOrder)
-                      .Select(t => new MyBookingTreatmentDto(t.TreatmentName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price))
-                      .ToList(),
-            b.HasReview)).ToList();
+        return headers.Select(h =>
+        {
+            var txs = treatmentsByBooking.GetValueOrDefault(h.BookingId, []);
+            var minStart = txs.Where(t => t.StartTime.HasValue).Min(t => t.StartTime);
+            var maxEnd = txs.Where(t => t.EndTime.HasValue).Max(t => t.EndTime);
+            var totalPrice = txs.Sum(t => t.Price);
+            var names = txs.Select(t => t.TreatmentName).Distinct().ToList();
+
+            return new MyBookingDto(
+                h.BookingId, h.LocationId, h.LocationName, h.Status, h.CreatedDate, minStart, maxEnd, totalPrice, txs.Count, names,
+                h.AppointmentStatusId, h.AppointmentStatusName, h.AppointmentStatusColorHex,
+                h.CancelReasonId, h.CancelReasonName,
+                string.Equals(h.PaymentStatus, "Succeeded", StringComparison.OrdinalIgnoreCase), h.PaymentProvider);
+        }).ToList();
     }
 
-    public async Task<IReadOnlyList<AdminBookingDto>> GetForLocationAsync(int locationId, DateOnly date)
+    private sealed record BookingMineHeaderRow(
+        int BookingId, int LocationId, string LocationName, string Status, DateTime CreatedDate,
+        int? AppointmentStatusId, string? AppointmentStatusName, string? AppointmentStatusColorHex,
+        int? CancelReasonId, string? CancelReasonName, string? PaymentStatus, string? PaymentProvider);
+
+    private sealed record BookingMineTreatmentRow(int BookingId, string TreatmentName, decimal Price, DateTime? StartTime, DateTime? EndTime);
+
+    public async Task<IReadOnlyList<StaffBookingSummaryDto>> GetForLocationAsync(int locationId, DateOnly date)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetForLocation", new
-        {
-            LocationId = locationId,
-            WorkDate = date.ToDateTime(TimeOnly.MinValue)
-        });
+        using var multi = await bookingDb.sp_Booking_GetForLocationAsync(db, locationId, date);
 
-        var bookings = (await multi.ReadAsync<AdminBookingHeaderRow>()).ToList();
-        var treatments = (await multi.ReadAsync<AdminBookingTreatmentRow>()).ToList();
+        var rawLines = (await multi.ReadAsync<StaffBookingRow>()).ToList();
 
-        return bookings.Select(b => new AdminBookingDto(
-            b.Id, b.LocationName, b.CustomerName, b.CustomerEmail, b.Status,
-            treatments.Where(t => t.BookingId == b.Id)
-                      .OrderBy(t => t.SequenceOrder)
-                      .Select(t => new AdminBookingTreatmentDto(
-                          t.RoomId, t.TreatmentName, t.RoomName, t.TherapistName, t.StartTime, t.EndTime, t.SlotCount, t.Price,
-                          t.TreatmentId, t.TherapistId))
-                      .ToList(),
-            b.CustomerId,
-            b.IsCancelled, b.IsNoShow,
-            b.AppointmentStatusId, b.AppointmentStatusName, b.AppointmentStatusColorHex,
-            b.CancelReasonId, b.CancelReasonName,
-            b.PaymentStatus?.Equals("Succeeded", StringComparison.OrdinalIgnoreCase) == true, b.PaymentProvider)).ToList();
+        return rawLines
+            .GroupBy(b => b.BookingId)
+            .Select(g =>
+            {
+                var first = g.First();
+                var treatments = g.Select(b => new StaffBookingTreatmentLineDto(
+                    b.BookingTreatmentId, b.TreatmentId, b.TreatmentName, b.DurationSlots, b.PreTimeMinutes, b.Price,
+                    b.StartTime, b.EndTime, b.RoomId, b.RoomName, b.TherapistId, b.TherapistName,
+                    b.ExpiresAt is null ? null : DateTime.SpecifyKind(b.ExpiresAt.Value, DateTimeKind.Utc)
+                )).ToList();
+
+                return new StaffBookingSummaryDto(
+                    first.BookingId, first.LocationId, first.LocationName, first.CustomerId, first.CustomerName, first.CustomerEmail, first.CustomerPhone,
+                    first.Status, first.CreatedDate, treatments,
+                    first.AppointmentStatusId, first.AppointmentStatusName, first.AppointmentStatusColorHex,
+                    first.CancelReasonId, first.CancelReasonName,
+                    string.Equals(first.PaymentStatus, "Succeeded", StringComparison.OrdinalIgnoreCase), first.PaymentProvider);
+            }).ToList();
     }
 
     public async Task<int?> GetLocationIdAsync(int bookingId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("public.sp_Booking_GetLocationId", new { BookingId = bookingId });
+        return await bookingDb.sp_Booking_GetLocationIdAsync(db, bookingId);
     }
 
     public async Task SetAppointmentStatusAsync(int bookingId, int? appointmentStatusId, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Booking_SetAppointmentStatus", new
-        {
-            BookingId = bookingId, AppointmentStatusId = appointmentStatusId, UpdatedBy = updatedBy
-        });
+        await bookingDb.sp_Booking_SetAppointmentStatusAsync(db, bookingId, appointmentStatusId, updatedBy);
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsAdminAsync(int bookingId, int? cancelReasonId = null)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingLocationRow>(
-            "public.sp_Booking_CancelAsAdmin",
-            new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId(), CancelReasonId = cancelReasonId })).ToList();
+        var rows = await bookingDb.sp_Booking_CancelAsAdminAsync(db, bookingId, currentUser.RequireUserId(), cancelReasonId);
+        return rows.ToList();
     }
 
     public async Task MarkNoShowAsync(int bookingId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Booking_MarkNoShow", new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() });
+        await bookingDb.sp_Booking_MarkNoShowAsync(db, bookingId, currentUser.RequireUserId());
     }
 }

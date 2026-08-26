@@ -1,5 +1,6 @@
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Scheduling.Infrastructure;
 
@@ -19,16 +20,12 @@ internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId,
 
 internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings, IReadOnlyList<BlockedSlotDto> BlockedSlots);
 
-internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurrentUser currentUser)
+internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurrentUser currentUser, SchedulingDbService schedulingDb)
 {
     public async Task<RosterDto> GetRosterAsync(int locationId, DateOnly date)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Scheduling_GetRoster", new
-        {
-            LocationId = locationId,
-            WorkDate = date.ToDateTime(TimeOnly.MinValue)
-        });
+        using var multi = await schedulingDb.sp_Scheduling_GetRosterAsync(db, locationId, date);
 
         var shifts = (await multi.ReadAsync<TherapistShiftDto>()).ToList();
         var rooms = (await multi.ReadAsync<RoomOpeningDto>()).ToList();
@@ -40,194 +37,121 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         int locationId, int therapistId, int roomId, string shiftType, DateOnly date, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_AssignTherapistShift", new
-        {
-            LocationId = locationId,
-            TherapistId = therapistId,
-            RoomId = roomId,
-            ShiftType = shiftType,
-            WorkDate = date.ToDateTime(TimeOnly.MinValue),
-            StartTime = startTime,
-            EndTime = endTime,
-            CreatedBy = currentUser.RequireUserId()
-        });
+        return await schedulingDb.sp_Scheduling_AssignTherapistShiftAsync(
+            db, locationId, therapistId, roomId, shiftType, date, startTime, endTime, currentUser.RequireUserId());
     }
 
     public async Task<bool> HasShiftOverlapAsync(int roomId, string shiftType, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, int excludeTherapistId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasShiftOverlap", new
-        {
-            RoomId = roomId,
-            ShiftType = shiftType,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
-            StartTime = startTime,
-            EndTime = endTime,
-            ExcludeTherapistId = excludeTherapistId
-        });
+        return await schedulingDb.sp_Scheduling_HasShiftOverlapAsync(db, roomId, shiftType, workDate, startTime, endTime, excludeTherapistId);
     }
 
     public async Task RemoveTherapistShiftAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Scheduling_RemoveTherapistShift", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await schedulingDb.sp_Scheduling_RemoveTherapistShiftAsync(db, id, currentUser.RequireUserId());
     }
 
     public async Task UpdateTherapistShiftAsync(int id, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Scheduling_UpdateTherapistShift", new
-        {
-            Id = id,
-            StartTime = startTime,
-            EndTime = endTime,
-            UpdatedBy = currentUser.RequireUserId()
-        });
+        await schedulingDb.sp_Scheduling_UpdateTherapistShiftAsync(db, id, startTime, endTime, currentUser.RequireUserId());
     }
 
     public async Task<int?> GetShiftLocationIdAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("public.sp_Scheduling_GetShiftLocationId", new { Id = id });
+        return await schedulingDb.sp_Scheduling_GetShiftLocationIdAsync(db, id);
     }
 
     public async Task<ShiftDetailsDto?> GetShiftDetailsAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<ShiftDetailsDto?>("public.sp_Scheduling_GetShiftDetails", new { Id = id });
+        return await schedulingDb.sp_Scheduling_GetShiftDetailsAsync(db, id);
     }
 
     public async Task<bool> HasShiftBookingsAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasShiftBookings", new { ShiftId = id });
+        return await schedulingDb.sp_Scheduling_HasShiftBookingsAsync(db, id);
     }
 
     public async Task<int> OpenRoomAsync(int roomId, int treatmentCategoryId, string shiftType, DateOnly date)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_OpenRoom", new
-        {
-            RoomId = roomId,
-            TreatmentCategoryId = treatmentCategoryId,
-            ShiftType = shiftType,
-            WorkDate = date.ToDateTime(TimeOnly.MinValue),
-            CreatedBy = currentUser.RequireUserId()
-        });
+        return await schedulingDb.sp_Scheduling_OpenRoomAsync(db, roomId, treatmentCategoryId, shiftType, date, currentUser.RequireUserId());
     }
 
     public async Task CloseRoomAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Scheduling_CloseRoom", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await schedulingDb.sp_Scheduling_CloseRoomAsync(db, id, currentUser.RequireUserId());
     }
 
     public async Task<int?> GetRoomOpeningLocationIdAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("public.sp_Scheduling_GetRoomOpeningLocationId", new { Id = id });
+        return await schedulingDb.sp_Scheduling_GetRoomOpeningLocationIdAsync(db, id);
     }
 
     public async Task<RoomOpeningDetailsDto?> GetRoomOpeningDetailsAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<RoomOpeningDetailsDto?>("public.sp_Scheduling_GetRoomOpeningDetails", new { Id = id });
+        return await schedulingDb.sp_Scheduling_GetRoomOpeningDetailsAsync(db, id);
     }
 
     public async Task<RoomOpeningDetailsDto?> GetRoomOpeningByKeysAsync(int roomId, DateOnly workDate, string shiftType)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<RoomOpeningDetailsDto?>("public.sp_Scheduling_GetRoomOpeningByKeys", new
-        {
-            RoomId = roomId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
-            ShiftType = shiftType
-        });
+        return await schedulingDb.sp_Scheduling_GetRoomOpeningByKeysAsync(db, roomId, workDate, shiftType);
     }
 
     public async Task<bool> HasRoomBookingsAsync(int roomId, DateOnly workDate)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasRoomBookings", new
-        {
-            RoomId = roomId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue)
-        });
+        return await schedulingDb.sp_Scheduling_HasRoomBookingsAsync(db, roomId, workDate);
     }
 
     public async Task<bool> HasRoomOpeningAsync(int roomId, DateOnly workDate)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasRoomOpening", new
-        {
-            RoomId = roomId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue)
-        });
+        return await schedulingDb.sp_Scheduling_HasRoomOpeningAsync(db, roomId, workDate);
     }
 
     public async Task<bool> HasBookingOverlapAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasBookingOverlap", new
-        {
-            RoomId = roomId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
-            StartTime = startTime,
-            EndTime = endTime
-        });
+        return await schedulingDb.sp_Scheduling_HasBookingOverlapAsync(db, roomId, workDate, startTime, endTime);
     }
 
     public async Task<bool> HasBlockOverlapAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("public.sp_Scheduling_HasBlockOverlap", new
-        {
-            RoomId = roomId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
-            StartTime = startTime,
-            EndTime = endTime
-        });
+        return await schedulingDb.sp_Scheduling_HasBlockOverlapAsync(db, roomId, workDate, startTime, endTime);
     }
 
     public async Task<int> BlockSlotAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId = null)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_BlockSlot", new
-        {
-            RoomId = roomId,
-            BlockTypeId = blockTypeId,
-            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
-            StartTime = startTime,
-            EndTime = endTime,
-            Reason = reason,
-            CreatedBy = currentUser.RequireUserId()
-        });
+        return await schedulingDb.sp_Scheduling_BlockSlotAsync(db, roomId, workDate, startTime, endTime, reason, blockTypeId, currentUser.RequireUserId());
     }
 
     public async Task UnblockSlotAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Scheduling_UnblockSlot", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await schedulingDb.sp_Scheduling_UnblockSlotAsync(db, id, currentUser.RequireUserId());
     }
 
     public async Task UpdateBlockedSlotAsync(int id, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId = null)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Scheduling_UpdateBlockedSlot", new
-        {
-            Id = id,
-            BlockTypeId = blockTypeId,
-            StartTime = startTime,
-            EndTime = endTime,
-            Reason = reason,
-            UpdatedBy = currentUser.RequireUserId()
-        });
+        await schedulingDb.sp_Scheduling_UpdateBlockedSlotAsync(db, id, startTime, endTime, reason, blockTypeId, currentUser.RequireUserId());
     }
 
     public async Task<BlockedSlotDetailsDto?> GetBlockedSlotDetailsAsync(int id)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<BlockedSlotDetailsDto?>("public.sp_Scheduling_GetBlockedSlotDetails", new { Id = id });
+        return await schedulingDb.sp_Scheduling_GetBlockedSlotDetailsAsync(db, id);
     }
 }
-

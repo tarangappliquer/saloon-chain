@@ -1,4 +1,5 @@
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Inventory.Infrastructure;
 
@@ -11,94 +12,78 @@ internal sealed record PurchaseOrderLineDto(int Id, int ProductId, string Produc
 internal sealed record PurchaseOrderDetailDto(PurchaseOrderHeaderDto? Header, IReadOnlyList<PurchaseOrderLineDto> Lines);
 internal sealed record BookingProductDto(int Id, int ProductId, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal);
 
-internal sealed class InventoryRepository(SqlConnectionFactory factory)
+internal sealed class InventoryRepository(SqlConnectionFactory factory, InventoryDbService inventoryDb, BookingDbService bookingDb)
 {
     public async Task<int> CreateSupplierAsync(int chainId, string name, string? contactEmail, string? contactPhone, int? createdBy)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Inventory_CreateSupplier",
-            new { ChainId = chainId, Name = name, ContactEmail = contactEmail, ContactPhone = contactPhone, CreatedBy = createdBy });
+        return await inventoryDb.sp_Inventory_CreateSupplierAsync(db, chainId, name, contactEmail, contactPhone, createdBy);
     }
 
     public async Task<IReadOnlyList<SupplierDto>> GetSuppliersAsync(int chainId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<SupplierDto>("public.sp_Inventory_GetSuppliers", new { ChainId = chainId })).ToList();
+        return (await inventoryDb.sp_Inventory_GetSuppliersAsync(db, chainId)).ToList();
     }
 
     public async Task UpdateSupplierAsync(int id, string name, string? contactEmail, string? contactPhone, bool isActive, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Inventory_UpdateSupplier",
-            new { Id = id, Name = name, ContactEmail = contactEmail, ContactPhone = contactPhone, IsActive = isActive, UpdatedBy = updatedBy });
+        await inventoryDb.sp_Inventory_UpdateSupplierAsync(db, id, name, contactEmail, contactPhone, isActive, updatedBy);
     }
 
     public async Task DeleteSupplierAsync(int id, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Inventory_DeleteSupplier", new { Id = id, UpdatedBy = updatedBy });
+        await inventoryDb.sp_Inventory_DeleteSupplierAsync(db, id, updatedBy);
     }
 
     public async Task<int> CreateProductAsync(int locationId, int? supplierId, string name, string? sku, decimal price, int quantityOnHand, int reorderThreshold, int? createdBy)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Inventory_CreateProduct", new
-        {
-            LocationId = locationId, SupplierId = supplierId, Name = name, SKU = sku, Price = price,
-            QuantityOnHand = quantityOnHand, ReorderThreshold = reorderThreshold, CreatedBy = createdBy,
-        });
+        return await inventoryDb.sp_Inventory_CreateProductAsync(db, locationId, supplierId, name, sku, price, quantityOnHand, reorderThreshold, createdBy);
     }
 
     public async Task<IReadOnlyList<ProductDto>> GetProductsAsync(int locationId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<ProductDto>("public.sp_Inventory_GetProducts", new { LocationId = locationId })).ToList();
+        return (await inventoryDb.sp_Inventory_GetProductsAsync(db, locationId)).ToList();
     }
 
     public async Task UpdateProductAsync(int id, int? supplierId, string name, string? sku, decimal price, int reorderThreshold, bool isActive, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Inventory_UpdateProduct", new
-        {
-            Id = id, SupplierId = supplierId, Name = name, SKU = sku, Price = price,
-            ReorderThreshold = reorderThreshold, IsActive = isActive, UpdatedBy = updatedBy,
-        });
+        await inventoryDb.sp_Inventory_UpdateProductAsync(db, id, supplierId, name, sku, price, reorderThreshold, isActive, updatedBy);
     }
 
     public async Task DeleteProductAsync(int id, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Inventory_DeleteProduct", new { Id = id, UpdatedBy = updatedBy });
+        await inventoryDb.sp_Inventory_DeleteProductAsync(db, id, updatedBy);
     }
 
     public async Task<IReadOnlyList<LowStockProductDto>> GetLowStockProductsAsync(int locationId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<LowStockProductDto>("public.sp_Inventory_GetLowStockProducts", new { LocationId = locationId })).ToList();
+        return (await inventoryDb.sp_Inventory_GetLowStockProductsAsync(db, locationId)).ToList();
     }
 
     public async Task<int> CreatePurchaseOrderAsync(int locationId, int supplierId, IReadOnlyList<(int ProductId, int Quantity, decimal UnitCost)> lines, int? createdBy)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Inventory_CreatePurchaseOrder", new
-        {
-            LocationId = locationId,
-            SupplierId = supplierId,
-            Lines = lines.AsPurchaseOrderLineList(),
-            CreatedBy = createdBy
-        });
+        return await inventoryDb.sp_Inventory_CreatePurchaseOrderAsync(db, locationId, supplierId, lines.AsPurchaseOrderLineList(), createdBy);
     }
 
     public async Task<IReadOnlyList<PurchaseOrderDto>> GetPurchaseOrdersAsync(int locationId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<PurchaseOrderDto>("public.sp_Inventory_GetPurchaseOrders", new { LocationId = locationId })).ToList();
+        return (await inventoryDb.sp_Inventory_GetPurchaseOrdersAsync(db, locationId)).ToList();
     }
 
     public async Task<PurchaseOrderDetailDto> GetPurchaseOrderDetailAsync(int id)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("public.sp_Inventory_GetPurchaseOrderDetail", new { Id = id });
+        using var multi = await inventoryDb.sp_Inventory_GetPurchaseOrderDetailAsync(db, id);
         var header = await multi.ReadSingleOrDefaultAsync<PurchaseOrderHeaderDto>();
         var lines = (await multi.ReadAsync<PurchaseOrderLineDto>()).ToList();
         return new PurchaseOrderDetailDto(header, lines);
@@ -107,30 +92,24 @@ internal sealed class InventoryRepository(SqlConnectionFactory factory)
     public async Task ReceivePurchaseOrderAsync(int id, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Inventory_ReceivePurchaseOrder", new { Id = id, UpdatedBy = updatedBy });
+        await inventoryDb.sp_Inventory_ReceivePurchaseOrderAsync(db, id, updatedBy);
     }
 
     public async Task<int> AddBookingProductAsync(int bookingId, int productId, int quantity, int? createdBy)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Booking_AddProduct", new
-        {
-            BookingId = bookingId,
-            ProductId = productId,
-            Quantity = quantity,
-            CreatedBy = createdBy
-        });
+        return await bookingDb.sp_Booking_AddProductAsync(db, bookingId, productId, quantity, createdBy);
     }
 
     public async Task RemoveBookingProductAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Booking_RemoveProduct", new { Id = id });
+        await bookingDb.sp_Booking_RemoveProductAsync(db, id);
     }
 
     public async Task<IReadOnlyList<BookingProductDto>> GetBookingProductsAsync(int bookingId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingProductDto>("public.sp_Booking_GetProducts", new { BookingId = bookingId })).ToList();
+        return (await inventoryDb.sp_Booking_GetProductsAsync(db, bookingId)).ToList();
     }
 }

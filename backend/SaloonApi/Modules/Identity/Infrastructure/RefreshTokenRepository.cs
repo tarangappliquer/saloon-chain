@@ -1,5 +1,6 @@
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
+using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Identity.Infrastructure;
 
@@ -8,23 +9,23 @@ internal sealed record RefreshTokenRecord(
     string Name, string Email, UserRole Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator,
     bool IsEmailVerified);
 
-internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
+internal sealed record RefreshTokenRow(
+    int Id, int UserId, DateTime ExpiresAt, DateTime? RevokedDate,
+    string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator,
+    bool IsEmailVerified);
+
+internal sealed class RefreshTokenRepository(SqlConnectionFactory factory, AuthDbService authDb)
 {
     public async Task<int> CreateAsync(int userId, byte[] tokenHash, DateTime expiresAt)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("public.sp_Auth_CreateRefreshToken", new
-        {
-            UserId = userId,
-            TokenHash = tokenHash,
-            ExpiresAt = expiresAt
-        });
+        return await authDb.sp_Auth_CreateRefreshTokenAsync(db, userId, tokenHash, expiresAt);
     }
 
     public async Task<RefreshTokenRecord?> GetAsync(byte[] tokenHash)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<RefreshTokenRow>("public.sp_Auth_GetRefreshToken", new { TokenHash = tokenHash });
+        var row = await authDb.sp_Auth_GetRefreshTokenAsync(db, tokenHash);
         return row is null ? null : new RefreshTokenRecord(
             row.Id, row.UserId, row.ExpiresAt, row.RevokedDate,
             row.Name, row.Email, Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator,
@@ -34,21 +35,12 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
     public async Task RevokeAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Auth_RevokeRefreshToken", new { Id = id });
+        await authDb.sp_Auth_RevokeRefreshTokenAsync(db, id);
     }
 
-    // Called after a successful password reset -- a stolen/stale session shouldn't survive the
-    // owner taking their account back.
     public async Task RevokeAllForUserAsync(int userId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("public.sp_Auth_RevokeAllRefreshTokens", new { UserId = userId });
+        await authDb.sp_Auth_RevokeAllRefreshTokensAsync(db, userId);
     }
-
-    // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- RefreshTokenRecord
-    // exposes it as the enum, converted just above (same pattern as UserRepository.UserRow).
-    private sealed record RefreshTokenRow(
-        int Id, int UserId, DateTime ExpiresAt, DateTime? RevokedDate,
-        string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator,
-        bool IsEmailVerified);
 }
