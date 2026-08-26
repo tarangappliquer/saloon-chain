@@ -148,13 +148,12 @@ DOCKERHUB_USERNAME=tarangappliquer1606
 # -------------------------------------------------------------------------
 UPLOADS_DIR=/opt/saloonchains/uploads
 REDIS_DATA_DIR=/opt/saloonchains/data/redis
-SQL_DATA_DIR=/opt/saloonchains/data/mssql
 
 # -------------------------------------------------------------------------
-# DATABASE CONNECTION STRING (Targeting Host PC or Remote SQL Server)
+# DATABASE CONNECTION STRING (Targeting Remote IP-bound PostgreSQL Server)
 # -------------------------------------------------------------------------
-# Example for Remote SQL Server / Containerized SQL Server / Host PC:
-SALOON_DB_CONN_STRING=Server=your-sql-server-ip-or-domain,1433;Database=SaloonChainDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
+# Example for Remote IP-bound PostgreSQL Server:
+SALOON_DB_CONN_STRING=Host=198.245.65.114;Port=5432;Database=SaloonChainDb;Username=postgres;Password=YourPassword123!;
 
 # -------------------------------------------------------------------------
 # SECURITY CONFIGURATION

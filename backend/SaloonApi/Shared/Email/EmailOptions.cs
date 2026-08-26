@@ -9,4 +9,5 @@ internal sealed class EmailOptions
     public bool UseSsl { get; init; }
     public string FromAddress { get; init; } = "no-reply@saloonchains.local";
     public string FromName { get; init; } = "Saloon Chains";
+    public string DeveloperEmail { get; init; } = "tarangkalaria55@gmail.com";
 }

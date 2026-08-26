@@ -5,6 +5,7 @@ using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Email;
+using SaloonApi.Shared.Email.TemplateModels;
 using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Identity.Application;
@@ -12,8 +13,8 @@ namespace SaloonApi.Modules.Identity.Application;
 internal sealed class AuthService(
     UserRepository repo, RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
     EmailChangeTokenRepository emailChangeTokens, TokenService tokens, IBackgroundEmailQueue emailQueue,
-    StripeCustomerService stripeCustomerService, IOptionsMonitor<PortalUrlOptions> portalUrls, SseBroadcaster sse,
-    IOptionsMonitor<AuthOptions> authOptions)
+    IEmailBodyBuilder bodyBuilder, StripeCustomerService stripeCustomerService, IOptionsMonitor<PortalUrlOptions> portalUrls,
+    SseBroadcaster sse, IOptionsMonitor<AuthOptions> authOptions)
 {
     public async Task<(int Id, string Token, string RefreshToken)> RegisterAsync(string name, string email, string password, string? phone)
     {
@@ -106,11 +107,21 @@ internal sealed class AuthService(
     {
         var token = TokenService.GenerateRefreshToken();
         await resetTokens.CreateAsync(userId, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.SetPasswordExpiryHours));
-        emailQueue.Enqueue(BuildPasswordEmail(
-            name, email, portalBaseUrl, token,
-            subject: "Set your password",
-            intro: "An account has been created for you.",
-            actionLabel: "Set Your Password"));
+        var resetLink = $"{portalBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
+        var model = new SetPasswordEmailModel
+        {
+            RecipientName = name,
+            IntroText = "An account has been created for you.",
+            ResetLink = resetLink,
+            ActionLabel = "Set Your Password"
+        };
+        var html = await bodyBuilder.BuildSetPasswordAsync(model).ConfigureAwait(false);
+        var emailMsg = new EmailMessage(
+            To: [new EmailAddress(email, name)], 
+            Subject: "Set your password", 
+            HtmlBody: html);
+
+        emailQueue.Enqueue(emailMsg);
     }
 
     public async Task RequestPasswordResetAsync(string email)
@@ -122,11 +133,20 @@ internal sealed class AuthService(
         await resetTokens.CreateAsync(user.Id, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.ForgotPasswordExpiryHours));
 
         var portalUrl = user.Role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
-        emailQueue.Enqueue(BuildPasswordEmail(
-            user.Name, user.Email, portalUrl, token,
-            subject: "Reset your password",
-            intro: "We received a request to reset your password.",
-            actionLabel: "Reset Password"));
+        var resetLink = $"{portalUrl}/reset-password?token={Uri.EscapeDataString(token)}";
+        var model = new SetPasswordEmailModel
+        {
+            RecipientName = user.Name,
+            IntroText = "We received a request to reset your password.",
+            ResetLink = resetLink,
+            ActionLabel = "Reset Password"
+        };
+        var html = await bodyBuilder.BuildSetPasswordAsync(model).ConfigureAwait(false);
+        var emailMsg = new EmailMessage(
+            To: [new EmailAddress(user.Email, user.Name)], 
+            Subject: "Reset your password", 
+            HtmlBody: html);
+        emailQueue.Enqueue(emailMsg);
     }
 
     public async Task<bool> ResetPasswordAsync(string rawToken, string newPassword)
@@ -153,7 +173,18 @@ internal sealed class AuthService(
         await emailChangeTokens.CreateAsync(userId, newEmail, TokenService.HashRefreshToken(token), DateTime.UtcNow.AddHours(authOptions.CurrentValue.EmailChangeExpiryHours));
 
         var portalUrl = role == UserRole.Customer ? portalUrls.CurrentValue.ClientPortalUrl : portalUrls.CurrentValue.AdminPortalUrl;
-        emailQueue.Enqueue(BuildEmailChangeEmail(name, newEmail, portalUrl, token));
+        var confirmLink = $"{portalUrl}/verify-email?token={Uri.EscapeDataString(token)}";
+        var model = new EmailChangeVerificationModel
+        {
+            RecipientName = name,
+            ConfirmLink = confirmLink
+        };
+        var html = await bodyBuilder.BuildEmailChangeVerificationAsync(model).ConfigureAwait(false);
+        var emailMsg = new EmailMessage(
+            To: [new EmailAddress(newEmail, name)], 
+            Subject: "Confirm your new email address", 
+            HtmlBody: html);
+        emailQueue.Enqueue(emailMsg);
     }
 
     public async Task<bool> ConfirmEmailChangeAsync(string rawToken)
@@ -182,41 +213,5 @@ internal sealed class AuthService(
 
         var token = tokens.CreateToken(customer.Id, customer.Email, UserRole.Customer, emulatedByUserId: actingStaffId);
         return (customer.Id, customer.Name, customer.Email, token);
-    }
-
-    private static EmailMessage BuildPasswordEmail(
-        string name, string email, string portalBaseUrl, string token,
-        string subject, string intro, string actionLabel)
-    {
-        var resetLink = $"{portalBaseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
-        var html = $"""
-            <p>Hi {name},</p>
-            <p>{intro}</p>
-            <p><a href="{resetLink}">{actionLabel}</a></p>
-            <p>If you didn't request this, you can safely ignore this email.</p>
-            """;
-
-        return new EmailMessage(
-            To: [new EmailAddress(email, name)],
-            Subject: subject,
-            HtmlBody: html);
-    }
-
-    // Also used to (re-)verify a caller's own current, still-unverified address -- see
-    // /api/profile/email/verify-request -- so the copy stays neutral rather than implying a change.
-    private static EmailMessage BuildEmailChangeEmail(string name, string newEmail, string portalBaseUrl, string token)
-    {
-        var confirmLink = $"{portalBaseUrl}/verify-email?token={Uri.EscapeDataString(token)}";
-        var html = $"""
-            <p>Hi {name},</p>
-            <p>Confirm this address for your Saloon Chains account.</p>
-            <p><a href="{confirmLink}">Confirm Email Address</a></p>
-            <p>If you didn't request this, you can safely ignore this email -- your account email won't change.</p>
-            """;
-
-        return new EmailMessage(
-            To: [new EmailAddress(newEmail, name)],
-            Subject: "Confirm your new email address",
-            HtmlBody: html);
     }
 }

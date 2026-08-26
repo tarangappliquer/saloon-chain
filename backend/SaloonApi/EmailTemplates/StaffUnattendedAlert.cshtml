@@ -1,0 +1,76 @@
+@inherits RazorEngineCore.RazorEngineTemplateBase
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urgent Staff Arrival Alert</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #fffbe6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #fffbe6; padding: 40px 15px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(217, 119, 6, 0.1); border: 1px solid #fef3c7;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); padding: 30px 36px; text-align: left;">
+                            <span style="color: #fef3c7; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; display: block; margin-bottom: 4px;">LOCATION MANAGER ALERT</span>
+                            <h1 style="color: #ffffff; font-size: 22px; font-weight: 700; margin: 0;">⚠️ Staff Member Not Arrived</h1>
+                        </td>
+                    </tr>
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 36px;">
+                            <p style="font-size: 16px; font-weight: 600; color: #1f2937; margin: 0 0 16px 0;">Hello @Model.ManagerName,</p>
+
+                            <div style="background-color: #fffbe6; border-left: 4px solid #d97706; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+                                <p style="margin: 0; color: #92400e; font-size: 15px; line-height: 1.5;">
+                                    Assigned staff member <strong>'@Model.AssignedStaffName'</strong> has NOT logged arrival for today yet.
+                                </p>
+                            </div>
+
+                            <table role="presentation" width="100%" style="background-color: #f9fafb; border-radius: 10px; padding: 20px; font-size: 14px; margin-bottom: 24px; border: 1px solid #f3f4f6;">
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600; width: 140px;">Booking Ref:</td>
+                                    <td style="padding: 6px 0; color: #111827; font-weight: 700;">#@Model.BookingId</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600;">Treatment:</td>
+                                    <td style="padding: 6px 0; color: #111827;">@Model.TreatmentName</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600;">Start Time:</td>
+                                    <td style="padding: 6px 0; color: #dc2626; font-weight: 700;">@Model.StartTimeFormatted (starting in &lt;@Model.LeadTimeMinutes mins)</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600;">Location:</td>
+                                    <td style="padding: 6px 0; color: #111827;">@Model.LocationName</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600;">Customer:</td>
+                                    <td style="padding: 6px 0; color: #111827;">@Model.CustomerName</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280; font-weight: 600;">Assigned Staff:</td>
+                                    <td style="padding: 6px 0; color: #111827;">@Model.AssignedStaffName (@Model.AssignedStaffEmail)</td>
+                                </tr>
+                            </table>
+
+                            <p style="font-size: 14px; color: #4b5563; line-height: 1.5; margin: 0; background-color: #f3f4f6; padding: 14px 18px; border-radius: 8px; font-style: italic;">
+                                Please assign a proxy staff member immediately in the Admin Portal if the assigned staff is unavailable.
+                            </p>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f9fafb; padding: 20px 36px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+                            Saloon Chains Operations &bull; Staff Attendance Dispatch
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

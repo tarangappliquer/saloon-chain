@@ -9,7 +9,10 @@ namespace SaloonApi.Shared.ErrorHandling;
 // Registered via builder.Services.AddExceptionHandler<AppExceptionHandler>() + app.UseExceptionHandler()
 // in Program.cs. Runs through IProblemDetailsService so responses stay RFC7807-shaped and pick up
 // whatever AddProblemDetails() customization (traceId, etc.) is configured globally.
-internal sealed class AppExceptionHandler(IProblemDetailsService problemDetailsService, ILogger<AppExceptionHandler> logger)
+internal sealed class AppExceptionHandler(
+    IProblemDetailsService problemDetailsService,
+    ILogger<AppExceptionHandler> logger,
+    IDeveloperErrorNotifier errorNotifier)
     : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
@@ -25,7 +28,10 @@ internal sealed class AppExceptionHandler(IProblemDetailsService problemDetailsS
         };
 
         if (status == StatusCodes.Status500InternalServerError)
+        {
             logger.LogError(exception, "Unhandled exception on {Path}", httpContext.Request.Path);
+            await errorNotifier.NotifyAsync(exception, $"API {httpContext.Request.Method} {httpContext.Request.Path}", httpContext, cancellationToken).ConfigureAwait(false);
+        }
 
         httpContext.Response.StatusCode = status;
 

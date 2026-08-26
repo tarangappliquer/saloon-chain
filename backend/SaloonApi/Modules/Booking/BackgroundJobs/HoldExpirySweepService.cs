@@ -1,12 +1,14 @@
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Shared.Caching;
+using SaloonApi.Shared.ErrorHandling;
 
 namespace SaloonApi.Modules.Booking.BackgroundJobs;
 
 internal sealed class HoldExpirySweepService(
     IServiceScopeFactory scopeFactory,
     IRedisConnectionProvider redisProvider,
-    ILogger<HoldExpirySweepService> logger) : BackgroundService
+    ILogger<HoldExpirySweepService> logger,
+    IDeveloperErrorNotifier errorNotifier) : BackgroundService
 {
     private const string LockKey = "lock:hold-expiry-sweep";
 
@@ -30,6 +32,7 @@ internal sealed class HoldExpirySweepService(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Hold expiry sweep failed");
+                await errorNotifier.NotifyAsync(ex, "HoldExpirySweepService", ct: stoppingToken).ConfigureAwait(false);
             }
 #pragma warning restore CA1031
         }

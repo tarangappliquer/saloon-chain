@@ -60,7 +60,7 @@ try
 
     builder.Host.UseSerilog((_, cfg) =>
     {
-        cfg.GetLoggerConfiguration("MainLog");
+        cfg.GetLoggerConfiguration(true);
     });
 
     builder.Services.AddOpenApi(options =>
@@ -170,6 +170,10 @@ try
     builder.Services.AddSingleton<TokenService>();
     builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
     builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
+    builder.Services.AddSingleton<IRazorTemplateEngine, RazorTemplateEngine>();
+    builder.Services.AddSingleton<IEmailBodyBuilder, EmailBodyBuilder>();
+
+    builder.Services.AddSingleton<AdminSeeder>();
 
     builder.Services.AddScoped<UserRepository>();
     builder.Services.AddScoped<RefreshTokenRepository>();
@@ -208,6 +212,8 @@ try
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<StorageOptions>>()
         );
     });
+
+    builder.Services.AddSingleton<IDeveloperErrorNotifier, DeveloperErrorNotifier>();
 
     builder.Services.AddHostedService<HoldExpirySweepService>();
     builder.Services.AddHostedService<EmailQueueBackgroundService>();
@@ -284,7 +290,7 @@ try
     app.MapPayrollEndpoints();
     app.MapReportsEndpoints();
 
-    await AdminSeeder.SeedRootSuperAdminAsync(app.Services, app.Configuration);
+    await app.Services.GetRequiredService<AdminSeeder>().SeedRootSuperAdminAsync();
 
     await app.RunAsync();
 }

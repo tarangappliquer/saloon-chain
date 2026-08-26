@@ -1,13 +1,16 @@
 using SaloonApi.Modules.Identity.Infrastructure;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
+using SaloonApi.Shared.Email.TemplateModels;
+using SaloonApi.Shared.ErrorHandling;
 
 namespace SaloonApi.Modules.Admin.BackgroundJobs;
 
 internal sealed class StaffAttendanceSweepHostedService(
     IServiceScopeFactory scopeFactory,
     IRedisConnectionProvider redisProvider,
-    ILogger<StaffAttendanceSweepHostedService> logger) : BackgroundService
+    ILogger<StaffAttendanceSweepHostedService> logger,
+    IDeveloperErrorNotifier errorNotifier) : BackgroundService
 {
     private static readonly TimeSpan Period = TimeSpan.FromMinutes(5);
     private const string LockKey = "lock:staff-attendance-sweep";
@@ -30,10 +33,12 @@ internal sealed class StaffAttendanceSweepHostedService(
             catch (InvalidOperationException ex)
             {
                 logger.LogError(ex, "Invalid operation occurred during StaffAttendanceSweepHostedService sweep.");
+                await errorNotifier.NotifyAsync(ex, "StaffAttendanceSweepHostedService", ct: stoppingToken).ConfigureAwait(false);
             }
             catch (System.Data.Common.DbException ex)
             {
                 logger.LogError(ex, "Database error occurred during StaffAttendanceSweepHostedService sweep.");
+                await errorNotifier.NotifyAsync(ex, "StaffAttendanceSweepHostedService", ct: stoppingToken).ConfigureAwait(false);
             }
 
             try
@@ -52,6 +57,7 @@ internal sealed class StaffAttendanceSweepHostedService(
         using var scope = scopeFactory.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<UserRepository>();
         var emailQueue = scope.ServiceProvider.GetRequiredService<IBackgroundEmailQueue>();
+        var bodyBuilder = scope.ServiceProvider.GetRequiredService<IEmailBodyBuilder>();
 
         var alerts = await repo.GetUnattendedPreBookingAlertsAsync();
         if (alerts.Count == 0) return;
@@ -76,10 +82,25 @@ internal sealed class StaffAttendanceSweepHostedService(
 
             foreach (var mgr in managers.Where(m => !string.IsNullOrWhiteSpace(m.Email)))
             {
+                var model = new StaffUnattendedAlertModel
+                {
+                    ManagerName = mgr.Name,
+                    AssignedStaffName = alert.AssignedStaffName,
+                    AssignedStaffEmail = alert.AssignedStaffEmail,
+                    BookingId = alert.BookingId,
+                    TreatmentName = alert.TreatmentName,
+                    LeadTimeMinutes = alert.LeadTimeMinutes,
+                    StartTimeFormatted = alert.StartTime.ToString("t", System.Globalization.CultureInfo.InvariantCulture),
+                    LocationName = alert.LocationName,
+                    CustomerName = alert.CustomerName
+                };
+
+                var htmlBody = await bodyBuilder.BuildStaffUnattendedAlertAsync(model).ConfigureAwait(false);
+
                 var email = new EmailMessage(
                     To: [new EmailAddress(mgr.Email, mgr.Name)],
                     Subject: $"[URGENT ALERT] Assigned Staff Not Arrived for Booking #{alert.BookingId}",
-                    HtmlBody: $"<p>Hello {mgr.Name},</p><p>Assigned staff member <strong>'{alert.AssignedStaffName}'</strong> has NOT logged arrival for today yet, and Booking #{alert.BookingId} for treatment <strong>'{alert.TreatmentName}'</strong> is starting in less than {alert.LeadTimeMinutes} minutes (at {alert.StartTime:t}) at {alert.LocationName}.</p><p><strong>Customer:</strong> {alert.CustomerName}<br/><strong>Assigned Staff:</strong> {alert.AssignedStaffName} ({alert.AssignedStaffEmail})</p><p><em>Please assign a proxy staff member immediately if the assigned staff is unavailable.</em></p>"
+                    HtmlBody: htmlBody
                 );
                 emailQueue.Enqueue(email);
             }

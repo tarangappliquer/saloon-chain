@@ -9,6 +9,7 @@ using SaloonApi.Modules.Payment.Application;
 using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
+using SaloonApi.Shared.Email.TemplateModels;
 using SaloonApi.Shared.Realtime;
 
 namespace SaloonApi.Modules.Booking.Application;
@@ -19,6 +20,7 @@ internal sealed class BookingService(
     IAvailabilityCache cache,
     SseBroadcaster sse,
     IBackgroundEmailQueue emailQueue,
+    IEmailBodyBuilder bodyBuilder,
     PaymentRepository paymentRepo,
     IPaymentGatewayFactory paymentGatewayFactory,
     IServiceScopeFactory scopeFactory,
@@ -224,32 +226,30 @@ internal sealed class BookingService(
 
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
         if (details is not null)
-            emailQueue.Enqueue(BuildConfirmationEmail(details));
+            emailQueue.Enqueue(await BuildConfirmationEmailAsync(details).ConfigureAwait(false));
     }
 
-    private static EmailMessage BuildConfirmationEmail(ConfirmationDetailsDto details)
+    private async Task<EmailMessage> BuildConfirmationEmailAsync(ConfirmationDetailsDto details)
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
 
-        var treatmentRows = new StringBuilder();
-        foreach (var t in details.Treatments)
+        var treatments = details.Treatments.Select(t => new BookingTreatmentDetailModel
         {
-            var when = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
-            treatmentRows.Append(CultureInfo.InvariantCulture,
-                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; ${t.Price:F2}</li>");
-        }
+            TreatmentName = t.TreatmentName,
+            FormattedTime = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
+            TherapistName = t.TherapistName,
+            FormattedPrice = t.Price.ToString("F2", CultureInfo.InvariantCulture)
+        }).ToList();
 
-        var html = $"""
-            <p>Hi {details.CustomerName},</p>
-            <p>Your appointment is confirmed.</p>
-            <p><strong>Appointment number: APT-{appointmentNumber}</strong></p>
-            <ul>
-              <li><strong>Location:</strong> {details.LocationName}</li>
-            </ul>
-            <p><strong>Treatments:</strong></p>
-            <ul>{treatmentRows}</ul>
-            <p>See you then!</p>
-            """;
+        var model = new BookingConfirmationModel
+        {
+            CustomerName = details.CustomerName,
+            AppointmentNumber = appointmentNumber,
+            LocationName = details.LocationName,
+            Treatments = treatments
+        };
+
+        var html = await bodyBuilder.BuildBookingConfirmationAsync(model).ConfigureAwait(false);
 
         return new EmailMessage(
             To: [new EmailAddress(details.CustomerEmail, details.CustomerName)],
@@ -257,30 +257,27 @@ internal sealed class BookingService(
             HtmlBody: html);
     }
 
-    private static EmailMessage BuildCancellationEmail(ConfirmationDetailsDto details)
+    private async Task<EmailMessage> BuildCancellationEmailAsync(ConfirmationDetailsDto details)
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
 
-        var treatmentRows = new StringBuilder();
-        foreach (var t in details.Treatments)
+        var treatments = details.Treatments.Select(t => new BookingTreatmentDetailModel
         {
-            var when = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
-            treatmentRows.Append(CultureInfo.InvariantCulture,
-                $"<li>{t.TreatmentName} &mdash; {when} with {t.TherapistName} &mdash; ${t.Price:F2}</li>");
-        }
+            TreatmentName = t.TreatmentName,
+            FormattedTime = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
+            TherapistName = t.TherapistName,
+            FormattedPrice = t.Price.ToString("F2", CultureInfo.InvariantCulture)
+        }).ToList();
 
-        var html = $"""
-            <p>Hi {details.CustomerName},</p>
-            <p>Your appointment has been cancelled.</p>
-            <p><strong>Appointment number: APT-{appointmentNumber}</strong></p>
-            <ul>
-              <li><strong>Location:</strong> {details.LocationName}</li>
-            </ul>
-            <p><strong>Cancelled Treatments:</strong></p>
-            <ul>{treatmentRows}</ul>
-            <p>If you were charged, a full refund has been issued to your original payment method.</p>
-            <p>If you have any questions, please contact our support team.</p>
-            """;
+        var model = new BookingCancellationModel
+        {
+            CustomerName = details.CustomerName,
+            AppointmentNumber = appointmentNumber,
+            LocationName = details.LocationName,
+            Treatments = treatments
+        };
+
+        var html = await bodyBuilder.BuildBookingCancellationAsync(model).ConfigureAwait(false);
 
         return new EmailMessage(
             To: [new EmailAddress(details.CustomerEmail, details.CustomerName)],
@@ -319,7 +316,7 @@ internal sealed class BookingService(
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
-            emailQueue.Enqueue(BuildCancellationEmail(details));
+            emailQueue.Enqueue(await BuildCancellationEmailAsync(details).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -394,7 +391,7 @@ internal sealed class BookingService(
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
-            emailQueue.Enqueue(BuildCancellationEmail(details));
+            emailQueue.Enqueue(await BuildCancellationEmailAsync(details).ConfigureAwait(false));
     }
 
     public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null) =>

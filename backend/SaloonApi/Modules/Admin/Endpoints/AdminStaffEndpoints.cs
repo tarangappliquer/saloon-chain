@@ -258,7 +258,7 @@ internal static class AdminStaffEndpoints
         }).WithDescription("Log arrival or departure/left time for a staff member (immutable once set).");
 
         // POST /api/admin/staff/assign-proxy
-        group.MapPost("assign-proxy", async (AssignProxyRequest req, ICurrentUser currentUser, UserRepository repo, SaloonApi.Shared.Email.IBackgroundEmailQueue emailQueue) =>
+        group.MapPost("assign-proxy", async (AssignProxyRequest req, ICurrentUser currentUser, UserRepository repo, SaloonApi.Shared.Email.IBackgroundEmailQueue emailQueue, SaloonApi.Shared.Email.IEmailBodyBuilder bodyBuilder) =>
         {
             if (!currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin, UserRole.Manager))
                 return Results.Problem("Not authorized to assign proxy staff.", statusCode: StatusCodes.Status403Forbidden);
@@ -271,10 +271,25 @@ internal static class AdminStaffEndpoints
             var managers = await repo.GetLocationManagersAsync(result.LocationId);
             foreach (var mgr in managers.Where(m => !string.IsNullOrWhiteSpace(m.Email)))
             {
+                var model = new SaloonApi.Shared.Email.TemplateModels.ProxyStaffAssignedModel
+                {
+                    ManagerName = mgr.Name,
+                    ProxyTherapistName = result.ProxyTherapistName,
+                    BookingId = result.BookingId,
+                    TreatmentName = result.TreatmentName,
+                    LocationName = result.LocationName,
+                    OriginalTherapistName = result.OriginalTherapistName,
+                    CustomerName = result.CustomerName,
+                    TimeRangeFormatted = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{result.StartTime:g} - {result.EndTime:t}"),
+                    AssignedBy = currentUser.Email ?? currentUser.Role.ToString()
+                };
+
+                var htmlBody = await bodyBuilder.BuildProxyStaffAssignedAsync(model).ConfigureAwait(false);
+
                 var email = new SaloonApi.Shared.Email.EmailMessage(
                     To: [new SaloonApi.Shared.Email.EmailAddress(mgr.Email, mgr.Name)],
                     Subject: $"[SaloonChains Alert] Proxy Staff Assigned for Booking #{result.BookingId}",
-                    HtmlBody: $"<p>Hello {mgr.Name},</p><p>A proxy staff member (<strong>{result.ProxyTherapistName}</strong>) has been assigned to Booking #{result.BookingId} for treatment '<strong>{result.TreatmentName}</strong>' at {result.LocationName}.</p><p><strong>Original Staff:</strong> {result.OriginalTherapistName}<br/><strong>Customer:</strong> {result.CustomerName}<br/><strong>Time:</strong> {result.StartTime:g} - {result.EndTime:t}<br/><strong>Assigned By:</strong> {currentUser.Email ?? currentUser.Role.ToString()}</p>"
+                    HtmlBody: htmlBody
                 );
                 emailQueue.Enqueue(email);
             }

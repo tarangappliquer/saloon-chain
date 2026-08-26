@@ -1,6 +1,10 @@
 networks:
   saloon-network:
+    name: saloon-network
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 services:
   # =========================================================================
@@ -14,12 +18,13 @@ services:
       dockerfile: Dockerfile
     container_name: saloonchains-backend
     networks:
-      - saloon-network
+      saloon-network:
+        ipv4_address: 172.28.0.10
     ports:
       - "5127:5127"
     environment:
       ASPNETCORE_URLS: "http://+:5127"
-      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Host=host.docker.internal;Port=5432;Database=SaloonChainDb;Username=postgres;Password=SaloonChains_Dev123!;}"
+      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Host=${POSTGRES_HOST:-host.docker.internal};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-SaloonChainDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-SaloonChains_Dev123!;};Ssl Mode=${POSTGRES_SSL_MODE:-Prefer};Trust Server Certificate=true;}"
       Redis__ConnectionString: "saloonchains-redis:6379"
       Redis__Enabled: "true"
       Jwt__SigningKey: "${JWT_SIGNING_KEY:-SaloonChains_Production_Or_Dev_Secret_Signing_Key_32_Bytes_Min}"
@@ -33,6 +38,29 @@ services:
       Serilog__MinimumLevel__Override__Microsoft: "${MICROSOFT_LOG_LEVEL:-Warning}"
       Portals__AdminPortalUrl: "http://198.245.65.114:5173"
       Portals__ClientPortalUrl: "http://198.245.65.114:5174"
+      Email__SmtpHost: "${BACKEND_EMAIL_SMTP_HOST:-smtp.gmail.com}"
+      Email__SmtpPort: "${BACKEND_EMAIL_SMTP_PORT:-465}"
+      Email__Username: "${BACKEND_EMAIL_USERNAME:-tarangkalaria55@gmail.com}"
+      Email__Password: "${BACKEND_EMAIL_PASSWORD:-}"
+      Email__UseSsl: "${BACKEND_EMAIL_USE_SSL:-true}"
+      Email__FromAddress: "${BACKEND_EMAIL_FROM_ADDRESS:-tarangkalaria55@gmail.com}"
+      Email__FromName: "${BACKEND_EMAIL_FROM_NAME:-Saloon Chains}"
+      Email__DeveloperEmail: "${BACKEND_EMAIL_DEVELOPER_EMAIL:-tarangkalaria55@gmail.com}"
+      Stripe__PublishableKey: "${BACKEND_STRIPE_PUBLISHABLE_KEY:-pk_test_sample}"
+      Stripe__SecretKey: "${BACKEND_STRIPE_SECRET_KEY:-}"
+      Stripe__WebhookSecret: "${BACKEND_STRIPE_WEBHOOK_SECRET:-}"
+      Storage__Provider: "${BACKEND_STORAGE_PROVIDER:-Local}"
+      Storage__BasePath: "${BACKEND_STORAGE_BASE_PATH:-uploads}"
+      Storage__S3__BucketName: "${BACKEND_STORAGE_S3_BUCKET_NAME:-}"
+      Storage__S3__AccessKey: "${BACKEND_STORAGE_S3_ACCESS_KEY:-}"
+      Storage__S3__SecretKey: "${BACKEND_STORAGE_S3_SECRET_KEY:-}"
+      Storage__S3__Region: "${BACKEND_STORAGE_S3_REGION:-us-east-1}"
+      Storage__S3__ServiceUrl: "${BACKEND_STORAGE_S3_SERVICE_URL:-}"
+      Storage__S3__PublicUrlPrefix: "${BACKEND_STORAGE_S3_PUBLIC_URL_PREFIX:-}"
+      Auth__RequireEmailVerification: "${BACKEND_AUTH_REQUIRE_EMAIL_VERIFICATION:-true}"
+      Auth__SetPasswordExpiryHours: "${BACKEND_AUTH_SET_PASSWORD_EXPIRY_HOURS:-72}"
+      Auth__ForgotPasswordExpiryHours: "${BACKEND_AUTH_FORGOT_PASSWORD_EXPIRY_HOURS:-1}"
+      Auth__EmailChangeExpiryHours: "${BACKEND_AUTH_EMAIL_CHANGE_EXPIRY_HOURS:-24}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

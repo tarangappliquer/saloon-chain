@@ -5,6 +5,8 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
+    <EnableRazorGenerate>false</EnableRazorGenerate>
+    <RazorCompileOnBuild>false</RazorCompileOnBuild>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,11 +37,13 @@
     <PackageReference Include="Stripe.net" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="tusdotnet" />
+    <PackageReference Include="RazorEngineCore" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Remove="Logs\*" />
     <None Include="Logs\*" />
+    <Content Update="EmailTemplates\**\*.cshtml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

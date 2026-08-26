@@ -3,13 +3,15 @@ using Microsoft.Extensions.Logging;
 using SaloonApi.Modules.Booking.Application;
 using SaloonApi.Modules.Catalog.Infrastructure;
 using SaloonApi.Shared.Caching;
+using SaloonApi.Shared.ErrorHandling;
 
 namespace SaloonApi.Modules.Booking.BackgroundJobs;
 
 internal sealed class AvailabilitySyncStartupHostedService(
     IServiceScopeFactory scopeFactory,
     IRedisConnectionProvider redisProvider,
-    ILogger<AvailabilitySyncStartupHostedService> logger) : BackgroundService
+    ILogger<AvailabilitySyncStartupHostedService> logger,
+    IDeveloperErrorNotifier errorNotifier) : BackgroundService
 {
     private const string LockKey = "lock:availability-startup-sync";
 
@@ -58,6 +60,7 @@ internal sealed class AvailabilitySyncStartupHostedService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Redis availability startup pre-sync encountered an issue; falling back to dynamic caching.");
+            await errorNotifier.NotifyAsync(ex, "AvailabilitySyncStartupHostedService", ct: stoppingToken).ConfigureAwait(false);
         }
 #pragma warning restore CA1031
     }

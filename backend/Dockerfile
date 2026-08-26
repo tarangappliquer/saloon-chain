@@ -18,6 +18,9 @@ RUN dotnet publish SaloonApi.csproj -c Release -o /app/publish /p:UseAppHost=fal
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
+# Install GSSAPI Kerberos library required by Npgsql
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
+
 # Ensure uploads directory exists for TUS resumable uploads / LocalStorageService
 RUN mkdir -p /app/uploads
 

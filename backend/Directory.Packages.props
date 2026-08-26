@@ -33,6 +33,7 @@
     <PackageVersion Include="Stripe.net" Version="52.3.0" />
     <PackageVersion Include="AWSSDK.S3" Version="3.7.412.3" />
     <PackageVersion Include="tusdotnet" Version="2.8.0" />
+    <PackageVersion Include="RazorEngineCore" Version="2026.1.1" />
   </ItemGroup>
   <ItemGroup Label="SaloonApi Tests">
     <!-- SaloonApi.Tests -->
