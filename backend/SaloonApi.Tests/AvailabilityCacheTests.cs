@@ -72,7 +72,7 @@ public class AvailabilityCacheTests
     {
         var inMemoryConfig = new Dictionary<string, string?>
         {
-            ["ConnectionStrings:Redis"] = "none"
+            ["Redis:ConnectionString"] = "none"
         };
         var config = new ConfigurationBuilder().AddInMemoryCollection(inMemoryConfig).Build();
         var logger = NullLogger<RedisConnectionProvider>.Instance;

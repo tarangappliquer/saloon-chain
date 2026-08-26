@@ -440,7 +440,7 @@ yet.
 instance (LocalDB works fine for dev: `sqlcmd -S "(localdb)\MSSQLLocalDB" -d <db> -i <file> -C`).
 Update `backend/SaloonApi/appsettings.json` → `ConnectionStrings:SaloonDb` to match.
 
-**Redis**: optional — `ConnectionStrings:Redis` in `appsettings.json`. If unconfigured or unreachable, the system automatically falls back to `NullAvailabilityCache` (direct database queries). Any local Redis (Docker, WSL, Memurai) works.
+**Redis**: optional — `Redis:ConnectionString` in `appsettings.json`. If unconfigured or unreachable, the system automatically falls back to `NullAvailabilityCache` (direct database queries). Any local Redis (Docker, WSL, Memurai) works.
 
 **Backend**: `dotnet run --project backend/SaloonApi` (or via the solution). Dev URL
 `http://localhost:5127` (see `backend/SaloonApi/Properties/launchSettings.json`). OpenAPI JSON is
