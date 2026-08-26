@@ -3260,6 +3260,26 @@ LANGUAGE sql AS $$
     WHERE Id = p_UserId AND IsDelete = FALSE;
 $$;
 
+-- Backs AdminSeeder -- skip creating the bootstrap RootSuperAdmin if one already exists under any email.
+CREATE OR REPLACE FUNCTION public.sp_User_ExistsWithRole(p_Role varchar(20)) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM public.Users WHERE Role = p_Role AND IsDelete = FALSE);
+$$;
+
+CREATE OR REPLACE FUNCTION public.sp_User_IsLocationInChain(p_LocationId int, p_ChainId int) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM public.Locations WHERE Id = p_LocationId AND ChainId = p_ChainId AND IsDelete = FALSE);
+$$;
+
+CREATE OR REPLACE FUNCTION public.sp_User_HasCustomerBookingInChain(p_CustomerId int, p_ChainId int) RETURNS boolean
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.Bookings b
+        JOIN public.Locations l ON l.Id = b.LocationId
+        WHERE b.CustomerId = p_CustomerId AND l.ChainId = p_ChainId AND b.IsDelete = FALSE
+    );
+$$;
+
 -- EXISTS-based matching only touches Treatments/TreatmentCategories when p_Search is actually
 -- non-empty, and never fans the row set out (unlike a LEFT JOIN + SELECT DISTINCT would).
 CREATE OR REPLACE FUNCTION public.sp_Catalog_Search(p_Search varchar(200) DEFAULT NULL)

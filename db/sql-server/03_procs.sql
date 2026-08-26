@@ -3766,6 +3766,45 @@ BEGIN
 END;
 GO
 
+-- Backs AdminSeeder -- skip creating the bootstrap RootSuperAdmin if one already exists under any email.
+CREATE OR ALTER PROCEDURE dbo.sp_User_ExistsWithRole
+    @Role NVARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Users WHERE Role = @Role AND IsDelete = 0)
+                THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS Result;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_User_IsLocationInChain
+    @LocationId INT,
+    @ChainId    INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Locations WHERE Id = @LocationId AND ChainId = @ChainId AND IsDelete = 0)
+                THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS Result;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_User_HasCustomerBookingInChain
+    @CustomerId INT,
+    @ChainId    INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM dbo.Bookings b
+                    JOIN dbo.Locations l ON l.Id = b.LocationId
+                    WHERE b.CustomerId = @CustomerId AND l.ChainId = @ChainId AND b.IsDelete = 0
+                ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS Result;
+END;
+GO
+
 -- Was a LEFT JOIN to Treatments/TreatmentCategories (fanning out one row per treatment) collapsed
 -- back down with SELECT DISTINCT -- correct, but on every call, including the common empty-search
 -- "browse all" case, it materialized and sorted that full fan-out just to throw the duplicates

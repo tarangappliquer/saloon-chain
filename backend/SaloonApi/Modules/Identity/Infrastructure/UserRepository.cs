@@ -244,21 +244,13 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)
     {
         using var db = factory.Create();
-        const string sql = """
-            SELECT CASE WHEN EXISTS (
-                SELECT 1 FROM Bookings b
-                JOIN Locations l ON l.Id = b.LocationId
-                WHERE b.CustomerId = @CustomerId AND l.ChainId = @ChainId AND b.IsDelete = 0
-            ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END
-            """;
-        return await db.ExecuteScalarAsync<bool>(sql, new { CustomerId = customerId, ChainId = chainId });
+        return await db.QuerySingleSpAsync<bool>("public.sp_User_HasCustomerBookingInChain", new { CustomerId = customerId, ChainId = chainId });
     }
 
     public async Task<bool> IsLocationInChainAsync(int locationId, int chainId)
     {
         using var db = factory.Create();
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM Locations WHERE Id = @LocationId AND ChainId = @ChainId AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
-        return await db.ExecuteScalarAsync<bool>(sql, new { LocationId = locationId, ChainId = chainId });
+        return await db.QuerySingleSpAsync<bool>("public.sp_User_IsLocationInChain", new { LocationId = locationId, ChainId = chainId });
     }
 
     // Backs AdminSeeder -- skip creating the bootstrap account if a RootSuperAdmin already exists
@@ -267,8 +259,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<bool> ExistsWithRoleAsync(UserRole role)
     {
         using var db = factory.Create();
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM Users WHERE Role = @Role AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
-        return await db.ExecuteScalarAsync<bool>(sql, new { Role = role.ToString() });
+        return await db.QuerySingleSpAsync<bool>("public.sp_User_ExistsWithRole", new { Role = role.ToString() });
     }
 
     public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)
