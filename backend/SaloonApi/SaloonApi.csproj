@@ -43,7 +43,7 @@
   <ItemGroup>
     <Content Remove="Logs\*" />
     <None Include="Logs\*" />
-    <Content Update="EmailTemplates\**\*.cshtml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="EmailTemplates\**\*.cshtml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
 </Project>
