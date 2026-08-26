@@ -73,16 +73,16 @@ internal static class AdminAppointmentStatusesEndpoints
 
             using var db = factory.Create();
             var p = new DynamicParameters();
-            p.Add("@Name", req.Name);
-            p.Add("@ChainId", targetChainId);
-            p.Add("@LocationId", targetLocationId);
-            p.Add("@ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex);
-            p.Add("@SortOrder", req.SortOrder);
-            p.Add("@CreatedBy", currentUser.UserId);
-            p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+            p.Add("p_Name", req.Name);
+            p.Add("p_ChainId", targetChainId);
+            p.Add("p_LocationId", targetLocationId);
+            p.Add("p_ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex);
+            p.Add("p_SortOrder", req.SortOrder);
+            p.Add("p_CreatedBy", currentUser.UserId);
+            p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
             await db.ExecuteSpAsync("public.sp_Admin_CreateAppointmentStatus", p);
-            var id = p.Get<int>("@Id");
+            var id = p.Get<int>("p_Id");
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateAppointmentStatusRequest>()

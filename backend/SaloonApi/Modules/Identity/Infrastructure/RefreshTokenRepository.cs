@@ -16,13 +16,13 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@UserId", userId);
-        p.Add("@TokenHash", tokenHash);
-        p.Add("@ExpiresAt", expiresAt);
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_UserId", userId);
+        p.Add("p_TokenHash", tokenHash);
+        p.Add("p_ExpiresAt", expiresAt);
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Auth_CreateRefreshToken", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task<RefreshTokenRecord?> GetAsync(byte[] tokenHash)

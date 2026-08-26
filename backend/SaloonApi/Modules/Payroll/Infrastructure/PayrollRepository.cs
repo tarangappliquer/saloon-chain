@@ -34,13 +34,13 @@ internal sealed class PayrollRepository(SqlConnectionFactory factory)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@PeriodStart", periodStart);
-        p.Add("@PeriodEnd", periodEnd);
-        p.Add("@CreatedBy", createdBy);
-        p.Add("@Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_PeriodStart", periodStart);
+        p.Add("p_PeriodEnd", periodEnd);
+        p.Add("p_CreatedBy", createdBy);
+        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Payroll_CreatePayRun", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task<IReadOnlyList<PayRunDto>> GetPayRunsAsync(int locationId)

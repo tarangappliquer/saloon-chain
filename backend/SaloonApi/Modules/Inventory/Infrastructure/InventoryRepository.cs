@@ -82,13 +82,13 @@ internal sealed class InventoryRepository(SqlConnectionFactory factory)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@SupplierId", supplierId);
-        p.Add("@Lines", lines.AsPurchaseOrderLineList());
-        p.Add("@CreatedBy", createdBy);
-        p.Add("@Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_SupplierId", supplierId);
+        p.Add("p_Lines", lines.AsPurchaseOrderLineList());
+        p.Add("p_CreatedBy", createdBy);
+        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Inventory_CreatePurchaseOrder", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task<IReadOnlyList<PurchaseOrderDto>> GetPurchaseOrdersAsync(int locationId)
@@ -116,13 +116,13 @@ internal sealed class InventoryRepository(SqlConnectionFactory factory)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@BookingId", bookingId);
-        p.Add("@ProductId", productId);
-        p.Add("@Quantity", quantity);
-        p.Add("@CreatedBy", createdBy);
-        p.Add("@Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
+        p.Add("p_BookingId", bookingId);
+        p.Add("p_ProductId", productId);
+        p.Add("p_Quantity", quantity);
+        p.Add("p_CreatedBy", createdBy);
+        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Booking_AddProduct", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task RemoveBookingProductAsync(int id)

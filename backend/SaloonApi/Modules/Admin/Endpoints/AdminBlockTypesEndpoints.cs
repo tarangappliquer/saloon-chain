@@ -75,17 +75,17 @@ internal static class AdminBlockTypesEndpoints
 
             using var db = factory.Create();
             var p = new DynamicParameters();
-            p.Add("@Name", req.Name);
-            p.Add("@ChainId", targetChainId);
-            p.Add("@LocationId", targetLocationId);
-            p.Add("@IsPaid", req.IsPaid);
-            p.Add("@DefaultDurationMinutes", req.DefaultDurationMinutes);
-            p.Add("@ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex);
-            p.Add("@CreatedBy", currentUser.UserId);
-            p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+            p.Add("p_Name", req.Name);
+            p.Add("p_ChainId", targetChainId);
+            p.Add("p_LocationId", targetLocationId);
+            p.Add("p_IsPaid", req.IsPaid);
+            p.Add("p_DefaultDurationMinutes", req.DefaultDurationMinutes);
+            p.Add("p_ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex);
+            p.Add("p_CreatedBy", currentUser.UserId);
+            p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
             await db.ExecuteSpAsync("public.sp_Admin_CreateBlockType", p);
-            var id = p.Get<int>("@Id");
+            var id = p.Get<int>("p_Id");
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateBlockTypeRequest>()

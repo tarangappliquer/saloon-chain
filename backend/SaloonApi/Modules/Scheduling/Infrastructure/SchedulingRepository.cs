@@ -43,17 +43,17 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@TherapistId", therapistId);
-        p.Add("@RoomId", roomId);
-        p.Add("@ShiftType", shiftType);
-        p.Add("@WorkDate", date.ToDateTime(TimeOnly.MinValue));
-        p.Add("@StartTime", startTime);
-        p.Add("@EndTime", endTime);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_TherapistId", therapistId);
+        p.Add("p_RoomId", roomId);
+        p.Add("p_ShiftType", shiftType);
+        p.Add("p_WorkDate", date.ToDateTime(TimeOnly.MinValue));
+        p.Add("p_StartTime", startTime);
+        p.Add("p_EndTime", endTime);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Scheduling_AssignTherapistShift", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task<bool> HasShiftOverlapAsync(int roomId, string shiftType, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, int excludeTherapistId)
@@ -110,14 +110,14 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@RoomId", roomId);
-        p.Add("@TreatmentCategoryId", treatmentCategoryId);
-        p.Add("@ShiftType", shiftType);
-        p.Add("@WorkDate", date.ToDateTime(TimeOnly.MinValue));
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_RoomId", roomId);
+        p.Add("p_TreatmentCategoryId", treatmentCategoryId);
+        p.Add("p_ShiftType", shiftType);
+        p.Add("p_WorkDate", date.ToDateTime(TimeOnly.MinValue));
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Scheduling_OpenRoom", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task CloseRoomAsync(int id)
@@ -197,16 +197,16 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@RoomId", roomId);
-        p.Add("@BlockTypeId", blockTypeId);
-        p.Add("@WorkDate", workDate.ToDateTime(TimeOnly.MinValue));
-        p.Add("@StartTime", startTime);
-        p.Add("@EndTime", endTime);
-        p.Add("@Reason", reason);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_RoomId", roomId);
+        p.Add("p_BlockTypeId", blockTypeId);
+        p.Add("p_WorkDate", workDate.ToDateTime(TimeOnly.MinValue));
+        p.Add("p_StartTime", startTime);
+        p.Add("p_EndTime", endTime);
+        p.Add("p_Reason", reason);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Scheduling_BlockSlot", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UnblockSlotAsync(int id)

@@ -118,27 +118,27 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@Name", name);
-        p.Add("@Email", email);
-        p.Add("@PasswordHash", hash);
-        p.Add("@PasswordSalt", salt);
-        p.Add("@Phone", phone);
-        p.Add("@Role", role.ToString());
-        p.Add("@ChainId", chainId);
-        p.Add("@LocationId", locationId);
-        p.Add("@TherapistId", therapistId);
-        p.Add("@IsEmulator", isEmulator);
-        p.Add("@JoiningDate", joiningDate);
-        p.Add("@IsWalkIn", isWalkIn);
+        p.Add("p_Name", name);
+        p.Add("p_Email", email);
+        p.Add("p_PasswordHash", hash);
+        p.Add("p_PasswordSalt", salt);
+        p.Add("p_Phone", phone);
+        p.Add("p_Role", role.ToString());
+        p.Add("p_ChainId", chainId);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_TherapistId", therapistId);
+        p.Add("p_IsEmulator", isEmulator);
+        p.Add("p_JoiningDate", joiningDate);
+        p.Add("p_IsWalkIn", isWalkIn);
         // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
-        p.Add("@CreatedBy", currentUser.UserId);
+        p.Add("p_CreatedBy", currentUser.UserId);
         // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal
         // change-email-verify flow to prove they own their address.
-        p.Add("@IsEmailVerified", isEmailVerified);
-        p.Add("@UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_IsEmailVerified", isEmailVerified);
+        p.Add("p_UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Auth_CreateUser", p);
-        return p.Get<int>("@UserId");
+        return p.Get<int>("p_UserId");
     }
 
     public async Task<UserRecord?> GetByEmailAsync(string email)

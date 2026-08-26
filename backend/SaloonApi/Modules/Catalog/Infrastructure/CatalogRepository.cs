@@ -124,13 +124,13 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@Name", name);
-        p.Add("@BreakStartTime", breakStartTime);
-        p.Add("@BreakEndTime", breakEndTime);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_Name", name);
+        p.Add("p_BreakStartTime", breakStartTime);
+        p.Add("p_BreakEndTime", breakEndTime);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateChain", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateChainAsync(int id, string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime, bool isActive)
@@ -159,21 +159,21 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@ChainId", chainId);
-        p.Add("@Name", name);
-        p.Add("@Address", address);
-        p.Add("@Latitude", latitude);
-        p.Add("@Longitude", longitude);
-        p.Add("@OpenTime", openTime);
-        p.Add("@CloseTime", closeTime);
-        p.Add("@BreakStartTime", breakStartTime);
-        p.Add("@BreakEndTime", breakEndTime);
-        p.Add("@WorkingDaysMask", workingDaysMask);
-        p.Add("@TimeZoneId", timeZoneId);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_ChainId", chainId);
+        p.Add("p_Name", name);
+        p.Add("p_Address", address);
+        p.Add("p_Latitude", latitude);
+        p.Add("p_Longitude", longitude);
+        p.Add("p_OpenTime", openTime);
+        p.Add("p_CloseTime", closeTime);
+        p.Add("p_BreakStartTime", breakStartTime);
+        p.Add("p_BreakEndTime", breakEndTime);
+        p.Add("p_WorkingDaysMask", workingDaysMask);
+        p.Add("p_TimeZoneId", timeZoneId);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateLocation", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateLocationAsync(
@@ -220,17 +220,17 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@DayBit", dayBit);
-        p.Add("@OpenTime", openTime);
-        p.Add("@CloseTime", closeTime);
-        p.Add("@IsClosed", isClosed);
-        p.Add("@EffectiveFrom", effectiveFrom);
-        p.Add("@EffectiveTo", effectiveTo);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_DayBit", dayBit);
+        p.Add("p_OpenTime", openTime);
+        p.Add("p_CloseTime", closeTime);
+        p.Add("p_IsClosed", isClosed);
+        p.Add("p_EffectiveFrom", effectiveFrom);
+        p.Add("p_EffectiveTo", effectiveTo);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_AddLocationDaySchedule", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateLocationDayScheduleAsync(
@@ -238,13 +238,13 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@Id", id);
-        p.Add("@OpenTime", openTime);
-        p.Add("@CloseTime", closeTime);
-        p.Add("@IsClosed", isClosed);
-        p.Add("@EffectiveFrom", effectiveFrom);
-        p.Add("@EffectiveTo", effectiveTo);
-        p.Add("@UpdatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", id);
+        p.Add("p_OpenTime", openTime);
+        p.Add("p_CloseTime", closeTime);
+        p.Add("p_IsClosed", isClosed);
+        p.Add("p_EffectiveFrom", effectiveFrom);
+        p.Add("p_EffectiveTo", effectiveTo);
+        p.Add("p_UpdatedBy", currentUser.RequireUserId());
         await db.ExecuteSpAsync("public.sp_Catalog_UpdateLocationDaySchedule", p);
     }
 
@@ -264,12 +264,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@Name", name);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_Name", name);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatmentCategory", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateTreatmentCategoryAsync(int id, string name, bool isActive)
@@ -284,18 +284,18 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@CategoryId", categoryId);
-        p.Add("@Name", name);
-        p.Add("@Description", description);
-        p.Add("@DurationSlots", durationSlots);
-        p.Add("@PreTimeMinutes", preTimeMinutes);
-        p.Add("@EffectiveFrom", effectiveFrom);
-        p.Add("@Price", price);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_CategoryId", categoryId);
+        p.Add("p_Name", name);
+        p.Add("p_Description", description);
+        p.Add("p_DurationSlots", durationSlots);
+        p.Add("p_PreTimeMinutes", preTimeMinutes);
+        p.Add("p_EffectiveFrom", effectiveFrom);
+        p.Add("p_Price", price);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatment", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateTreatmentAsync(
@@ -325,14 +325,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@TreatmentId", treatmentId);
-        p.Add("@Price", price);
-        p.Add("@EffectiveFrom", effectiveFrom);
-        p.Add("@EffectiveTo", effectiveTo);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_TreatmentId", treatmentId);
+        p.Add("p_Price", price);
+        p.Add("p_EffectiveFrom", effectiveFrom);
+        p.Add("p_EffectiveTo", effectiveTo);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentPrice", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateTreatmentPriceAsync(int id, decimal price)
@@ -353,15 +353,15 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@TreatmentId", treatmentId);
-        p.Add("@DurationSlots", durationSlots);
-        p.Add("@PreTimeMinutes", preTimeMinutes);
-        p.Add("@EffectiveFrom", effectiveFrom);
-        p.Add("@EffectiveTo", effectiveTo);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_TreatmentId", treatmentId);
+        p.Add("p_DurationSlots", durationSlots);
+        p.Add("p_PreTimeMinutes", preTimeMinutes);
+        p.Add("p_EffectiveFrom", effectiveFrom);
+        p.Add("p_EffectiveTo", effectiveTo);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentDuration", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateTreatmentDurationAsync(int id, short durationSlots, short preTimeMinutes)
@@ -389,11 +389,11 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@Name", name);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_Name", name);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateTherapist", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateTherapistAsync(int id, string name, bool isActive)
@@ -422,12 +422,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@Name", name);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
-        p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_Name", name);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
+        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
         await db.ExecuteSpAsync("public.sp_Catalog_CreateRoom", p);
-        return p.Get<int>("@Id");
+        return p.Get<int>("p_Id");
     }
 
     public async Task UpdateRoomAsync(int id, string name, bool isActive)
@@ -449,12 +449,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationIds", locationIds.AsIntIdList());
-        p.Add("@FromDate", fromDate);
-        p.Add("@ToDate", toDate);
-        p.Add("@Type", type);
-        p.Add("@Reason", reason);
-        p.Add("@CreatedBy", currentUser.RequireUserId());
+        p.Add("p_LocationIds", locationIds.AsIntIdList());
+        p.Add("p_FromDate", fromDate);
+        p.Add("p_ToDate", toDate);
+        p.Add("p_Type", type);
+        p.Add("p_Reason", reason);
+        p.Add("p_CreatedBy", currentUser.RequireUserId());
         await db.ExecuteSpAsync("public.sp_Admin_CreateLocationClosures", p);
     }
 

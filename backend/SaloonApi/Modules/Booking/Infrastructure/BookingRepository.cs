@@ -171,14 +171,14 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@LocationId", locationId);
-        p.Add("@CustomerId", customerId);
-        p.Add("@Treatments", treatmentIds.AsIntIdList());
-        p.Add("@CreatedBy", currentUser.UserId);
-        p.Add("@BookingId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", locationId);
+        p.Add("p_CustomerId", customerId);
+        p.Add("p_Treatments", treatmentIds.AsIntIdList());
+        p.Add("p_CreatedBy", currentUser.UserId);
+        p.Add("p_BookingId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Booking_CreateDraft", p);
-        return p.Get<int>("@BookingId");
+        return p.Get<int>("p_BookingId");
     }
 
     public async Task AddTreatmentAsync(int bookingId, int customerId, int treatmentId)
@@ -204,16 +204,16 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@BookingId", bookingId);
-        p.Add("@CustomerId", customerId);
-        p.Add("@TreatmentId", treatmentId);
-        p.Add("@RoomId", roomId);
-        p.Add("@TherapistId", therapistId);
-        p.Add("@StartTime", start);
-        p.Add("@EndTime", end);
-        p.Add("@UpdatedBy", currentUser.UserId);
-        p.Add("@ExpiresAt", dbType: DbType.DateTime2, direction: ParameterDirection.Output);
-        p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_BookingId", bookingId);
+        p.Add("p_CustomerId", customerId);
+        p.Add("p_TreatmentId", treatmentId);
+        p.Add("p_RoomId", roomId);
+        p.Add("p_TherapistId", therapistId);
+        p.Add("p_StartTime", start);
+        p.Add("p_EndTime", end);
+        p.Add("p_UpdatedBy", currentUser.UserId);
+        p.Add("p_ExpiresAt", dbType: DbType.DateTime2, direction: ParameterDirection.Output);
+        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Booking_ScheduleTreatment", p);
         // SQL Server DATETIME2 (and Dapper) carry no timezone -- SYSUTCDATETIME() is UTC in value
@@ -222,39 +222,39 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         // countdown for anyone not in UTC. StartTime/EndTime are venue-local wall-clock times and
         // are meant to be read at face value, so only ExpiresAt (an absolute instant, used for
         // real elapsed-time math) needs this fix.
-        return (DateTime.SpecifyKind(p.Get<DateTime>("@ExpiresAt"), DateTimeKind.Utc), p.Get<int>("@LocationId"));
+        return (DateTime.SpecifyKind(p.Get<DateTime>("p_ExpiresAt"), DateTimeKind.Utc), p.Get<int>("p_LocationId"));
     }
 
     public async Task<int> RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@BookingId", bookingId);
-        p.Add("@TreatmentId", treatmentId);
-        p.Add("@RoomId", roomId);
-        p.Add("@TherapistId", therapistId);
-        p.Add("@StartTime", start);
-        p.Add("@EndTime", end);
-        p.Add("@UpdatedBy", currentUser.UserId);
-        p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_BookingId", bookingId);
+        p.Add("p_TreatmentId", treatmentId);
+        p.Add("p_RoomId", roomId);
+        p.Add("p_TherapistId", therapistId);
+        p.Add("p_StartTime", start);
+        p.Add("p_EndTime", end);
+        p.Add("p_UpdatedBy", currentUser.UserId);
+        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Booking_RescheduleConfirmed", p);
-        return p.Get<int>("@LocationId");
+        return p.Get<int>("p_LocationId");
     }
 
     public async Task<int> ReassignTherapistAsync(int bookingId, int treatmentId, int newTherapistId, string? reason)
     {
         using var db = factory.Create();
         var p = new DynamicParameters();
-        p.Add("@BookingId", bookingId);
-        p.Add("@TreatmentId", treatmentId);
-        p.Add("@NewTherapistId", newTherapistId);
-        p.Add("@Reason", reason);
-        p.Add("@UpdatedBy", currentUser.UserId);
-        p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
+        p.Add("p_BookingId", bookingId);
+        p.Add("p_TreatmentId", treatmentId);
+        p.Add("p_NewTherapistId", newTherapistId);
+        p.Add("p_Reason", reason);
+        p.Add("p_UpdatedBy", currentUser.UserId);
+        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
         await db.ExecuteSpAsync("public.sp_Booking_ReassignTherapist", p);
-        return p.Get<int>("@LocationId");
+        return p.Get<int>("p_LocationId");
     }
 
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)
