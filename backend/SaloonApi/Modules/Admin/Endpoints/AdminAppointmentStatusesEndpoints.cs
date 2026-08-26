@@ -47,7 +47,7 @@ internal static class AdminAppointmentStatusesEndpoints
             var effectiveLocationId = locationId ?? currentUser.LocationId;
 
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<AppointmentStatusDto>("dbo.sp_Admin_GetAppointmentStatuses", new
+            var items = await db.QuerySpAsync<AppointmentStatusDto>("public.sp_Admin_GetAppointmentStatuses", new
             {
                 ChainId = effectiveChainId,
                 LocationId = effectiveLocationId
@@ -81,7 +81,7 @@ internal static class AdminAppointmentStatusesEndpoints
             p.Add("@CreatedBy", currentUser.UserId);
             p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-            await db.ExecuteSpAsync("dbo.sp_Admin_CreateAppointmentStatus", p);
+            await db.ExecuteSpAsync("public.sp_Admin_CreateAppointmentStatus", p);
             var id = p.Get<int>("@Id");
             return Results.Ok(new IdResponse(id));
         })
@@ -93,7 +93,7 @@ internal static class AdminAppointmentStatusesEndpoints
         group.MapPut("/{id:int}", async (int id, UpdateAppointmentStatusRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("dbo.sp_Admin_UpdateAppointmentStatus", new
+            await db.ExecuteSpAsync("public.sp_Admin_UpdateAppointmentStatus", new
             {
                 Id = id,
                 Name = req.Name,
@@ -112,7 +112,7 @@ internal static class AdminAppointmentStatusesEndpoints
         group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("dbo.sp_Admin_DeleteAppointmentStatus", new
+            await db.ExecuteSpAsync("public.sp_Admin_DeleteAppointmentStatus", new
             {
                 Id = id,
                 UpdatedBy = currentUser.UserId

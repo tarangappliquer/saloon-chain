@@ -17,7 +17,7 @@ internal static class AdminCatalogEndpoints
         // list to power the chain/location pickers on Locations/Treatments/Rooms/Staff/Bookings,
         // even though they can't create/edit chains (see the ChainManagement-gated routes below).
         // Scoping still applies to SuperAdmin/Admin, who only ever see their own chain via ChainId
-        // on dbo.Users. Manager and Receptionist have no ChainId of their own (LocationId-scoped
+        // on Users. Manager and Receptionist have no ChainId of their own (LocationId-scoped
         // instead, see 01_tables.sql), so this passes null for them and they see every chain --
         // moot in practice since there's exactly one chain, but keeps this endpoint correct if a
         // second chain is ever added. RootSuperAdmin also passes null (it has no chain either, and
@@ -664,7 +664,7 @@ internal sealed class LocationRequestValidator : AbstractValidator<LocationReque
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Address).MaximumLength(400);
         // Map pin is compulsory, not optional -- every location needs a mappable point (client-portal
-        // map display, future nearest-location search via dbo.Locations.Coordinates).
+        // map display, future nearest-location search via Locations.Coordinates).
         RuleFor(x => x.Latitude).NotNull().WithMessage("Mark the location on the map.");
         RuleFor(x => x.Latitude).InclusiveBetween(-90m, 90m).When(x => x.Latitude.HasValue);
         RuleFor(x => x.Longitude).NotNull().WithMessage("Mark the location on the map.");

@@ -24,7 +24,7 @@
     <!-- Direct reference forces resolution to the pinned patched version above (2.11.0),
          overriding the vulnerable 2.0.0 that Microsoft.AspNetCore.OpenApi 10.0.10 pulls transitively. -->
     <PackageReference Include="Microsoft.OpenApi" />
-    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="Scalar.AspNetCore.Microsoft" />
     <PackageReference Include="Serilog.AspNetCore" />

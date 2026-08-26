@@ -24,7 +24,7 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         p.Add("@CreatedBy", createdBy);
         p.Add("@TipAmount", tipAmount);
 
-        return await conn.ExecuteScalarAsync<int>("dbo.sp_Payment_Create", p, commandType: CommandType.StoredProcedure);
+        return await conn.ExecuteScalarAsync<int>("public.sp_Payment_Create", p, commandType: CommandType.StoredProcedure);
     }
 
     public async Task UpdateStatusAsync(
@@ -40,7 +40,7 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         p.Add("@UpdatedBy", updatedBy);
         p.Add("@AmountTendered", amountTendered);
 
-        await conn.ExecuteAsync("dbo.sp_Payment_UpdateStatus", p, commandType: CommandType.StoredProcedure);
+        await conn.ExecuteAsync("public.sp_Payment_UpdateStatus", p, commandType: CommandType.StoredProcedure);
     }
 
     public async Task<IReadOnlyList<PaymentDto>> GetByBookingIdAsync(int bookingId)
@@ -49,7 +49,7 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         var p = new DynamicParameters();
         p.Add("@BookingId", bookingId);
 
-        var list = await conn.QueryAsync<PaymentDto>("dbo.sp_Payment_GetByBookingId", p, commandType: CommandType.StoredProcedure);
+        var list = await conn.QueryAsync<PaymentDto>("public.sp_Payment_GetByBookingId", p, commandType: CommandType.StoredProcedure);
         return list.ToList();
     }
 
@@ -59,6 +59,6 @@ internal sealed class PaymentRepository(SqlConnectionFactory factory)
         var p = new DynamicParameters();
         p.Add("@Id", paymentId);
 
-        return await conn.QuerySingleOrDefaultAsync<PaymentDto>("dbo.sp_Payment_GetById", p, commandType: CommandType.StoredProcedure);
+        return await conn.QuerySingleOrDefaultAsync<PaymentDto>("public.sp_Payment_GetById", p, commandType: CommandType.StoredProcedure);
     }
 }

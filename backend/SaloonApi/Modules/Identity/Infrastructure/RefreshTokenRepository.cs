@@ -21,14 +21,14 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
         p.Add("@ExpiresAt", expiresAt);
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Auth_CreateRefreshToken", p);
+        await db.ExecuteSpAsync("public.sp_Auth_CreateRefreshToken", p);
         return p.Get<int>("@Id");
     }
 
     public async Task<RefreshTokenRecord?> GetAsync(byte[] tokenHash)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<RefreshTokenRow>("dbo.sp_Auth_GetRefreshToken", new { TokenHash = tokenHash });
+        var row = await db.QuerySingleSpAsync<RefreshTokenRow>("public.sp_Auth_GetRefreshToken", new { TokenHash = tokenHash });
         return row is null ? null : new RefreshTokenRecord(
             row.Id, row.UserId, row.ExpiresAt, row.RevokedDate,
             row.Name, row.Email, Enum.Parse<UserRole>(row.Role), row.ChainId, row.LocationId, row.TherapistId, row.IsEmulator,
@@ -38,7 +38,7 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
     public async Task RevokeAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Auth_RevokeRefreshToken", new { Id = id });
+        await db.ExecuteSpAsync("public.sp_Auth_RevokeRefreshToken", new { Id = id });
     }
 
     // Called after a successful password reset -- a stolen/stale session shouldn't survive the
@@ -46,7 +46,7 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
     public async Task RevokeAllForUserAsync(int userId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Auth_RevokeAllRefreshTokens", new { UserId = userId });
+        await db.ExecuteSpAsync("public.sp_Auth_RevokeAllRefreshTokens", new { UserId = userId });
     }
 
     // Dapper needs Role as a plain string to map from the sproc's VARCHAR column -- RefreshTokenRecord

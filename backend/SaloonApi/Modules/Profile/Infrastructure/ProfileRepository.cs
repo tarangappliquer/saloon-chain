@@ -14,7 +14,7 @@ internal sealed class ProfileRepository(SqlConnectionFactory factory)
     public async Task<ProfileDto?> GetMyProfileAsync(int userId, UserRole role)
     {
         using var db = factory.Create();
-        var proc = role == UserRole.Customer ? "dbo.sp_Profile_GetCustomer" : "dbo.sp_Profile_GetStaff";
+        var proc = role == UserRole.Customer ? "public.sp_Profile_GetCustomer" : "public.sp_Profile_GetStaff";
         var row = await db.QuerySingleSpAsync<ProfileRow>(proc, new { UserId = userId });
         return row is null
             ? null
@@ -24,13 +24,13 @@ internal sealed class ProfileRepository(SqlConnectionFactory factory)
     public async Task UpdateSelfAsync(int userId, string name, string? phone)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Profile_UpdateSelf", new { UserId = userId, Name = name, Phone = phone });
+        await db.ExecuteSpAsync("public.sp_Profile_UpdateSelf", new { UserId = userId, Name = name, Phone = phone });
     }
 
     public async Task SetPhotoPathAsync(int userId, UserRole role, string photoPath)
     {
         using var db = factory.Create();
-        var proc = role == UserRole.Customer ? "dbo.sp_Profile_SetCustomerPhoto" : "dbo.sp_Profile_SetStaffPhoto";
+        var proc = role == UserRole.Customer ? "public.sp_Profile_SetCustomerPhoto" : "public.sp_Profile_SetStaffPhoto";
         await db.ExecuteSpAsync(proc, new { UserId = userId, PhotoPath = photoPath });
     }
 }

@@ -25,14 +25,14 @@ flowchart TD
         AdminContainer["saloonchains-adminportal (Port 5173)"]
         ClientContainer["saloonchains-clientportal (Port 5174)"]
         RedisContainer["saloonchains-redis (Port 6379)"]
-        SQLContainer["saloonchains-sqlserver (Port 1433)"]
+        SQLContainer["saloonchains-postgres (Port 5432)"]
         PhysicalUploads["./uploads (Host Physical Folder)"]
         PhysicalRedis["./docker-data/redis (Host Physical Folder)"]
-        PhysicalSQL["./docker-data/mssql (Host Physical Folder)"]
+        PhysicalSQL["./docker-data/postgres (Host Physical Folder)"]
     end
 
-    subgraph DatabaseHost ["Host PC or Remote SQL Server"]
-        SQLServer["SaloonChainDb (Port 1433)"]
+    subgraph DatabaseHost ["Host PC or Remote PostgreSQL Server"]
+        SQLServer["SaloonChainDb (Port 5432)"]
     end
 
     LocalCode -->|1. Build & Push| PushScript
@@ -98,7 +98,7 @@ In your cloud provider console (AWS EC2, DigitalOcean, Hetzner, GCP, Azure VM, L
 
 | Port | Service | Description | Exposure |
 | :--- | :--- | :--- | :--- |
-| **1433** | `saloonchains-sqlserver` | Microsoft SQL Server | Public / External DB Clients |
+| **5432** | `saloonchains-postgres` | PostgreSQL 18+ | Public / External DB Clients |
 | **5127** | `saloonchains-backend` | .NET 10 Web API | Public API Access |
 | **5173** | `saloonchains-adminportal` | Admin Portal Frontend (Nginx) | Public Web Access |
 | **5174** | `saloonchains-clientportal` | Client Portal Frontend (Nginx) | Public Web Access |

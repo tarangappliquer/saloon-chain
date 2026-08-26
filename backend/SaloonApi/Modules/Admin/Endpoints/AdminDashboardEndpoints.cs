@@ -36,7 +36,7 @@ internal static class AdminDashboardEndpoints
             int? chainId = currentUser.ChainId;
             int? locationId = currentUser.LocationId;
 
-            using var multi = await db.QueryMultipleSpAsync("dbo.sp_Admin_GetDashboardStats", new
+            using var multi = await db.QueryMultipleSpAsync("public.sp_Admin_GetDashboardStats", new
             {
                 Role = roleName,
                 ChainId = chainId,

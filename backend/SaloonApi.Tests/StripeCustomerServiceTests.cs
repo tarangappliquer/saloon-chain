@@ -16,7 +16,7 @@ public class StripeCustomerServiceTests
     {
         var options = TestOptionsMonitor.Create(new StripeOptions { SecretKey = "" });
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { { "ConnectionStrings:SaloonDb", "Server=localhost;Database=TestDb;" } })
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "ConnectionStrings:SaloonDb", "Host=localhost;Database=TestDb;Username=postgres;Password=postgres;" } })
             .Build();
         var sqlFactory = new SqlConnectionFactory(config);
         var currentUser = new TestCurrentUser();

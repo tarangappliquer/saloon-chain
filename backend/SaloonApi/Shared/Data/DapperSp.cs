@@ -42,26 +42,11 @@ internal static class DapperSp
     public static Task<int> ExecuteSpAsync(this IDbConnection db, string sp, object? param = null) =>
         db.ExecuteAsync(sp, param, commandType: CommandType.StoredProcedure);
 
-    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "The DataTable's lifetime is transferred to the returned ICustomQueryParameter -- " +
-                         "Dapper/SqlClient reads it later when the command executes, so disposing here would break the TVP.")]
-    public static SqlMapper.ICustomQueryParameter AsIntIdList(this IEnumerable<int> ids)
-    {
-        var table = new DataTable();
-        table.Columns.Add("Id", typeof(int));
-        foreach (var id in ids) table.Rows.Add(id);
-        return table.AsTableValuedParameter("dbo.IntIdList");
-    }
+    public static int[] AsIntIdList(this IEnumerable<int> ids) => ids.ToArray();
 
-    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "Same as AsIntIdList above -- the DataTable's lifetime is transferred to the returned ICustomQueryParameter.")]
-    public static SqlMapper.ICustomQueryParameter AsPurchaseOrderLineList(this IEnumerable<(int ProductId, int Quantity, decimal UnitCost)> lines)
+    public static string AsPurchaseOrderLineList(this IEnumerable<(int ProductId, int Quantity, decimal UnitCost)> lines)
     {
-        var table = new DataTable();
-        table.Columns.Add("ProductId", typeof(int));
-        table.Columns.Add("Quantity", typeof(int));
-        table.Columns.Add("UnitCost", typeof(decimal));
-        foreach (var (productId, quantity, unitCost) in lines) table.Rows.Add(productId, quantity, unitCost);
-        return table.AsTableValuedParameter("dbo.PurchaseOrderLineList");
+        var array = lines.Select(l => new { ProductId = l.ProductId, Quantity = l.Quantity, UnitCost = l.UnitCost }).ToArray();
+        return System.Text.Json.JsonSerializer.Serialize(array);
     }
 }

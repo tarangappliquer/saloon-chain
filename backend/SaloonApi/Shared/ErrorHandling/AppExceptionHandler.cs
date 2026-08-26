@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Shared.ErrorHandling;
 
-// The one place unhandled exceptions land -- endpoints don't catch SqlException themselves.
+// The one place unhandled exceptions land -- endpoints don't catch PostgresException themselves.
 // Registered via builder.Services.AddExceptionHandler<AppExceptionHandler>() + app.UseExceptionHandler()
 // in Program.cs. Runs through IProblemDetailsService so responses stay RFC7807-shaped and pick up
 // whatever AddProblemDetails() customization (traceId, etc.) is configured globally.
@@ -16,9 +16,9 @@ internal sealed class AppExceptionHandler(IProblemDetailsService problemDetailsS
     {
         var (status, title) = exception switch
         {
-            // sp_*'s THROW 50000-50999: expected application-level rejections (slot taken, hold
+            // sp_*'s RAISE EXCEPTION: expected application-level rejections (slot taken, hold
             // expired, email already registered, ...) -- safe to surface the proc's own message.
-            SqlException sql when sql.IsApplicationError() => (StatusCodes.Status409Conflict, sql.Message),
+            PostgresException sql when sql.IsApplicationError() => (StatusCodes.Status409Conflict, sql.MessageText),
 
             // Anything else is a real bug: log it, but never leak internals to the client.
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")

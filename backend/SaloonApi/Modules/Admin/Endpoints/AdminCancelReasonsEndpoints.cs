@@ -13,7 +13,7 @@ internal static class AdminCancelReasonsEndpoints
         app.MapGet("/api/admin/cancel-reasons", async (SqlConnectionFactory factory) =>
         {
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<CancelReasonDto>("dbo.sp_Admin_GetCancelReasons");
+            var items = await db.QuerySpAsync<CancelReasonDto>("public.sp_Admin_GetCancelReasons");
             return Results.Ok(items);
         })
         .WithTags("AdminCancelReasons")

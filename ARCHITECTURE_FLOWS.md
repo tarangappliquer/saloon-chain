@@ -6,7 +6,7 @@ This document provides a comprehensive reference of system architecture, data mo
 
 ## 1. System Architecture Overview
 
-SaloonChains is a multi-tenant salon management and customer booking web platform built with a .NET 10 minimal API backend, SQL Server database with Dapper stored procedures, and a Vite/TypeScript monorepo frontend with pnpm.
+SaloonChains is a multi-tenant salon management and customer booking web platform built with a .NET 10 minimal API backend, PostgreSQL 18+ database with Dapper stored procedures/functions, and a Vite/TypeScript monorepo frontend with pnpm.
 
 ```
                   ┌────────────────────────────────────────────────────────┐
@@ -28,7 +28,7 @@ SaloonChains is a multi-tenant salon management and customer booking web platfor
                   └──────────────────────────┼─────────────────────────────┘
                                              ▼
                   ┌────────────────────────────────────────────────────────┐
-                  │          SQL Server (Dapper Stored Procs)              │
+                  │          PostgreSQL 18+ (Dapper Stored Procs)          │
                   │       `dbo.sp_Admin_GetDashboardStats`, etc.           │
                   └────────────────────────────────────────────────────────┘
 ```

@@ -57,7 +57,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<IReadOnlyList<StaffAttendanceDto>> GetStaffAttendanceAsync(int locationId, DateOnly workDate)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<StaffAttendanceRow>("dbo.sp_Staff_GetAttendance", new
+        var rows = await db.QuerySpAsync<StaffAttendanceRow>("public.sp_Staff_GetAttendance", new
         {
             LocationId = locationId,
             WorkDate = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
@@ -72,7 +72,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task LogStaffAttendanceAsync(int locationId, int userId, DateOnly workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedByUserId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Staff_LogAttendance", new
+        await db.ExecuteSpAsync("public.sp_Staff_LogAttendance", new
         {
             LocationId = locationId,
             UserId = userId,
@@ -86,19 +86,19 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<IReadOnlyList<LocationManagerDto>> GetLocationManagersAsync(int locationId)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<LocationManagerDto>("dbo.sp_Staff_GetLocationManagers", new { LocationId = locationId })).ToList();
+        return (await db.QuerySpAsync<LocationManagerDto>("public.sp_Staff_GetLocationManagers", new { LocationId = locationId })).ToList();
     }
 
     public async Task<IReadOnlyList<UnattendedPreBookingAlertDto>> GetUnattendedPreBookingAlertsAsync()
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<UnattendedPreBookingAlertDto>("dbo.sp_Staff_GetUnattendedPreBookingAlerts")).ToList();
+        return (await db.QuerySpAsync<UnattendedPreBookingAlertDto>("public.sp_Staff_GetUnattendedPreBookingAlerts")).ToList();
     }
 
     public async Task<ProxyAssignmentResultDto?> AssignProxyTherapistAsync(int bookingTreatmentId, int proxyTherapistId, int updatedByUserId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<ProxyAssignmentResultDto>("dbo.sp_Booking_AssignProxyTherapist", new
+        return await db.QuerySingleSpAsync<ProxyAssignmentResultDto>("public.sp_Booking_AssignProxyTherapist", new
         {
             BookingTreatmentId = bookingTreatmentId,
             ProxyTherapistId = proxyTherapistId,
@@ -137,14 +137,14 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         p.Add("@IsEmailVerified", isEmailVerified);
         p.Add("@UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Auth_CreateUser", p);
+        await db.ExecuteSpAsync("public.sp_Auth_CreateUser", p);
         return p.Get<int>("@UserId");
     }
 
     public async Task<UserRecord?> GetByEmailAsync(string email)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("dbo.sp_Auth_GetUserByEmail", new { Email = email });
+        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Auth_GetUserByEmail", new { Email = email });
         return row is null ? null : ToRecord(row);
     }
 
@@ -154,7 +154,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<UserRecord?> GetByIdAsync(int id)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("dbo.sp_Auth_GetUserById", new { Id = id });
+        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Auth_GetUserById", new { Id = id });
         return row is null ? null : ToRecord(row);
     }
 
@@ -164,14 +164,14 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<UserRecord?> GetStaffByIdAsync(int id)
     {
         using var db = factory.Create();
-        var row = await db.QuerySingleSpAsync<UserRow>("dbo.sp_Admin_GetUserById", new { Id = id });
+        var row = await db.QuerySingleSpAsync<UserRow>("public.sp_Admin_GetUserById", new { Id = id });
         return row is null ? null : ToRecord(row);
     }
 
     public async Task<IReadOnlyList<CustomerSummaryDto>> SearchCustomersAsync(string search, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerSummaryDto>("dbo.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId, LocationId = locationId });
+        var rows = await db.QuerySpAsync<CustomerSummaryDto>("public.sp_Admin_SearchCustomers", new { Search = search, ChainId = chainId, LocationId = locationId });
         return rows.ToList();
     }
 
@@ -179,7 +179,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         string? search, int? chainId = null, int? locationId = null, int pageSize = 50, string? cursorName = null, int? cursorId = null)
     {
         using var db = factory.Create();
-        var rows = (await db.QuerySpAsync<AdminCustomerDto>("dbo.sp_Admin_GetCustomers", new
+        var rows = (await db.QuerySpAsync<AdminCustomerDto>("public.sp_Admin_GetCustomers", new
         {
             Search = search,
             ChainId = chainId,
@@ -196,13 +196,13 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<CustomerProfileDto?> GetCustomerProfileAsync(int customerId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<CustomerProfileDto>("dbo.sp_Admin_GetCustomerProfile", new { CustomerId = customerId });
+        return await db.QuerySingleSpAsync<CustomerProfileDto>("public.sp_Admin_GetCustomerProfile", new { CustomerId = customerId });
     }
 
     public async Task<IReadOnlyList<CustomerNoteDto>> GetCustomerNotesAsync(int customerId, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerNoteDto>("dbo.sp_CustomerNote_GetForCustomer",
+        var rows = await db.QuerySpAsync<CustomerNoteDto>("public.sp_CustomerNote_GetForCustomer",
             new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
         return rows.ToList();
     }
@@ -210,20 +210,20 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<int> AddCustomerNoteAsync(int customerId, int? chainId, int? locationId, string note)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("dbo.sp_CustomerNote_Create",
+        return await db.QuerySingleSpAsync<int>("public.sp_CustomerNote_Create",
             new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Note = note, CreatedBy = currentUser.RequireUserId() });
     }
 
     public async Task DeleteCustomerNoteAsync(int noteId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_CustomerNote_Delete", new { Id = noteId, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_CustomerNote_Delete", new { Id = noteId, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IReadOnlyList<CustomerTagDto>> GetCustomerTagsAsync(int customerId, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<CustomerTagDto>("dbo.sp_CustomerTag_GetForCustomer",
+        var rows = await db.QuerySpAsync<CustomerTagDto>("public.sp_CustomerTag_GetForCustomer",
             new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
         return rows.ToList();
     }
@@ -231,14 +231,14 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<int> AddCustomerTagAsync(int customerId, int? chainId, int? locationId, string tag)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("dbo.sp_CustomerTag_Add",
+        return await db.QuerySingleSpAsync<int>("public.sp_CustomerTag_Add",
             new { CustomerId = customerId, ChainId = chainId, LocationId = locationId, Tag = tag, CreatedBy = currentUser.RequireUserId() });
     }
 
     public async Task DeleteCustomerTagAsync(int tagId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_CustomerTag_Delete", new { Id = tagId, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_CustomerTag_Delete", new { Id = tagId, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<bool> HasCustomerBookingInChainAsync(int customerId, int chainId)
@@ -246,8 +246,8 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         using var db = factory.Create();
         const string sql = """
             SELECT CASE WHEN EXISTS (
-                SELECT 1 FROM dbo.Bookings b
-                JOIN dbo.Locations l ON l.Id = b.LocationId
+                SELECT 1 FROM Bookings b
+                JOIN Locations l ON l.Id = b.LocationId
                 WHERE b.CustomerId = @CustomerId AND l.ChainId = @ChainId AND b.IsDelete = 0
             ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END
             """;
@@ -257,7 +257,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<bool> IsLocationInChainAsync(int locationId, int chainId)
     {
         using var db = factory.Create();
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Locations WHERE Id = @LocationId AND ChainId = @ChainId AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
+        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM Locations WHERE Id = @LocationId AND ChainId = @ChainId AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
         return await db.ExecuteScalarAsync<bool>(sql, new { LocationId = locationId, ChainId = chainId });
     }
 
@@ -267,14 +267,14 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task<bool> ExistsWithRoleAsync(UserRole role)
     {
         using var db = factory.Create();
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Users WHERE Role = @Role AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
+        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM Users WHERE Role = @Role AND IsDelete = 0) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END";
         return await db.ExecuteScalarAsync<bool>(sql, new { Role = role.ToString() });
     }
 
     public async Task UpdateCustomerAsync(int id, string name, string? phone, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Admin_UpdateCustomer", new
+        await db.ExecuteSpAsync("public.sp_Admin_UpdateCustomer", new
         {
             Id = id,
             Name = name,
@@ -287,7 +287,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task DeleteCustomerAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Admin_DeleteCustomer", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Admin_DeleteCustomer", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     // Self-service (own password) and reset-password (via a redeemed token, no logged-in caller)
@@ -296,13 +296,13 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task UpdatePasswordAsync(int userId, byte[] hash, byte[] salt)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Auth_UpdatePassword", new { UserId = userId, PasswordHash = hash, PasswordSalt = salt });
+        await db.ExecuteSpAsync("public.sp_Auth_UpdatePassword", new { UserId = userId, PasswordHash = hash, PasswordSalt = salt });
     }
 
     public async Task<IReadOnlyList<StaffUserDto>> GetStaffAsync(UserRole? role, int? chainId, int? locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<StaffUserRow>("dbo.sp_Admin_GetUsers", new
+        var rows = await db.QuerySpAsync<StaffUserRow>("public.sp_Admin_GetUsers", new
         {
             Role = role?.ToString(),
             ChainId = chainId,
@@ -318,7 +318,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         bool isEmulator, DateOnly? joiningDate, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Admin_UpdateUser", new
+        await db.ExecuteSpAsync("public.sp_Admin_UpdateUser", new
         {
             Id = id,
             Name = name,
@@ -337,7 +337,7 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
     public async Task UpdateStripeCustomerIdAsync(int userId, string stripeCustomerId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_User_UpdateStripeCustomerId", new { UserId = userId, StripeCustomerId = stripeCustomerId });
+        await db.ExecuteSpAsync("public.sp_User_UpdateStripeCustomerId", new { UserId = userId, StripeCustomerId = stripeCustomerId });
     }
 
     private static UserRecord ToRecord(UserRow row) => new(

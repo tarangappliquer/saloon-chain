@@ -13,30 +13,30 @@ internal sealed class ReportsRepository(SqlConnectionFactory factory)
     public async Task<IReadOnlyList<SalesByServiceDto>> GetSalesByServiceAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<SalesByServiceDto>("dbo.sp_Report_SalesByService", new { LocationId = locationId, From = from, To = to })).ToList();
+        return (await db.QuerySpAsync<SalesByServiceDto>("public.sp_Report_SalesByService", new { LocationId = locationId, From = from, To = to })).ToList();
     }
 
     public async Task<IReadOnlyList<SalesByStaffDto>> GetSalesByStaffAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<SalesByStaffDto>("dbo.sp_Report_SalesByStaff", new { LocationId = locationId, From = from, To = to })).ToList();
+        return (await db.QuerySpAsync<SalesByStaffDto>("public.sp_Report_SalesByStaff", new { LocationId = locationId, From = from, To = to })).ToList();
     }
 
     public async Task<IReadOnlyList<SalesByLocationDto>> GetSalesByLocationAsync(int chainId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<SalesByLocationDto>("dbo.sp_Report_SalesByLocation", new { ChainId = chainId, From = from, To = to })).ToList();
+        return (await db.QuerySpAsync<SalesByLocationDto>("public.sp_Report_SalesByLocation", new { ChainId = chainId, From = from, To = to })).ToList();
     }
 
     public async Task<RetentionDto?> GetRetentionAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<RetentionDto>("dbo.sp_Report_Retention", new { LocationId = locationId, From = from, To = to });
+        return await db.QuerySingleSpAsync<RetentionDto>("public.sp_Report_Retention", new { LocationId = locationId, From = from, To = to });
     }
 
     public async Task<NoShowRateDto?> GetNoShowRateAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<NoShowRateDto>("dbo.sp_Report_NoShowRate", new { LocationId = locationId, From = from, To = to });
+        return await db.QuerySingleSpAsync<NoShowRateDto>("public.sp_Report_NoShowRate", new { LocationId = locationId, From = from, To = to });
     }
 }

@@ -49,7 +49,7 @@ internal static class AdminBlockTypesEndpoints
             var effectiveLocationId = locationId ?? currentUser.LocationId;
 
             using var db = factory.Create();
-            var items = await db.QuerySpAsync<BlockTypeDto>("dbo.sp_Admin_GetBlockTypes", new
+            var items = await db.QuerySpAsync<BlockTypeDto>("public.sp_Admin_GetBlockTypes", new
             {
                 ChainId = effectiveChainId,
                 LocationId = effectiveLocationId
@@ -84,7 +84,7 @@ internal static class AdminBlockTypesEndpoints
             p.Add("@CreatedBy", currentUser.UserId);
             p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-            await db.ExecuteSpAsync("dbo.sp_Admin_CreateBlockType", p);
+            await db.ExecuteSpAsync("public.sp_Admin_CreateBlockType", p);
             var id = p.Get<int>("@Id");
             return Results.Ok(new IdResponse(id));
         })
@@ -96,7 +96,7 @@ internal static class AdminBlockTypesEndpoints
         group.MapPut("/{id:int}", async (int id, UpdateBlockTypeRequest req, SqlConnectionFactory factory, ICurrentUser currentUser) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("dbo.sp_Admin_UpdateBlockType", new
+            await db.ExecuteSpAsync("public.sp_Admin_UpdateBlockType", new
             {
                 Id = id,
                 Name = req.Name,
@@ -116,7 +116,7 @@ internal static class AdminBlockTypesEndpoints
         group.MapDelete("/{id:int}", async (int id, SqlConnectionFactory factory, ICurrentUser currentUser) =>
         {
             using var db = factory.Create();
-            await db.ExecuteSpAsync("dbo.sp_Admin_DeleteBlockType", new
+            await db.ExecuteSpAsync("public.sp_Admin_DeleteBlockType", new
             {
                 Id = id,
                 UpdatedBy = currentUser.UserId

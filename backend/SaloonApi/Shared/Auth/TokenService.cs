@@ -53,7 +53,7 @@ internal sealed class TokenService(IOptionsMonitor<JwtOptions> options)
     public static string GenerateRefreshToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-    // Only the hash is persisted (see dbo.RefreshTokens) -- so a DB read alone can never be
+    // Only the hash is persisted (see RefreshTokens) -- so a DB read alone can never be
     // replayed as a live credential.
     public static byte[] HashRefreshToken(string token) =>
         SHA256.HashData(Encoding.UTF8.GetBytes(token));

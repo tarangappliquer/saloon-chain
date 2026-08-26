@@ -113,7 +113,7 @@ internal static class AdminStaffEndpoints
             var isEmulator = req.IsEmulator && EmulatorEligibleRoles.Contains(role)
                 && currentUser.IsInRole(UserRole.RootSuperAdmin, UserRole.SuperAdmin, UserRole.Admin);
 
-            // A Therapist login needs a dbo.TherapistProfile row to be assignable to shifts (ShiftAssignments.TherapistId
+            // A Therapist login needs a TherapistProfile row to be assignable to shifts (ShiftAssignments.TherapistId
             // is a hard FK to Therapists, not Users) -- auto-create one from the staff member's name rather than
             // forcing the admin to create it separately on the Therapists page first.
             var therapistId = req.TherapistId;
@@ -167,7 +167,7 @@ internal static class AdminStaffEndpoints
             else if (currentUser.IsInRole(UserRole.SuperAdmin))
             {
                 // Manager/Receptionist/Therapist/Other targets carry LocationId, not ChainId (see
-                // dbo.Users) -- their chain isn't cheaply checkable here, so (same trust level already
+                // Users) -- their chain isn't cheaply checkable here, so (same trust level already
                 // accepted for Admin's location/room/treatment endpoints elsewhere in this file) only
                 // ChainId-bearing targets get an explicit chain-ownership check.
                 if (existing.ChainId is not null && existing.ChainId != currentUser.ChainId)
@@ -201,7 +201,7 @@ internal static class AdminStaffEndpoints
 
             await repo.UpdateStaffAsync(id, req.Name, req.Phone, req.Role, req.ChainId, req.LocationId, req.TherapistId, isEmulator, req.JoiningDate, req.IsActive);
 
-            // Keep the linked dbo.TherapistProfile row's Name/IsActive/scope in step with the staff
+            // Keep the linked TherapistProfile row's Name/IsActive/scope in step with the staff
             // login that owns it -- otherwise editing/deactivating/moving a Therapist here silently
             // leaves a stale profile behind (wrong name, still-active, or still scoped to their old
             // chain/location) that keeps showing up in scheduling.
@@ -328,7 +328,7 @@ internal sealed class UpdateStaffRequestValidator : AbstractValidator<UpdateStaf
         RuleFor(x => x.Phone).MaximumLength(30);
         // RootSuperAdmin excluded same as CreateStaffRequestValidator -- no "reassign to RootSuperAdmin"
         // workflow. A malformed/unknown role would otherwise reach UpdateStaffAsync and fail as a raw,
-        // unhandled SQL error against dbo.Users' Role CHECK constraint instead of a clean 400.
+        // unhandled SQL error against Users' Role CHECK constraint instead of a clean 400.
         RuleFor(x => x.Role)
             .Must(r => r is null || (Enum.TryParse<UserRole>(r, out var role) && role is UserRole.SuperAdmin or UserRole.Admin or UserRole.Manager or UserRole.Receptionist or UserRole.Therapist or UserRole.Other or UserRole.Customer))
             .WithMessage("Role must be one of SuperAdmin, Admin, Manager, Receptionist, Therapist, Other, Customer.");

@@ -64,26 +64,26 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<IEnumerable<ChainDto>> GetChainsAsync()
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<ChainDto>("dbo.sp_Catalog_GetChains");
+        return await db.QuerySpAsync<ChainDto>("public.sp_Catalog_GetChains");
     }
 
     public async Task<IEnumerable<LocationDto>> GetLocationsAsync(int chainId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<LocationDto>("dbo.sp_Catalog_GetLocations", new { ChainId = chainId });
+        return await db.QuerySpAsync<LocationDto>("public.sp_Catalog_GetLocations", new { ChainId = chainId });
     }
 
     public async Task<IEnumerable<TreatmentDto>> GetTreatmentsAsync(int locationId, int? categoryId = null)
     {
         using var db = factory.Create();
         return await db.QuerySpAsync<TreatmentDto>(
-            "dbo.sp_Catalog_GetTreatments", new { LocationId = locationId, CategoryId = categoryId });
+            "public.sp_Catalog_GetTreatments", new { LocationId = locationId, CategoryId = categoryId });
     }
 
     public async Task<IReadOnlyList<DateOnly>> GetHolidayDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<LocationHolidayRow>("dbo.sp_Catalog_GetLocationHolidays", new
+        var rows = await db.QuerySpAsync<LocationHolidayRow>("public.sp_Catalog_GetLocationHolidays", new
         {
             LocationId = locationId,
             FromDate = from.ToDateTime(TimeOnly.MinValue),
@@ -95,27 +95,27 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId = null)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<AdminChainDto>("dbo.sp_Admin_GetChains", new { ChainId = chainId });
+        return await db.QuerySpAsync<AdminChainDto>("public.sp_Admin_GetChains", new { ChainId = chainId });
     }
 
     public async Task<IEnumerable<AdminLocationDto>> GetLocationsForAdminAsync(int chainId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<AdminLocationDto>("dbo.sp_Admin_GetLocations", new { ChainId = chainId });
+        return await db.QuerySpAsync<AdminLocationDto>("public.sp_Admin_GetLocations", new { ChainId = chainId });
     }
 
     public async Task<AdminLocationDto?> GetLocationByIdForAdminAsync(int locationId)
     {
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<AdminLocationDto>(
-            "dbo.sp_Admin_GetLocations", new { LocationId = locationId });
+            "public.sp_Admin_GetLocations", new { LocationId = locationId });
         return rows.FirstOrDefault();
     }
 
     public async Task<IEnumerable<AdminTreatmentDto>> GetTreatmentsForAdminAsync(int locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<AdminTreatmentRow>("dbo.sp_Admin_GetTreatments", new { LocationId = locationId });
+        var rows = await db.QuerySpAsync<AdminTreatmentRow>("public.sp_Admin_GetTreatments", new { LocationId = locationId });
         return rows.Select(r => new AdminTreatmentDto(
             r.Id, r.CategoryId, r.CategoryName, r.Name, r.Description, r.Price, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom), r.IsActive));
     }
@@ -129,14 +129,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@BreakEndTime", breakEndTime);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateChain", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateChain", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateChainAsync(int id, string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateChain", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateChain", new
         {
             Id = id,
             Name = name,
@@ -150,7 +150,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task DeleteChainAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteChain", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Catalog_DeleteChain", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<int> CreateLocationAsync(
@@ -172,7 +172,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@TimeZoneId", timeZoneId);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateLocation", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateLocation", p);
         return p.Get<int>("@Id");
     }
 
@@ -182,7 +182,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         string timeZoneId, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateLocation", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateLocation", new
         {
             Id = id,
             Name = name,
@@ -203,13 +203,13 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task DeleteLocationAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteLocation", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Catalog_DeleteLocation", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<LocationDayScheduleDto>> GetLocationDayScheduleAsync(int locationId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<LocationDayScheduleRow>("dbo.sp_Catalog_GetLocationDaySchedule", new { LocationId = locationId });
+        var rows = await db.QuerySpAsync<LocationDayScheduleRow>("public.sp_Catalog_GetLocationDaySchedule", new { LocationId = locationId });
         return rows.Select(r => new LocationDayScheduleDto(
             r.Id, r.DayBit, r.OpenTime, r.CloseTime, r.IsClosed, DateOnly.FromDateTime(r.EffectiveFrom),
             r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
@@ -229,7 +229,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@EffectiveTo", effectiveTo);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_AddLocationDaySchedule", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_AddLocationDaySchedule", p);
         return p.Get<int>("@Id");
     }
 
@@ -245,19 +245,19 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@EffectiveFrom", effectiveFrom);
         p.Add("@EffectiveTo", effectiveTo);
         p.Add("@UpdatedBy", currentUser.RequireUserId());
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateLocationDaySchedule", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateLocationDaySchedule", p);
     }
 
     public async Task DeleteLocationDayScheduleAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteLocationDaySchedule", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Catalog_DeleteLocationDaySchedule", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<TreatmentCategoryDto>> GetTreatmentCategoriesAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<TreatmentCategoryDto>("dbo.sp_Catalog_GetTreatmentCategories", new { LocationId = locationId });
+        return await db.QuerySpAsync<TreatmentCategoryDto>("public.sp_Catalog_GetTreatmentCategories", new { LocationId = locationId });
     }
 
     public async Task<int> CreateTreatmentCategoryAsync(int locationId, string name)
@@ -268,14 +268,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Name", name);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateTreatmentCategory", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatmentCategory", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateTreatmentCategoryAsync(int id, string name, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatmentCategory", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateTreatmentCategory", new
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
     }
 
@@ -294,7 +294,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Price", price);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateTreatment", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatment", p);
         return p.Get<int>("@Id");
     }
 
@@ -302,7 +302,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         int id, int categoryId, string name, string? description, DateOnly effectiveFrom, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatment", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateTreatment", new
         {
             Id = id,
             CategoryId = categoryId,
@@ -317,7 +317,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<IEnumerable<TreatmentPriceDto>> GetTreatmentPricesAsync(int treatmentId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<TreatmentPriceRow>("dbo.sp_Catalog_GetTreatmentPrices", new { TreatmentId = treatmentId });
+        var rows = await db.QuerySpAsync<TreatmentPriceRow>("public.sp_Catalog_GetTreatmentPrices", new { TreatmentId = treatmentId });
         return rows.Select(r => new TreatmentPriceDto(r.Id, r.Price, DateOnly.FromDateTime(r.EffectiveFrom), r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
     }
 
@@ -331,21 +331,21 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@EffectiveTo", effectiveTo);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_AddTreatmentPrice", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentPrice", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateTreatmentPriceAsync(int id, decimal price)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatmentPrice", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateTreatmentPrice", new
         { Id = id, Price = price, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<TreatmentDurationDto>> GetTreatmentDurationsAsync(int treatmentId)
     {
         using var db = factory.Create();
-        var rows = await db.QuerySpAsync<TreatmentDurationRow>("dbo.sp_Catalog_GetTreatmentDurations", new { TreatmentId = treatmentId });
+        var rows = await db.QuerySpAsync<TreatmentDurationRow>("public.sp_Catalog_GetTreatmentDurations", new { TreatmentId = treatmentId });
         return rows.Select(r => new TreatmentDurationDto(r.Id, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom), r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
     }
 
@@ -360,21 +360,21 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@EffectiveTo", effectiveTo);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_AddTreatmentDuration", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentDuration", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateTreatmentDurationAsync(int id, short durationSlots, short preTimeMinutes)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTreatmentDuration", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateTreatmentDuration", new
         { Id = id, DurationSlots = durationSlots, PreTimeMinutes = preTimeMinutes, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task DeleteTreatmentDurationAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_DeleteTreatmentDuration", new
+        await db.ExecuteSpAsync("public.sp_Catalog_DeleteTreatmentDuration", new
         { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
@@ -382,7 +382,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         return await db.QuerySpAsync<TherapistDto>(
-            "dbo.sp_Catalog_GetTherapists", new { ChainId = chainId, LocationId = locationId });
+            "public.sp_Catalog_GetTherapists", new { ChainId = chainId, LocationId = locationId });
     }
 
     public async Task<int> CreateTherapistAsync(string name)
@@ -392,14 +392,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Name", name);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateTherapist", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateTherapist", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateTherapistAsync(int id, string name, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateTherapist", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateTherapist", new
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
     }
 
@@ -408,14 +408,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task LinkTherapistScopeAsync(int id, int? chainId, int? locationId, int? userId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_LinkTherapistScope", new
+        await db.ExecuteSpAsync("public.sp_Catalog_LinkTherapistScope", new
         { Id = id, ChainId = chainId, LocationId = locationId, UserId = userId, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<RoomDto>> GetRoomsAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<RoomDto>("dbo.sp_Catalog_GetRooms", new { LocationId = locationId });
+        return await db.QuerySpAsync<RoomDto>("public.sp_Catalog_GetRooms", new { LocationId = locationId });
     }
 
     public async Task<int> CreateRoomAsync(int locationId, string name)
@@ -426,14 +426,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Name", name);
         p.Add("@CreatedBy", currentUser.RequireUserId());
         p.Add("@Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("dbo.sp_Catalog_CreateRoom", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_CreateRoom", p);
         return p.Get<int>("@Id");
     }
 
     public async Task UpdateRoomAsync(int id, string name, bool isActive)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Catalog_UpdateRoom", new
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateRoom", new
         { Id = id, Name = name, IsActive = isActive, UpdatedBy = currentUser.RequireUserId() });
     }
 
@@ -441,7 +441,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await db.QuerySpAsync<LocationClosureRow>(
-            "dbo.sp_Admin_GetLocationClosures", new { LocationId = locationId, ChainId = chainId, Id = id });
+            "public.sp_Admin_GetLocationClosures", new { LocationId = locationId, ChainId = chainId, Id = id });
         return rows.Select(r => new LocationClosureDto(r.Id, r.LocationId, r.LocationName, r.ChainId, DateOnly.FromDateTime(r.HolidayDate), r.Reason, r.Type));
     }
 
@@ -455,18 +455,18 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@Type", type);
         p.Add("@Reason", reason);
         p.Add("@CreatedBy", currentUser.RequireUserId());
-        await db.ExecuteSpAsync("dbo.sp_Admin_CreateLocationClosures", p);
+        await db.ExecuteSpAsync("public.sp_Admin_CreateLocationClosures", p);
     }
 
     public async Task DeleteClosureAsync(int id)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Admin_DeleteLocationClosure", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Admin_DeleteLocationClosure", new { Id = id, UpdatedBy = currentUser.RequireUserId() });
     }
 
     public async Task<IEnumerable<VenueSearchResultDto>> SearchVenuesAsync(string? search)
     {
         using var db = factory.Create();
-        return await db.QuerySpAsync<VenueSearchResultDto>("dbo.sp_Catalog_Search", new { Search = search });
+        return await db.QuerySpAsync<VenueSearchResultDto>("public.sp_Catalog_Search", new { Search = search });
     }
 }

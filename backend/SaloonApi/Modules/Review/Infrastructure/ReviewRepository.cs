@@ -9,7 +9,7 @@ internal sealed class ReviewRepository(SqlConnectionFactory factory)
     public async Task<int> CreateAsync(int bookingId, int customerId, byte rating, string? comment)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int>("dbo.sp_Review_Create", new
+        return await db.QuerySingleSpAsync<int>("public.sp_Review_Create", new
         {
             BookingId = bookingId,
             CustomerId = customerId,

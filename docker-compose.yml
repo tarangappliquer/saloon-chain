@@ -19,7 +19,7 @@ services:
       - "5127:5127"
     environment:
       ASPNETCORE_URLS: "http://+:5127"
-      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Server=saloonchains-sqlserver;Database=SaloonChainDb;User Id=sa;Password=SaloonChains_Dev123!;TrustServerCertificate=True;}"
+      ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Host=host.docker.internal;Port=5432;Database=SaloonChainDb;Username=postgres;Password=SaloonChains_Dev123!;}"
       Redis__ConnectionString: "saloonchains-redis:6379"
       Redis__Enabled: "true"
       Jwt__SigningKey: "${JWT_SIGNING_KEY:-SaloonChains_Production_Or_Dev_Secret_Signing_Key_32_Bytes_Min}"
@@ -33,6 +33,8 @@ services:
       Serilog__MinimumLevel__Override__Microsoft: "${MICROSOFT_LOG_LEVEL:-Warning}"
       Portals__AdminPortalUrl: "http://198.245.65.114:5173"
       Portals__ClientPortalUrl: "http://198.245.65.114:5174"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Physical folder on host machine mounted to /app/uploads inside container
       - ${UPLOADS_DIR:-./uploads}:/app/uploads
@@ -40,8 +42,6 @@ services:
       - ${LOGS_DIR:-./logs}:/app/Logs
     depends_on:
       saloonchains-redis:
-        condition: service_healthy
-      saloonchains-sqlserver:
         condition: service_healthy
     restart: unless-stopped
 
@@ -120,31 +120,4 @@ services:
       # Mount docker config for private Docker Hub repository access (if needed)
       - ${HOME}/.docker/config.json:/config.json:ro
     command: --interval 60 --cleanup
-    restart: unless-stopped
-
-  # =========================================================================
-  # IN-CONTAINER SQL SERVER
-  # =========================================================================
-  saloonchains-sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: saloonchains-sqlserver
-    user: "0:0"
-    networks:
-      - saloon-network
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "SaloonChains_Dev123!"
-    ports:
-      - "1433:1433"
-    volumes:
-      # Physical folder on host machine mounted to /var/opt/mssql inside SQL container
-      - ${SQL_DATA_DIR:-./docker-data/mssql}:/var/opt/mssql
-      - ./db:/db:ro
-    entrypoint: [ "/bin/bash", "-c", "/db/init-db.sh & /opt/mssql/bin/sqlservr" ]
-    healthcheck:
-      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S 127.0.0.1 -U sa -P \"SaloonChains_Dev123!\" -C -Q \"IF EXISTS (SELECT * FROM sys.databases WHERE name = N'SaloonChainDb' AND state_desc = 'ONLINE') SELECT 1 ELSE EXIT 1\" || exit 1" ]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-      start_period: 45s
     restart: unless-stopped

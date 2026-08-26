@@ -24,7 +24,7 @@ internal static class AuthEndpoints
 
         // Shared by every role -- clientportal and adminportal both hit this; the returned Role
         // is what the adminportal uses to decide which routes/nav items to show. CanEmulate only
-        // means anything for staff rows with IsEmulator=1 (any staff role, see dbo.Users.IsEmulator)
+        // means anything for staff rows with IsEmulator=1 (any staff role, see Users.IsEmulator)
         // -- the adminportal uses it to show/hide the "Customers" (emulate) nav item.
         //
         // Portal is an optional, backward-compatible hint (clientportal/self-registration never send
@@ -120,7 +120,7 @@ internal static class AuthEndpoints
         // Staff-as-customer emulation. Reachable by any staff role (StaffAccess policy, now including
         // Manager) -- "all staff can be a customer" is a deliberate product decision -- but
         // AuthService.EmulateCustomerAsync
-        // additionally requires the caller's dbo.Users.IsEmulator flag to be set, re-checked fresh
+        // additionally requires the caller's Users.IsEmulator flag to be set, re-checked fresh
         // from the database on every call, so StaffAccess alone doesn't grant emulation.
         // Returns a normal customer AuthResponse (Role=Customer) so the clientportal's existing
         // login flow can consume it unchanged; IsEmulated/EmulatedByName flag it as a staff session.

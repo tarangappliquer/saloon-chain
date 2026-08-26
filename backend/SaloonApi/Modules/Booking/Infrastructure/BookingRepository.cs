@@ -20,7 +20,7 @@ internal sealed record AvailabilityData(
 
 // Range-query siblings of the single-date rows above -- LocationHoursRangeRow drops IsHoliday
 // (callers resolve holiday dates for the whole range separately, see CatalogRepository) AND
-// OpenTime/CloseTime (those can vary per date via dbo.LocationDaySchedule -- see DayHoursRow), and
+// OpenTime/CloseTime (those can vary per date via LocationDaySchedule -- see DayHoursRow), and
 // EligiblePairRangeRow carries WorkDate so results can be grouped back out per day in C#.
 internal sealed record LocationHoursRangeRow(TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask);
 internal sealed record DayHoursRow(DateOnly WorkDate, TimeSpan OpenTime, TimeSpan CloseTime);
@@ -105,7 +105,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<AvailabilityData> GetAvailabilityDataAsync(int locationId, IEnumerable<int> treatmentIds, DateOnly date, int? excludeBookingId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetAvailabilityData", new
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetAvailabilityData", new
         {
             LocationId = locationId,
             TreatmentIds = treatmentIds.AsIntIdList(),
@@ -129,7 +129,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         int locationId, IEnumerable<int> treatmentIds, DateOnly from, DateOnly to, int? excludeBookingId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetAvailabilityDataRange", new
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetAvailabilityDataRange", new
         {
             LocationId = locationId,
             TreatmentIds = treatmentIds.AsIntIdList(),
@@ -151,13 +151,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<bool> HasLocationRoomOpeningsAsync(int locationId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<bool>("dbo.sp_Booking_HasLocationRoomOpenings", new { LocationId = locationId });
+        return await db.QuerySingleSpAsync<bool>("public.sp_Booking_HasLocationRoomOpenings", new { LocationId = locationId });
     }
 
     public async Task<HashSet<DateOnly>> GetLocationOpenDatesAsync(int locationId, DateOnly from, DateOnly to)
     {
         using var db = factory.Create();
-        var openDates = await db.QuerySpAsync<DateTime>("dbo.sp_Booking_GetLocationOpenDates", new
+        var openDates = await db.QuerySpAsync<DateTime>("public.sp_Booking_GetLocationOpenDates", new
         {
             LocationId = locationId,
             FromDate = from.ToDateTime(TimeOnly.MinValue),
@@ -177,14 +177,14 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@CreatedBy", currentUser.UserId);
         p.Add("@BookingId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Booking_CreateDraft", p);
+        await db.ExecuteSpAsync("public.sp_Booking_CreateDraft", p);
         return p.Get<int>("@BookingId");
     }
 
     public async Task AddTreatmentAsync(int bookingId, int customerId, int treatmentId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Booking_AddTreatment", new
+        await db.ExecuteSpAsync("public.sp_Booking_AddTreatment", new
         {
             BookingId = bookingId, CustomerId = customerId, TreatmentId = treatmentId, CreatedBy = currentUser.UserId
         });
@@ -193,7 +193,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<BookingLocationRow?> RemoveTreatmentAsync(int bookingId, int customerId, int treatmentId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<BookingLocationRow>("dbo.sp_Booking_RemoveTreatment", new
+        return await db.QuerySingleSpAsync<BookingLocationRow>("public.sp_Booking_RemoveTreatment", new
         {
             BookingId = bookingId, CustomerId = customerId, TreatmentId = treatmentId, UpdatedBy = currentUser.UserId
         });
@@ -215,7 +215,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@ExpiresAt", dbType: DbType.DateTime2, direction: ParameterDirection.Output);
         p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Booking_ScheduleTreatment", p);
+        await db.ExecuteSpAsync("public.sp_Booking_ScheduleTreatment", p);
         // SQL Server DATETIME2 (and Dapper) carry no timezone -- SYSUTCDATETIME() is UTC in value
         // but comes back Kind=Unspecified, which System.Text.Json serializes with no 'Z'/offset.
         // The browser's `new Date(...)` then reads that as *local* time, silently corrupting the
@@ -238,7 +238,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@UpdatedBy", currentUser.UserId);
         p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Booking_RescheduleConfirmed", p);
+        await db.ExecuteSpAsync("public.sp_Booking_RescheduleConfirmed", p);
         return p.Get<int>("@LocationId");
     }
 
@@ -253,14 +253,14 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         p.Add("@UpdatedBy", currentUser.UserId);
         p.Add("@LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-        await db.ExecuteSpAsync("dbo.sp_Booking_ReassignTherapist", p);
+        await db.ExecuteSpAsync("public.sp_Booking_ReassignTherapist", p);
         return p.Get<int>("@LocationId");
     }
 
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetById", new { BookingId = bookingId, CustomerId = customerId });
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetById", new { BookingId = bookingId, CustomerId = customerId });
 
         var header = await multi.ReadSingleOrDefaultAsync<BookingHeaderRow>();
         var lines = (await multi.ReadAsync<BookingTreatmentLineDto>())
@@ -273,7 +273,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int?> GetCustomerIdAsync(int bookingId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("dbo.sp_Booking_GetCustomerId", new { BookingId = bookingId });
+        return await db.QuerySingleSpAsync<int?>("public.sp_Booking_GetCustomerId", new { BookingId = bookingId });
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> ConfirmAsync(int bookingId, int customerId = 0)
@@ -288,14 +288,14 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
 
         using var db = factory.Create();
         return (await db.QuerySpAsync<BookingLocationRow>(
-            "dbo.sp_Booking_Confirm",
+            "public.sp_Booking_Confirm",
             new { BookingId = bookingId, CustomerId = customerId, UpdatedBy = currentUser.UserId })).ToList();
     }
 
     public async Task<ConfirmationDetailsDto?> GetConfirmationDetailsAsync(int bookingId)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetConfirmationDetails", new { BookingId = bookingId });
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetConfirmationDetails", new { BookingId = bookingId });
 
         var header = await multi.ReadSingleOrDefaultAsync<ConfirmationHeaderRow>();
         var treatments = (await multi.ReadAsync<ConfirmationTreatmentRow>()).ToList();
@@ -309,20 +309,20 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         return (await db.QuerySpAsync<BookingLocationRow>(
-            "dbo.sp_Booking_Cancel",
+            "public.sp_Booking_Cancel",
             new { BookingId = bookingId, CustomerId = customerId, UpdatedBy = currentUser.UserId })).ToList();
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> ExpireStaleHoldsAsync()
     {
         using var db = factory.Create();
-        return (await db.QuerySpAsync<BookingLocationRow>("dbo.sp_Booking_ExpireStaleHolds")).ToList();
+        return (await db.QuerySpAsync<BookingLocationRow>("public.sp_Booking_ExpireStaleHolds")).ToList();
     }
 
     public async Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetMine", new { CustomerId = customerId, ChainId = chainId, LocationId = locationId });
 
         var bookings = (await multi.ReadAsync<MyBookingHeaderRow>()).ToList();
         var treatments = (await multi.ReadAsync<MyBookingTreatmentRow>()).ToList();
@@ -342,7 +342,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<IReadOnlyList<AdminBookingDto>> GetForLocationAsync(int locationId, DateOnly date)
     {
         using var db = factory.Create();
-        using var multi = await db.QueryMultipleSpAsync("dbo.sp_Booking_GetForLocation", new
+        using var multi = await db.QueryMultipleSpAsync("public.sp_Booking_GetForLocation", new
         {
             LocationId = locationId,
             WorkDate = date.ToDateTime(TimeOnly.MinValue)
@@ -369,13 +369,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int?> GetLocationIdAsync(int bookingId)
     {
         using var db = factory.Create();
-        return await db.QuerySingleSpAsync<int?>("dbo.sp_Booking_GetLocationId", new { BookingId = bookingId });
+        return await db.QuerySingleSpAsync<int?>("public.sp_Booking_GetLocationId", new { BookingId = bookingId });
     }
 
     public async Task SetAppointmentStatusAsync(int bookingId, int? appointmentStatusId, int? updatedBy)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Booking_SetAppointmentStatus", new
+        await db.ExecuteSpAsync("public.sp_Booking_SetAppointmentStatus", new
         {
             BookingId = bookingId, AppointmentStatusId = appointmentStatusId, UpdatedBy = updatedBy
         });
@@ -385,13 +385,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         return (await db.QuerySpAsync<BookingLocationRow>(
-            "dbo.sp_Booking_CancelAsAdmin",
+            "public.sp_Booking_CancelAsAdmin",
             new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId(), CancelReasonId = cancelReasonId })).ToList();
     }
 
     public async Task MarkNoShowAsync(int bookingId)
     {
         using var db = factory.Create();
-        await db.ExecuteSpAsync("dbo.sp_Booking_MarkNoShow", new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() });
+        await db.ExecuteSpAsync("public.sp_Booking_MarkNoShow", new { BookingId = bookingId, UpdatedBy = currentUser.RequireUserId() });
     }
 }
