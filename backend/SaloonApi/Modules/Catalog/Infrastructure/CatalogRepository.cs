@@ -1,7 +1,5 @@
-using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
-using System.Data;
 
 namespace SaloonApi.Modules.Catalog.Infrastructure;
 
@@ -123,14 +121,13 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateChainAsync(string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_Name", name);
-        p.Add("p_BreakStartTime", breakStartTime);
-        p.Add("p_BreakEndTime", breakEndTime);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateChain", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateChain", new
+        {
+            Name = name,
+            BreakStartTime = breakStartTime,
+            BreakEndTime = breakEndTime,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateChainAsync(int id, string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime, bool isActive)
@@ -158,22 +155,21 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         TimeSpan? breakStartTime, TimeSpan? breakEndTime, byte workingDaysMask, string timeZoneId)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_ChainId", chainId);
-        p.Add("p_Name", name);
-        p.Add("p_Address", address);
-        p.Add("p_Latitude", latitude);
-        p.Add("p_Longitude", longitude);
-        p.Add("p_OpenTime", openTime);
-        p.Add("p_CloseTime", closeTime);
-        p.Add("p_BreakStartTime", breakStartTime);
-        p.Add("p_BreakEndTime", breakEndTime);
-        p.Add("p_WorkingDaysMask", workingDaysMask);
-        p.Add("p_TimeZoneId", timeZoneId);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateLocation", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateLocation", new
+        {
+            ChainId = chainId,
+            Name = name,
+            Address = address,
+            Latitude = latitude,
+            Longitude = longitude,
+            OpenTime = openTime,
+            CloseTime = closeTime,
+            BreakStartTime = breakStartTime,
+            BreakEndTime = breakEndTime,
+            WorkingDaysMask = workingDaysMask,
+            TimeZoneId = timeZoneId,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateLocationAsync(
@@ -219,33 +215,33 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         int locationId, byte dayBit, DateOnly effectiveFrom, TimeSpan? openTime, TimeSpan? closeTime, bool isClosed, DateOnly? effectiveTo)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_DayBit", dayBit);
-        p.Add("p_OpenTime", openTime);
-        p.Add("p_CloseTime", closeTime);
-        p.Add("p_IsClosed", isClosed);
-        p.Add("p_EffectiveFrom", effectiveFrom);
-        p.Add("p_EffectiveTo", effectiveTo);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_AddLocationDaySchedule", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_AddLocationDaySchedule", new
+        {
+            LocationId = locationId,
+            DayBit = dayBit,
+            OpenTime = openTime,
+            CloseTime = closeTime,
+            IsClosed = isClosed,
+            EffectiveFrom = effectiveFrom,
+            EffectiveTo = effectiveTo,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateLocationDayScheduleAsync(
         int id, DateOnly effectiveFrom, TimeSpan? openTime, TimeSpan? closeTime, bool isClosed, DateOnly? effectiveTo)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_Id", id);
-        p.Add("p_OpenTime", openTime);
-        p.Add("p_CloseTime", closeTime);
-        p.Add("p_IsClosed", isClosed);
-        p.Add("p_EffectiveFrom", effectiveFrom);
-        p.Add("p_EffectiveTo", effectiveTo);
-        p.Add("p_UpdatedBy", currentUser.RequireUserId());
-        await db.ExecuteSpAsync("public.sp_Catalog_UpdateLocationDaySchedule", p);
+        await db.ExecuteSpAsync("public.sp_Catalog_UpdateLocationDaySchedule", new
+        {
+            Id = id,
+            OpenTime = openTime,
+            CloseTime = closeTime,
+            IsClosed = isClosed,
+            EffectiveFrom = effectiveFrom,
+            EffectiveTo = effectiveTo,
+            UpdatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task DeleteLocationDayScheduleAsync(int id)
@@ -263,13 +259,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateTreatmentCategoryAsync(int locationId, string name)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_Name", name);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatmentCategory", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateTreatmentCategory", new
+        {
+            LocationId = locationId,
+            Name = name,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateTreatmentCategoryAsync(int id, string name, bool isActive)
@@ -283,19 +278,18 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         int locationId, int categoryId, string name, string? description, short durationSlots, short preTimeMinutes, DateOnly effectiveFrom, decimal price)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_CategoryId", categoryId);
-        p.Add("p_Name", name);
-        p.Add("p_Description", description);
-        p.Add("p_DurationSlots", durationSlots);
-        p.Add("p_PreTimeMinutes", preTimeMinutes);
-        p.Add("p_EffectiveFrom", effectiveFrom);
-        p.Add("p_Price", price);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateTreatment", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateTreatment", new
+        {
+            LocationId = locationId,
+            CategoryId = categoryId,
+            Name = name,
+            Description = description,
+            DurationSlots = durationSlots,
+            PreTimeMinutes = preTimeMinutes,
+            EffectiveFrom = effectiveFrom,
+            Price = price,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateTreatmentAsync(
@@ -324,15 +318,14 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> AddTreatmentPriceAsync(int treatmentId, decimal price, DateOnly effectiveFrom, DateOnly? effectiveTo)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_TreatmentId", treatmentId);
-        p.Add("p_Price", price);
-        p.Add("p_EffectiveFrom", effectiveFrom);
-        p.Add("p_EffectiveTo", effectiveTo);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentPrice", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_AddTreatmentPrice", new
+        {
+            TreatmentId = treatmentId,
+            Price = price,
+            EffectiveFrom = effectiveFrom,
+            EffectiveTo = effectiveTo,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateTreatmentPriceAsync(int id, decimal price)
@@ -352,16 +345,15 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> AddTreatmentDurationAsync(int treatmentId, short durationSlots, short preTimeMinutes, DateOnly effectiveFrom, DateOnly? effectiveTo)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_TreatmentId", treatmentId);
-        p.Add("p_DurationSlots", durationSlots);
-        p.Add("p_PreTimeMinutes", preTimeMinutes);
-        p.Add("p_EffectiveFrom", effectiveFrom);
-        p.Add("p_EffectiveTo", effectiveTo);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_AddTreatmentDuration", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_AddTreatmentDuration", new
+        {
+            TreatmentId = treatmentId,
+            DurationSlots = durationSlots,
+            PreTimeMinutes = preTimeMinutes,
+            EffectiveFrom = effectiveFrom,
+            EffectiveTo = effectiveTo,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateTreatmentDurationAsync(int id, short durationSlots, short preTimeMinutes)
@@ -388,12 +380,11 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateTherapistAsync(string name)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_Name", name);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateTherapist", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateTherapist", new
+        {
+            Name = name,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateTherapistAsync(int id, string name, bool isActive)
@@ -421,13 +412,12 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateRoomAsync(int locationId, string name)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_Name", name);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Catalog_CreateRoom", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Catalog_CreateRoom", new
+        {
+            LocationId = locationId,
+            Name = name,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UpdateRoomAsync(int id, string name, bool isActive)
@@ -448,14 +438,15 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task CreateClosuresAsync(IEnumerable<int> locationIds, DateOnly fromDate, DateOnly toDate, string type, string? reason)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationIds", locationIds.AsIntIdList());
-        p.Add("p_FromDate", fromDate);
-        p.Add("p_ToDate", toDate);
-        p.Add("p_Type", type);
-        p.Add("p_Reason", reason);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        await db.ExecuteSpAsync("public.sp_Admin_CreateLocationClosures", p);
+        await db.ExecuteSpAsync("public.sp_Admin_CreateLocationClosures", new
+        {
+            LocationIds = locationIds.AsIntIdList(),
+            FromDate = fromDate,
+            ToDate = toDate,
+            Type = type,
+            Reason = reason,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task DeleteClosureAsync(int id)

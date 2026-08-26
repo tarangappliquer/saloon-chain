@@ -1,5 +1,3 @@
-using System.Data;
-using Dapper;
 using FluentValidation;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
@@ -72,17 +70,15 @@ internal static class AdminAppointmentStatusesEndpoints
             }
 
             using var db = factory.Create();
-            var p = new DynamicParameters();
-            p.Add("p_Name", req.Name);
-            p.Add("p_ChainId", targetChainId);
-            p.Add("p_LocationId", targetLocationId);
-            p.Add("p_ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex);
-            p.Add("p_SortOrder", req.SortOrder);
-            p.Add("p_CreatedBy", currentUser.UserId);
-            p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-            await db.ExecuteSpAsync("public.sp_Admin_CreateAppointmentStatus", p);
-            var id = p.Get<int>("p_Id");
+            var id = await db.QuerySingleSpAsync<int>("public.sp_Admin_CreateAppointmentStatus", new
+            {
+                Name = req.Name,
+                ChainId = targetChainId,
+                LocationId = targetLocationId,
+                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#3B82F6" : req.ColorHex,
+                SortOrder = req.SortOrder,
+                CreatedBy = currentUser.UserId
+            });
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateAppointmentStatusRequest>()

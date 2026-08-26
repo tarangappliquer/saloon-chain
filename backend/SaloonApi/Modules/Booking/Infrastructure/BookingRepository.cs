@@ -1,5 +1,3 @@
-using System.Data;
-using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
 
@@ -170,15 +168,13 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<int> CreateDraftAsync(int locationId, int customerId, IEnumerable<int> treatmentIds)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_CustomerId", customerId);
-        p.Add("p_Treatments", treatmentIds.AsIntIdList());
-        p.Add("p_CreatedBy", currentUser.UserId);
-        p.Add("p_BookingId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Booking_CreateDraft", p);
-        return p.Get<int>("p_BookingId");
+        return await db.QuerySingleSpAsync<int>("public.sp_Booking_CreateDraft", new
+        {
+            LocationId = locationId,
+            CustomerId = customerId,
+            Treatments = treatmentIds.AsIntIdList(),
+            CreatedBy = currentUser.UserId
+        });
     }
 
     public async Task AddTreatmentAsync(int bookingId, int customerId, int treatmentId)
@@ -203,58 +199,54 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         int bookingId, int customerId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_BookingId", bookingId);
-        p.Add("p_CustomerId", customerId);
-        p.Add("p_TreatmentId", treatmentId);
-        p.Add("p_RoomId", roomId);
-        p.Add("p_TherapistId", therapistId);
-        p.Add("p_StartTime", start);
-        p.Add("p_EndTime", end);
-        p.Add("p_UpdatedBy", currentUser.UserId);
-        p.Add("p_ExpiresAt", dbType: DbType.DateTime2, direction: ParameterDirection.Output);
-        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Booking_ScheduleTreatment", p);
-        // SQL Server DATETIME2 (and Dapper) carry no timezone -- SYSUTCDATETIME() is UTC in value
-        // but comes back Kind=Unspecified, which System.Text.Json serializes with no 'Z'/offset.
-        // The browser's `new Date(...)` then reads that as *local* time, silently corrupting the
-        // countdown for anyone not in UTC. StartTime/EndTime are venue-local wall-clock times and
-        // are meant to be read at face value, so only ExpiresAt (an absolute instant, used for
-        // real elapsed-time math) needs this fix.
-        return (DateTime.SpecifyKind(p.Get<DateTime>("p_ExpiresAt"), DateTimeKind.Utc), p.Get<int>("p_LocationId"));
+        var row = await db.QuerySingleSpAsync<ScheduleTreatmentRow>("public.sp_Booking_ScheduleTreatment", new
+        {
+            BookingId = bookingId,
+            CustomerId = customerId,
+            TreatmentId = treatmentId,
+            RoomId = roomId,
+            TherapistId = therapistId,
+            StartTime = start,
+            EndTime = end,
+            UpdatedBy = currentUser.UserId
+        });
+        // Postgres timestamptz comes back Kind=Unspecified through Npgsql/Dapper, which
+        // System.Text.Json then serializes with no 'Z'/offset. The browser's `new Date(...)` reads
+        // that as *local* time, silently corrupting the countdown for anyone not in UTC.
+        // StartTime/EndTime are venue-local wall-clock times and are meant to be read at face
+        // value, so only ExpiresAt (an absolute instant, used for real elapsed-time math) needs
+        // this fix.
+        return (DateTime.SpecifyKind(row!.ExpiresAt, DateTimeKind.Utc), row.LocationId);
     }
+
+    private sealed record ScheduleTreatmentRow(DateTime ExpiresAt, int LocationId);
 
     public async Task<int> RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_BookingId", bookingId);
-        p.Add("p_TreatmentId", treatmentId);
-        p.Add("p_RoomId", roomId);
-        p.Add("p_TherapistId", therapistId);
-        p.Add("p_StartTime", start);
-        p.Add("p_EndTime", end);
-        p.Add("p_UpdatedBy", currentUser.UserId);
-        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Booking_RescheduleConfirmed", p);
-        return p.Get<int>("p_LocationId");
+        return await db.QuerySingleSpAsync<int>("public.sp_Booking_RescheduleConfirmed", new
+        {
+            BookingId = bookingId,
+            TreatmentId = treatmentId,
+            RoomId = roomId,
+            TherapistId = therapistId,
+            StartTime = start,
+            EndTime = end,
+            UpdatedBy = currentUser.UserId
+        });
     }
 
     public async Task<int> ReassignTherapistAsync(int bookingId, int treatmentId, int newTherapistId, string? reason)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_BookingId", bookingId);
-        p.Add("p_TreatmentId", treatmentId);
-        p.Add("p_NewTherapistId", newTherapistId);
-        p.Add("p_Reason", reason);
-        p.Add("p_UpdatedBy", currentUser.UserId);
-        p.Add("p_LocationId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Booking_ReassignTherapist", p);
-        return p.Get<int>("p_LocationId");
+        return await db.QuerySingleSpAsync<int>("public.sp_Booking_ReassignTherapist", new
+        {
+            BookingId = bookingId,
+            TreatmentId = treatmentId,
+            NewTherapistId = newTherapistId,
+            Reason = reason,
+            UpdatedBy = currentUser.UserId
+        });
     }
 
     public async Task<BookingDetailsDto?> GetByIdAsync(int bookingId, int customerId)

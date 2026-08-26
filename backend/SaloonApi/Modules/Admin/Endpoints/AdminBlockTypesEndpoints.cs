@@ -1,5 +1,3 @@
-using System.Data;
-using Dapper;
 using FluentValidation;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
@@ -74,18 +72,16 @@ internal static class AdminBlockTypesEndpoints
             }
 
             using var db = factory.Create();
-            var p = new DynamicParameters();
-            p.Add("p_Name", req.Name);
-            p.Add("p_ChainId", targetChainId);
-            p.Add("p_LocationId", targetLocationId);
-            p.Add("p_IsPaid", req.IsPaid);
-            p.Add("p_DefaultDurationMinutes", req.DefaultDurationMinutes);
-            p.Add("p_ColorHex", string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex);
-            p.Add("p_CreatedBy", currentUser.UserId);
-            p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-            await db.ExecuteSpAsync("public.sp_Admin_CreateBlockType", p);
-            var id = p.Get<int>("p_Id");
+            var id = await db.QuerySingleSpAsync<int>("public.sp_Admin_CreateBlockType", new
+            {
+                Name = req.Name,
+                ChainId = targetChainId,
+                LocationId = targetLocationId,
+                IsPaid = req.IsPaid,
+                DefaultDurationMinutes = req.DefaultDurationMinutes,
+                ColorHex = string.IsNullOrWhiteSpace(req.ColorHex) ? "#F59E0B" : req.ColorHex,
+                CreatedBy = currentUser.UserId
+            });
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateBlockTypeRequest>()

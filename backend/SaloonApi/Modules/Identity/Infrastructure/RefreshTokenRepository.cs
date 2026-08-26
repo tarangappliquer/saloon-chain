@@ -1,5 +1,3 @@
-using System.Data;
-using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
 
@@ -15,14 +13,12 @@ internal sealed class RefreshTokenRepository(SqlConnectionFactory factory)
     public async Task<int> CreateAsync(int userId, byte[] tokenHash, DateTime expiresAt)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_UserId", userId);
-        p.Add("p_TokenHash", tokenHash);
-        p.Add("p_ExpiresAt", expiresAt);
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Auth_CreateRefreshToken", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Auth_CreateRefreshToken", new
+        {
+            UserId = userId,
+            TokenHash = tokenHash,
+            ExpiresAt = expiresAt
+        });
     }
 
     public async Task<RefreshTokenRecord?> GetAsync(byte[] tokenHash)

@@ -1,6 +1,4 @@
-using System.Data;
 using System.Globalization;
-using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
 
@@ -117,28 +115,29 @@ internal sealed class UserRepository(SqlConnectionFactory factory, ICurrentUser 
         bool isEmulator = false, DateOnly? joiningDate = null, bool isEmailVerified = false, bool isWalkIn = false)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_Name", name);
-        p.Add("p_Email", email);
-        p.Add("p_PasswordHash", hash);
-        p.Add("p_PasswordSalt", salt);
-        p.Add("p_Phone", phone);
-        p.Add("p_Role", role.ToString());
-        p.Add("p_ChainId", chainId);
-        p.Add("p_LocationId", locationId);
-        p.Add("p_TherapistId", therapistId);
-        p.Add("p_IsEmulator", isEmulator);
-        p.Add("p_JoiningDate", joiningDate);
-        p.Add("p_IsWalkIn", isWalkIn);
-        // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
-        p.Add("p_CreatedBy", currentUser.UserId);
-        // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal
-        // change-email-verify flow to prove they own their address.
-        p.Add("p_IsEmailVerified", isEmailVerified);
-        p.Add("p_UserId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-        await db.ExecuteSpAsync("public.sp_Auth_CreateUser", p);
-        return p.Get<int>("p_UserId");
+        // sp_Auth_CreateUser's OUT p_UserId comes back as the function's own single-row/single-
+        // column result -- not an ADO.NET output parameter -- so this reads it as a query result
+        // (QuerySingleSpAsync<int>), not via ExecuteSpAsync + a bound Output parameter.
+        return await db.QuerySingleSpAsync<int>("public.sp_Auth_CreateUser", new
+        {
+            Name = name,
+            Email = email,
+            PasswordHash = hash,
+            PasswordSalt = salt,
+            Phone = phone,
+            Role = role.ToString(),
+            ChainId = chainId,
+            LocationId = locationId,
+            TherapistId = therapistId,
+            IsEmulator = isEmulator,
+            JoiningDate = joiningDate,
+            IsWalkIn = isWalkIn,
+            // Null for self-registration (no logged-in user yet); set for admin-created staff logins.
+            CreatedBy = currentUser.UserId,
+            // True only for AdminSeeder's bootstrap account -- everyone else goes through the normal
+            // change-email-verify flow to prove they own their address.
+            IsEmailVerified = isEmailVerified
+        });
     }
 
     public async Task<UserRecord?> GetByEmailAsync(string email)

@@ -1,4 +1,3 @@
-using Dapper;
 using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Inventory.Infrastructure;
@@ -81,14 +80,13 @@ internal sealed class InventoryRepository(SqlConnectionFactory factory)
     public async Task<int> CreatePurchaseOrderAsync(int locationId, int supplierId, IReadOnlyList<(int ProductId, int Quantity, decimal UnitCost)> lines, int? createdBy)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_SupplierId", supplierId);
-        p.Add("p_Lines", lines.AsPurchaseOrderLineList());
-        p.Add("p_CreatedBy", createdBy);
-        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Inventory_CreatePurchaseOrder", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Inventory_CreatePurchaseOrder", new
+        {
+            LocationId = locationId,
+            SupplierId = supplierId,
+            Lines = lines.AsPurchaseOrderLineList(),
+            CreatedBy = createdBy
+        });
     }
 
     public async Task<IReadOnlyList<PurchaseOrderDto>> GetPurchaseOrdersAsync(int locationId)
@@ -115,14 +113,13 @@ internal sealed class InventoryRepository(SqlConnectionFactory factory)
     public async Task<int> AddBookingProductAsync(int bookingId, int productId, int quantity, int? createdBy)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_BookingId", bookingId);
-        p.Add("p_ProductId", productId);
-        p.Add("p_Quantity", quantity);
-        p.Add("p_CreatedBy", createdBy);
-        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Booking_AddProduct", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Booking_AddProduct", new
+        {
+            BookingId = bookingId,
+            ProductId = productId,
+            Quantity = quantity,
+            CreatedBy = createdBy
+        });
     }
 
     public async Task RemoveBookingProductAsync(int id)

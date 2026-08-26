@@ -1,5 +1,3 @@
-using System.Data;
-using Dapper;
 using SaloonApi.Shared.Auth;
 using SaloonApi.Shared.Data;
 
@@ -42,18 +40,17 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
         int locationId, int therapistId, int roomId, string shiftType, DateOnly date, TimeSpan startTime, TimeSpan endTime)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_TherapistId", therapistId);
-        p.Add("p_RoomId", roomId);
-        p.Add("p_ShiftType", shiftType);
-        p.Add("p_WorkDate", date.ToDateTime(TimeOnly.MinValue));
-        p.Add("p_StartTime", startTime);
-        p.Add("p_EndTime", endTime);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Scheduling_AssignTherapistShift", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_AssignTherapistShift", new
+        {
+            LocationId = locationId,
+            TherapistId = therapistId,
+            RoomId = roomId,
+            ShiftType = shiftType,
+            WorkDate = date.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task<bool> HasShiftOverlapAsync(int roomId, string shiftType, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, int excludeTherapistId)
@@ -109,15 +106,14 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     public async Task<int> OpenRoomAsync(int roomId, int treatmentCategoryId, string shiftType, DateOnly date)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_RoomId", roomId);
-        p.Add("p_TreatmentCategoryId", treatmentCategoryId);
-        p.Add("p_ShiftType", shiftType);
-        p.Add("p_WorkDate", date.ToDateTime(TimeOnly.MinValue));
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Scheduling_OpenRoom", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_OpenRoom", new
+        {
+            RoomId = roomId,
+            TreatmentCategoryId = treatmentCategoryId,
+            ShiftType = shiftType,
+            WorkDate = date.ToDateTime(TimeOnly.MinValue),
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task CloseRoomAsync(int id)
@@ -196,17 +192,16 @@ internal sealed class SchedulingRepository(SqlConnectionFactory factory, ICurren
     public async Task<int> BlockSlotAsync(int roomId, DateOnly workDate, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId = null)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_RoomId", roomId);
-        p.Add("p_BlockTypeId", blockTypeId);
-        p.Add("p_WorkDate", workDate.ToDateTime(TimeOnly.MinValue));
-        p.Add("p_StartTime", startTime);
-        p.Add("p_EndTime", endTime);
-        p.Add("p_Reason", reason);
-        p.Add("p_CreatedBy", currentUser.RequireUserId());
-        p.Add("p_Id", dbType: DbType.Int32, direction: ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Scheduling_BlockSlot", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Scheduling_BlockSlot", new
+        {
+            RoomId = roomId,
+            BlockTypeId = blockTypeId,
+            WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+            StartTime = startTime,
+            EndTime = endTime,
+            Reason = reason,
+            CreatedBy = currentUser.RequireUserId()
+        });
     }
 
     public async Task UnblockSlotAsync(int id)

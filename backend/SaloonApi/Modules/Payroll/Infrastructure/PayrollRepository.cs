@@ -1,4 +1,3 @@
-using Dapper;
 using SaloonApi.Shared.Data;
 
 namespace SaloonApi.Modules.Payroll.Infrastructure;
@@ -33,14 +32,13 @@ internal sealed class PayrollRepository(SqlConnectionFactory factory)
     public async Task<int> CreatePayRunAsync(int locationId, DateOnly periodStart, DateOnly periodEnd, int? createdBy)
     {
         using var db = factory.Create();
-        var p = new DynamicParameters();
-        p.Add("p_LocationId", locationId);
-        p.Add("p_PeriodStart", periodStart);
-        p.Add("p_PeriodEnd", periodEnd);
-        p.Add("p_CreatedBy", createdBy);
-        p.Add("p_Id", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
-        await db.ExecuteSpAsync("public.sp_Payroll_CreatePayRun", p);
-        return p.Get<int>("p_Id");
+        return await db.QuerySingleSpAsync<int>("public.sp_Payroll_CreatePayRun", new
+        {
+            LocationId = locationId,
+            PeriodStart = periodStart,
+            PeriodEnd = periodEnd,
+            CreatedBy = createdBy
+        });
     }
 
     public async Task<IReadOnlyList<PayRunDto>> GetPayRunsAsync(int locationId)
