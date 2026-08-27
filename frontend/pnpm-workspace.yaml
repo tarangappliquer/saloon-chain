@@ -1,3 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# pnpm 10 moved these out of package.json's "pnpm" field.
+peerDependencyRules:
+  ignoreMissing:
+    - '@uppy/core'

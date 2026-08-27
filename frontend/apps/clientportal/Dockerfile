@@ -8,8 +8,10 @@ RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 # Copy full workspace source code
 COPY . .
 
-# Install dependencies across workspace
-RUN pnpm install --frozen-lockfile
+# Install dependencies across workspace.
+# --ignore-scripts: the bundle build needs neither the openapi-generator JAR
+# nor the Cypress binary; skipping their postinstalls keeps the image lean.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Build args for Vite
 ARG VITE_API_BASE_URL=""

@@ -11,7 +11,6 @@ import {
   AuthApi,
   BookingApi,
   CatalogApi,
-  ConfigApi,
   Configuration,
   InventoryApi,
   PaymentApi,
@@ -202,7 +201,6 @@ export const adminInventoryApi = new InventoryApi(configuration, API_BASE, axios
 export const adminPayrollApi = new PayrollApi(configuration, API_BASE, axiosInstance);
 export const adminReportsApi = new ReportsApi(configuration, API_BASE, axiosInstance);
 export const authApi = new AuthApi(configuration, API_BASE, axiosInstance);
-export const configApi = new ConfigApi(configuration, API_BASE, axiosInstance);
 export const paymentApi = new PaymentApi(configuration, API_BASE, axiosInstance);
 export const profileApi = new ProfileApi(configuration, API_BASE, axiosInstance);
 export const schedulingApi = new SchedulingApi(configuration, API_BASE, axiosInstance);

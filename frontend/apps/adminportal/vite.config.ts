@@ -37,6 +37,14 @@ export default defineConfig({
                     if (id.includes('node_modules/lucide-react')) {
                         return 'icons';
                     }
+                    // Heavy upload stack (dashboard + image-editor) pulled in via the
+                    // @saloon/ui barrel; isolate it so it doesn't bloat the entry chunk.
+                    if (id.includes('node_modules/@uppy')) {
+                        return 'uppy';
+                    }
+                    if (id.includes('node_modules')) {
+                        return 'vendor';
+                    }
                 },
             },
         },

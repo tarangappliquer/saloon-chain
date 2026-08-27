@@ -30,13 +30,6 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.33.0",
-  "pnpm": {
-    "peerDependencyRules": {
-      "ignoreMissing": [
-        "@uppy/core"
-      ]
-    }
-  },
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.40.1",
     "axios": "^1.19.0",
