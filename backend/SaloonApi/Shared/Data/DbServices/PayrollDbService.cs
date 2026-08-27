@@ -37,7 +37,7 @@ internal sealed class PayrollDbService
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Payroll_DeleteCommissionRule(@Id)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Payroll_DeleteCommissionRule(@Id)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Payroll_CreatePayRunAsync(IDbConnection db, int locationId, DateOnly periodStart, DateOnly periodEnd, int? createdBy)
@@ -73,6 +73,6 @@ internal sealed class PayrollDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Payroll_FinalizePayRun(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Payroll_FinalizePayRun(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 }

@@ -18,8 +18,11 @@ internal sealed class AdminDbService
         args.Add("Role", role, DbType.String);
         args.Add("ChainId", chainId, DbType.Int32);
         args.Add("LocationId", locationId, DbType.Int32);
-        args.Add("StartDate", startDate);
-        args.Add("EndDate", endDate);
+        // DbType.Date must be explicit here -- the caller passes a bare DBNull.Value (not a typed
+        // DateTime?) when no date filter was given, and Dapper can't infer a DbType from
+        // System.DBNull's own type, throwing "cannot be used as a parameter value" without this.
+        args.Add("StartDate", startDate, DbType.Date);
+        args.Add("EndDate", endDate, DbType.Date);
         const string sql = """
             SELECT * FROM public.fn_Admin_DashboardKpis(@Role, @ChainId, @LocationId, @StartDate, @EndDate);
             SELECT * FROM public.fn_Admin_DashboardUpcoming(@Role, @ChainId, @LocationId, @StartDate, @EndDate);
@@ -40,26 +43,38 @@ internal sealed class AdminDbService
         return db.QueryAsync<BlockTypeDto>("SELECT * FROM public.sp_Admin_GetBlockTypes(@ChainId, @LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<int> sp_Admin_CreateBlockTypeAsync(IDbConnection db, int? chainId, int? locationId, string name, bool isLocationBreak, int createdBy)
+    // Named-argument calls below (p_X => @X): sp_Admin_CreateBlockType/UpdateBlockType's actual
+    // declared parameter order doesn't match a positional call built from these methods' natural
+    // argument order, and this method was previously missing DefaultDurationMinutes/ColorHex
+    // entirely -- a block type could never actually have its duration or color set through the API.
+    public Task<int> sp_Admin_CreateBlockTypeAsync(IDbConnection db, int? chainId, int? locationId, string name, bool isPaid, int defaultDurationMinutes, string colorHex, int createdBy)
     {
         var args = new DynamicParameters();
         args.Add("ChainId", chainId, DbType.Int32);
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("Name", name, DbType.String);
-        args.Add("IsLocationBreak", isLocationBreak, DbType.Boolean);
+        args.Add("IsPaid", isPaid, DbType.Boolean);
+        args.Add("DefaultDurationMinutes", defaultDurationMinutes, DbType.Int32);
+        args.Add("ColorHex", colorHex, DbType.String);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Admin_CreateBlockType(@ChainId, @LocationId, @Name, @IsLocationBreak, @CreatedBy)", args, commandType: CommandType.Text);
+        return db.ExecuteScalarAsync<int>(
+            "SELECT * FROM public.sp_Admin_CreateBlockType(p_Name => @Name, p_ChainId => @ChainId, p_LocationId => @LocationId, p_IsPaid => @IsPaid, p_DefaultDurationMinutes => @DefaultDurationMinutes, p_ColorHex => @ColorHex, p_CreatedBy => @CreatedBy)",
+            args, commandType: CommandType.Text);
     }
 
-    public async Task sp_Admin_UpdateBlockTypeAsync(IDbConnection db, int id, string name, bool isLocationBreak, bool isActive, int updatedBy)
+    public async Task sp_Admin_UpdateBlockTypeAsync(IDbConnection db, int id, string name, bool isPaid, int defaultDurationMinutes, string colorHex, bool isActive, int updatedBy)
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("Name", name, DbType.String);
-        args.Add("IsLocationBreak", isLocationBreak, DbType.Boolean);
+        args.Add("IsPaid", isPaid, DbType.Boolean);
+        args.Add("DefaultDurationMinutes", defaultDurationMinutes, DbType.Int32);
+        args.Add("ColorHex", colorHex, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_UpdateBlockType(@Id, @Name, @IsLocationBreak, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync(
+            "SELECT public.sp_Admin_UpdateBlockType(p_Id => @Id, p_Name => @Name, p_IsPaid => @IsPaid, p_DefaultDurationMinutes => @DefaultDurationMinutes, p_ColorHex => @ColorHex, p_IsActive => @IsActive, p_UpdatedBy => @UpdatedBy)",
+            args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_DeleteBlockTypeAsync(IDbConnection db, int id, int updatedBy)
@@ -67,7 +82,7 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_DeleteBlockType(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_DeleteBlockType(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<AppointmentStatusDto>> sp_Admin_GetAppointmentStatusesAsync(IDbConnection db, int? chainId, int? locationId)
@@ -78,6 +93,9 @@ internal sealed class AdminDbService
         return db.QueryAsync<AppointmentStatusDto>("SELECT * FROM public.sp_Admin_GetAppointmentStatuses(@ChainId, @LocationId)", args, commandType: CommandType.Text);
     }
 
+    // Named-argument calls: sp_Admin_CreateAppointmentStatus/UpdateAppointmentStatus declare
+    // p_SortOrder, not p_DisplayOrder, and in a different position than a positional call built
+    // from this method's argument order would put it.
     public Task<int> sp_Admin_CreateAppointmentStatusAsync(IDbConnection db, int? chainId, int? locationId, string name, string? colorHex, int displayOrder, int createdBy)
     {
         var args = new DynamicParameters();
@@ -85,9 +103,11 @@ internal sealed class AdminDbService
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("Name", name, DbType.String);
         args.Add("ColorHex", colorHex, DbType.String);
-        args.Add("DisplayOrder", displayOrder, DbType.Int32);
+        args.Add("SortOrder", displayOrder, DbType.Int16);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Admin_CreateAppointmentStatus(@ChainId, @LocationId, @Name, @ColorHex, @DisplayOrder, @CreatedBy)", args, commandType: CommandType.Text);
+        return db.ExecuteScalarAsync<int>(
+            "SELECT * FROM public.sp_Admin_CreateAppointmentStatus(p_Name => @Name, p_ChainId => @ChainId, p_LocationId => @LocationId, p_ColorHex => @ColorHex, p_SortOrder => @SortOrder, p_CreatedBy => @CreatedBy)",
+            args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_UpdateAppointmentStatusAsync(IDbConnection db, int id, string name, string? colorHex, int displayOrder, bool isActive, int updatedBy)
@@ -96,10 +116,12 @@ internal sealed class AdminDbService
         args.Add("Id", id, DbType.Int32);
         args.Add("Name", name, DbType.String);
         args.Add("ColorHex", colorHex, DbType.String);
-        args.Add("DisplayOrder", displayOrder, DbType.Int32);
+        args.Add("SortOrder", displayOrder, DbType.Int16);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_UpdateAppointmentStatus(@Id, @Name, @ColorHex, @DisplayOrder, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync(
+            "SELECT public.sp_Admin_UpdateAppointmentStatus(p_Id => @Id, p_Name => @Name, p_ColorHex => @ColorHex, p_SortOrder => @SortOrder, p_IsActive => @IsActive, p_UpdatedBy => @UpdatedBy)",
+            args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_DeleteAppointmentStatusAsync(IDbConnection db, int id, int updatedBy)
@@ -107,7 +129,7 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_DeleteAppointmentStatus(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_DeleteAppointmentStatus(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<UserRow?> sp_Admin_GetUserByIdAsync(IDbConnection db, int id)
@@ -153,7 +175,7 @@ internal sealed class AdminDbService
         args.Add("Phone", phone, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_UpdateCustomer(@Id, @Name, @Phone, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_UpdateCustomer(@Id, @Name, @Phone, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_DeleteCustomerAsync(IDbConnection db, int id, int updatedBy)
@@ -161,7 +183,7 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_DeleteCustomer(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_DeleteCustomer(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_UpdateUserAsync(IDbConnection db, int id, string name, string? phone, string? role, int? chainId, int? locationId, int? therapistId, bool isEmulator, DateOnly? joiningDate, bool isActive, int updatedBy)
@@ -178,7 +200,7 @@ internal sealed class AdminDbService
         args.Add("JoiningDate", joiningDate, DbType.Date);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_UpdateUser(@Id, @Name, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @IsEmulator, @JoiningDate, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_UpdateUser(@Id, @Name, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @IsEmulator, @JoiningDate, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<AdminChainDto>> sp_Admin_GetChainsAsync(IDbConnection db, int? chainId)
@@ -221,7 +243,7 @@ internal sealed class AdminDbService
         args.Add("Type", type, DbType.String);
         args.Add("Reason", reason, DbType.String);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_CreateLocationClosures(@LocationIds, @FromDate, @ToDate, @Type, @Reason, @CreatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_CreateLocationClosures(@LocationIds, @FromDate, @ToDate, @Type, @Reason, @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Admin_DeleteLocationClosureAsync(IDbConnection db, int id, int updatedBy)
@@ -229,7 +251,7 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Admin_DeleteLocationClosure(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Admin_DeleteLocationClosure(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<CustomerNoteDto>> sp_CustomerNote_GetForCustomerAsync(IDbConnection db, int customerId, int? chainId, int? locationId)
@@ -257,7 +279,7 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_CustomerNote_Delete(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_CustomerNote_Delete(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<CustomerTagDto>> sp_CustomerTag_GetForCustomerAsync(IDbConnection db, int customerId, int? chainId, int? locationId)
@@ -285,6 +307,6 @@ internal sealed class AdminDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_CustomerTag_Delete(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_CustomerTag_Delete(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 }

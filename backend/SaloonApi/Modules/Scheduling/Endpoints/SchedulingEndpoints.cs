@@ -58,13 +58,13 @@ internal static class SchedulingEndpoints
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && shift.LocationId != currentUser.LocationId)
                 return Results.Problem("Not authorized for this shift.", statusCode: StatusCodes.Status403Forbidden);
 
-            if (shift.RoomId is { } roomId && await repo.HasShiftOverlapAsync(roomId, shift.ShiftType, DateOnly.FromDateTime(shift.WorkDate), req.StartTime, req.EndTime, shift.TherapistId))
+            if (shift.RoomId is { } roomId && await repo.HasShiftOverlapAsync(roomId, shift.ShiftType, shift.WorkDate, req.StartTime, req.EndTime, shift.TherapistId))
             {
                 return Results.Problem("Room already has another therapist assigned during part of that time.", statusCode: StatusCodes.Status400BadRequest);
             }
 
             await repo.UpdateTherapistShiftAsync(id, req.StartTime, req.EndTime);
-            var workDate = DateOnly.FromDateTime(shift.WorkDate);
+            var workDate = shift.WorkDate;
             await bookingSvc.SyncAndNotifyAsync(shift.LocationId, workDate);
             return Results.NoContent();
         }).WithValidation<UpdateTherapistShiftRequest>()
@@ -85,7 +85,7 @@ internal static class SchedulingEndpoints
                 return Results.Problem("Cannot remove therapist; existing bookings exist for this shift.", statusCode: StatusCodes.Status400BadRequest);
 
             await repo.RemoveTherapistShiftAsync(id);
-            var workDate = DateOnly.FromDateTime(shift.WorkDate);
+            var workDate = shift.WorkDate;
             await bookingSvc.SyncAndNotifyAsync(shift.LocationId, workDate);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
@@ -130,7 +130,7 @@ internal static class SchedulingEndpoints
             if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && opening.LocationId != currentUser.LocationId)
                 return Results.Problem("Not authorized for this room opening.", statusCode: StatusCodes.Status403Forbidden);
 
-            var workDate = DateOnly.FromDateTime(opening.WorkDate);
+            var workDate = opening.WorkDate;
             if (await repo.HasRoomBookingsAsync(opening.RoomId, workDate))
                 return Results.Problem("Cannot close room; existing bookings exist for this room.", statusCode: StatusCodes.Status400BadRequest);
 
@@ -227,7 +227,7 @@ internal static class SchedulingEndpoints
                 return Results.Problem("Not authorized for this blocked slot.", statusCode: StatusCodes.Status403Forbidden);
 
             await repo.UnblockSlotAsync(id);
-            var workDate = DateOnly.FromDateTime(blocked.WorkDate);
+            var workDate = blocked.WorkDate;
             await bookingSvc.SyncAndNotifyAsync(blocked.LocationId, workDate);
             return Results.NoContent();
         }).Produces(StatusCodes.Status204NoContent)
@@ -245,7 +245,7 @@ internal static class SchedulingEndpoints
                 return Results.Problem("Not authorized for this blocked slot.", statusCode: StatusCodes.Status403Forbidden);
 
             await repo.UpdateBlockedSlotAsync(id, req.StartTime, req.EndTime, req.Reason, req.BlockTypeId);
-            var workDate = DateOnly.FromDateTime(blocked.WorkDate);
+            var workDate = blocked.WorkDate;
             await bookingSvc.SyncAndNotifyAsync(blocked.LocationId, workDate);
             return Results.NoContent();
         }).WithValidation<UpdateBlockedSlotRequest>()

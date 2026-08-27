@@ -52,10 +52,13 @@ internal sealed record StaffUserRow(
     int Id, string Name, string Email, string? Phone, string Role,
     int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate, DateTime CreatedDate);
 
+// WorkDate/ArrivalTime/LeftTime are Postgres date/time columns -- DateOnly/TimeOnly? (via the
+// registered DateOnlyTypeHandler/TimeOnlyTypeHandler), not DateTime/TimeSpan?, or this record
+// can't be positionally materialized once a row actually comes back (see ChainDto above).
 internal sealed record StaffAttendanceRow(
     int UserId, string StaffName, string StaffEmail, string StaffRole,
-    int? AttendanceId, int LocationId, DateTime WorkDate,
-    TimeSpan? ArrivalTime, TimeSpan? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
+    int? AttendanceId, int LocationId, DateOnly WorkDate,
+    TimeOnly? ArrivalTime, TimeOnly? LeftTime, DateTime? LoggedDate, int? LoggedByUserId);
 
 internal sealed record UserRow(
     int Id, string Name, string Email, byte[] PasswordHash, byte[] PasswordSalt,
@@ -69,19 +72,18 @@ internal sealed class UserRepository(
     {
         using var db = factory.Create();
         var workDateStr = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var rows = await staffDb.sp_Staff_GetAttendanceAsync(db, locationId, workDateStr);
+        var rows = await staffDb.sp_Staff_GetAttendanceAsync(db, locationId, workDate);
         return rows.Select(r => new StaffAttendanceDto(
             r.UserId, r.StaffName, r.StaffEmail, r.StaffRole,
             r.AttendanceId, locationId, workDateStr,
-            r.ArrivalTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LeftTime?.ToString(@"hh\:mm", CultureInfo.InvariantCulture), r.LoggedDate, r.LoggedByUserId
+            r.ArrivalTime?.ToString(@"HH\:mm", CultureInfo.InvariantCulture), r.LeftTime?.ToString(@"HH\:mm", CultureInfo.InvariantCulture), r.LoggedDate, r.LoggedByUserId
         )).ToList();
     }
 
     public async Task LogStaffAttendanceAsync(int locationId, int userId, DateOnly workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedByUserId)
     {
         using var db = factory.Create();
-        var workDateStr = workDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        await staffDb.sp_Staff_LogAttendanceAsync(db, locationId, userId, workDateStr, arrivalTime, leftTime, loggedByUserId);
+        await staffDb.sp_Staff_LogAttendanceAsync(db, locationId, userId, workDate, arrivalTime, leftTime, loggedByUserId);
     }
 
     public async Task<IReadOnlyList<LocationManagerDto>> GetLocationManagersAsync(int locationId)

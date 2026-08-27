@@ -29,8 +29,10 @@ internal sealed class AuthDbService
         args.Add("IsWalkIn", isWalkIn, DbType.Boolean);
         args.Add("CreatedBy", createdBy, DbType.Int32);
         args.Add("IsEmailVerified", isEmailVerified, DbType.Boolean);
+        // Named-argument call -- the function's declared order ends ...JoiningDate, CreatedBy,
+        // IsEmailVerified, IsWalkIn, not ...JoiningDate, IsWalkIn, CreatedBy, IsEmailVerified.
         return db.ExecuteScalarAsync<int>(
-            "SELECT * FROM public.sp_Auth_CreateUser(@Name, @Email, @PasswordHash, @PasswordSalt, @Phone, @Role, @ChainId, @LocationId, @TherapistId, @IsEmulator, @JoiningDate, @IsWalkIn, @CreatedBy, @IsEmailVerified)",
+            "SELECT * FROM public.sp_Auth_CreateUser(p_Name => @Name, p_Email => @Email, p_PasswordHash => @PasswordHash, p_PasswordSalt => @PasswordSalt, p_Phone => @Phone, p_Role => @Role, p_ChainId => @ChainId, p_LocationId => @LocationId, p_TherapistId => @TherapistId, p_IsEmulator => @IsEmulator, p_JoiningDate => @JoiningDate, p_CreatedBy => @CreatedBy, p_IsEmailVerified => @IsEmailVerified, p_IsWalkIn => @IsWalkIn)",
             args, commandType: CommandType.Text);
     }
 
@@ -68,14 +70,14 @@ internal sealed class AuthDbService
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Auth_RevokeRefreshToken(@Id)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Auth_RevokeRefreshToken(@Id)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Auth_RevokeAllRefreshTokensAsync(IDbConnection db, int userId)
     {
         var args = new DynamicParameters();
         args.Add("UserId", userId, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Auth_RevokeAllRefreshTokens(@UserId)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Auth_RevokeAllRefreshTokens(@UserId)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Auth_CreatePasswordResetTokenAsync(IDbConnection db, int userId, byte[] tokenHash, DateTime expiresAt)
@@ -98,7 +100,7 @@ internal sealed class AuthDbService
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Auth_ConsumePasswordResetToken(@Id)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Auth_ConsumePasswordResetToken(@Id)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Auth_CreateEmailChangeTokenAsync(IDbConnection db, int userId, string newEmail, byte[] tokenHash, DateTime expiresAt)
@@ -124,7 +126,7 @@ internal sealed class AuthDbService
         args.Add("Id", id, DbType.Int32);
         args.Add("UserId", userId, DbType.Int32);
         args.Add("NewEmail", newEmail, DbType.String);
-        await db.ExecuteAsync("CALL public.sp_Auth_ConfirmEmailChange(@Id, @UserId, @NewEmail)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Auth_ConfirmEmailChange(@Id, @UserId, @NewEmail)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Auth_UpdatePasswordAsync(IDbConnection db, int userId, byte[] passwordHash, byte[] passwordSalt)
@@ -133,7 +135,7 @@ internal sealed class AuthDbService
         args.Add("UserId", userId, DbType.Int32);
         args.Add("PasswordHash", passwordHash, DbType.Binary);
         args.Add("PasswordSalt", passwordSalt, DbType.Binary);
-        await db.ExecuteAsync("CALL public.sp_Auth_UpdatePassword(@UserId, @PasswordHash, @PasswordSalt)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Auth_UpdatePassword(@UserId, @PasswordHash, @PasswordSalt)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_User_UpdateStripeCustomerIdAsync(IDbConnection db, int userId, string stripeCustomerId)
@@ -141,7 +143,7 @@ internal sealed class AuthDbService
         var args = new DynamicParameters();
         args.Add("UserId", userId, DbType.Int32);
         args.Add("StripeCustomerId", stripeCustomerId, DbType.String);
-        await db.ExecuteAsync("CALL public.sp_User_UpdateStripeCustomerId(@UserId, @StripeCustomerId)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_User_UpdateStripeCustomerId(@UserId, @StripeCustomerId)", args, commandType: CommandType.Text);
     }
 
     public Task<bool> sp_User_HasCustomerBookingInChainAsync(IDbConnection db, int customerId, int chainId)

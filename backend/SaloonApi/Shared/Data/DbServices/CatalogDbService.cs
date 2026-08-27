@@ -57,7 +57,7 @@ internal sealed class CatalogDbService
         args.Add("BreakEndTime", breakEndTime, DbType.Time);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateChain(@Id, @Name, @BreakStartTime, @BreakEndTime, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateChain(@Id, @Name, @BreakStartTime, @BreakEndTime, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Catalog_DeleteChainAsync(IDbConnection db, int id, int updatedBy)
@@ -65,7 +65,7 @@ internal sealed class CatalogDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_DeleteChain(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_DeleteChain(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Catalog_CreateLocationAsync(
@@ -109,7 +109,7 @@ internal sealed class CatalogDbService
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
         await db.ExecuteAsync(
-            "CALL public.sp_Catalog_UpdateLocation(@Id, @Name, @Address, @Latitude, @Longitude, @OpenTime, @CloseTime, @BreakStartTime, @BreakEndTime, @WorkingDaysMask, @TimeZoneId, @IsActive, @UpdatedBy)",
+            "SELECT public.sp_Catalog_UpdateLocation(@Id, @Name, @Address, @Latitude, @Longitude, @OpenTime, @CloseTime, @BreakStartTime, @BreakEndTime, @WorkingDaysMask, @TimeZoneId, @IsActive, @UpdatedBy)",
             args, commandType: CommandType.Text);
     }
 
@@ -118,7 +118,7 @@ internal sealed class CatalogDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_DeleteLocation(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_DeleteLocation(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<LocationDayScheduleRow>> sp_Catalog_GetLocationDayScheduleAsync(IDbConnection db, int locationId)
@@ -140,8 +140,12 @@ internal sealed class CatalogDbService
         args.Add("EffectiveFrom", effectiveFrom, DbType.Date);
         args.Add("EffectiveTo", effectiveTo, DbType.Date);
         args.Add("CreatedBy", createdBy, DbType.Int32);
+        // Named-argument call (p_X => @X), not positional. The underlying SQL function declares
+        // its params in a different order than this request's fields naturally fall in, so a
+        // positional call here previously bound the wrong SQL parameter to each value entirely --
+        // named args sidestep that regardless of which order the function declares them in.
         return db.ExecuteScalarAsync<int>(
-            "SELECT * FROM public.sp_Catalog_AddLocationDaySchedule(@LocationId, @DayBit, @OpenTime, @CloseTime, @IsClosed, @EffectiveFrom, @EffectiveTo, @CreatedBy)",
+            "SELECT * FROM public.sp_Catalog_AddLocationDaySchedule(p_LocationId => @LocationId, p_DayBit => @DayBit, p_OpenTime => @OpenTime, p_CloseTime => @CloseTime, p_IsClosed => @IsClosed, p_EffectiveFrom => @EffectiveFrom, p_EffectiveTo => @EffectiveTo, p_CreatedBy => @CreatedBy)",
             args, commandType: CommandType.Text);
     }
 
@@ -156,8 +160,10 @@ internal sealed class CatalogDbService
         args.Add("EffectiveFrom", effectiveFrom, DbType.Date);
         args.Add("EffectiveTo", effectiveTo, DbType.Date);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
+        // Named-argument call -- the function's declared order is (Id, EffectiveFrom, UpdatedBy,
+        // OpenTime, CloseTime, IsClosed, EffectiveTo), not this method's natural argument order.
         await db.ExecuteAsync(
-            "CALL public.sp_Catalog_UpdateLocationDaySchedule(@Id, @OpenTime, @CloseTime, @IsClosed, @EffectiveFrom, @EffectiveTo, @UpdatedBy)",
+            "SELECT public.sp_Catalog_UpdateLocationDaySchedule(p_Id => @Id, p_EffectiveFrom => @EffectiveFrom, p_UpdatedBy => @UpdatedBy, p_OpenTime => @OpenTime, p_CloseTime => @CloseTime, p_IsClosed => @IsClosed, p_EffectiveTo => @EffectiveTo)",
             args, commandType: CommandType.Text);
     }
 
@@ -166,7 +172,7 @@ internal sealed class CatalogDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_DeleteLocationDaySchedule(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_DeleteLocationDaySchedule(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<TreatmentCategoryDto>> sp_Catalog_GetTreatmentCategoriesAsync(IDbConnection db, int locationId)
@@ -192,7 +198,7 @@ internal sealed class CatalogDbService
         args.Add("Name", name, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateTreatmentCategory(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateTreatmentCategory(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Catalog_CreateTreatmentAsync(
@@ -225,7 +231,7 @@ internal sealed class CatalogDbService
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
         await db.ExecuteAsync(
-            "CALL public.sp_Catalog_UpdateTreatment(@Id, @CategoryId, @Name, @Description, @EffectiveFrom, @IsActive, @UpdatedBy)",
+            "SELECT public.sp_Catalog_UpdateTreatment(@Id, @CategoryId, @Name, @Description, @EffectiveFrom, @IsActive, @UpdatedBy)",
             args, commandType: CommandType.Text);
     }
 
@@ -244,7 +250,9 @@ internal sealed class CatalogDbService
         args.Add("EffectiveFrom", effectiveFrom, DbType.Date);
         args.Add("EffectiveTo", effectiveTo, DbType.Date);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Catalog_AddTreatmentPrice(@TreatmentId, @Price, @EffectiveFrom, @EffectiveTo, @CreatedBy)", args, commandType: CommandType.Text);
+        // Named-argument call -- the function's declared order is (TreatmentId, Price,
+        // EffectiveFrom, CreatedBy, EffectiveTo), not the request's natural field order.
+        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Catalog_AddTreatmentPrice(p_TreatmentId => @TreatmentId, p_Price => @Price, p_EffectiveFrom => @EffectiveFrom, p_EffectiveTo => @EffectiveTo, p_CreatedBy => @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Catalog_UpdateTreatmentPriceAsync(IDbConnection db, int id, decimal price, int updatedBy)
@@ -253,7 +261,7 @@ internal sealed class CatalogDbService
         args.Add("Id", id, DbType.Int32);
         args.Add("Price", price, DbType.Decimal);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateTreatmentPrice(@Id, @Price, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateTreatmentPrice(@Id, @Price, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<TreatmentDurationRow>> sp_Catalog_GetTreatmentDurationsAsync(IDbConnection db, int treatmentId)
@@ -272,7 +280,9 @@ internal sealed class CatalogDbService
         args.Add("EffectiveFrom", effectiveFrom, DbType.Date);
         args.Add("EffectiveTo", effectiveTo, DbType.Date);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Catalog_AddTreatmentDuration(@TreatmentId, @DurationSlots, @PreTimeMinutes, @EffectiveFrom, @EffectiveTo, @CreatedBy)", args, commandType: CommandType.Text);
+        // Named-argument call -- the function's declared order is (TreatmentId, DurationSlots,
+        // EffectiveFrom, CreatedBy, PreTimeMinutes, EffectiveTo), not the request's natural field order.
+        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Catalog_AddTreatmentDuration(p_TreatmentId => @TreatmentId, p_DurationSlots => @DurationSlots, p_PreTimeMinutes => @PreTimeMinutes, p_EffectiveFrom => @EffectiveFrom, p_EffectiveTo => @EffectiveTo, p_CreatedBy => @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Catalog_UpdateTreatmentDurationAsync(IDbConnection db, int id, short durationSlots, short preTimeMinutes, int updatedBy)
@@ -282,7 +292,7 @@ internal sealed class CatalogDbService
         args.Add("DurationSlots", durationSlots, DbType.Int16);
         args.Add("PreTimeMinutes", preTimeMinutes, DbType.Int16);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateTreatmentDuration(@Id, @DurationSlots, @PreTimeMinutes, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateTreatmentDuration(@Id, @DurationSlots, @PreTimeMinutes, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Catalog_DeleteTreatmentDurationAsync(IDbConnection db, int id, int updatedBy)
@@ -290,7 +300,7 @@ internal sealed class CatalogDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_DeleteTreatmentDuration(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_DeleteTreatmentDuration(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<TherapistDto>> sp_Catalog_GetTherapistsAsync(IDbConnection db, int? chainId, int? locationId)
@@ -316,7 +326,7 @@ internal sealed class CatalogDbService
         args.Add("Name", name, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateTherapist(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateTherapist(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Catalog_LinkTherapistScopeAsync(IDbConnection db, int id, int? chainId, int? locationId, int? userId, int updatedBy)
@@ -327,7 +337,7 @@ internal sealed class CatalogDbService
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("UserId", userId, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_LinkTherapistScope(@Id, @ChainId, @LocationId, @UserId, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_LinkTherapistScope(@Id, @ChainId, @LocationId, @UserId, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<RoomDto>> sp_Catalog_GetRoomsAsync(IDbConnection db, int locationId)
@@ -353,7 +363,7 @@ internal sealed class CatalogDbService
         args.Add("Name", name, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Catalog_UpdateRoom(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Catalog_UpdateRoom(@Id, @Name, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<VenueSearchResultDto>> sp_Catalog_SearchAsync(IDbConnection db, string? search)

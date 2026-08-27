@@ -39,7 +39,7 @@ internal sealed class PaymentDbService
         args.Add("FailureReason", failureReason, DbType.String);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
         args.Add("AmountTendered", amountTendered, DbType.Decimal);
-        await db.ExecuteAsync("CALL public.sp_Payment_UpdateStatus(@PaymentId, @Status, @TransactionId, @FailureReason, @UpdatedBy, @AmountTendered)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Payment_UpdateStatus(@PaymentId, @Status, @TransactionId, @FailureReason, @UpdatedBy, @AmountTendered)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<PaymentDto>> sp_Payment_GetByBookingIdAsync(IDbConnection db, int bookingId)

@@ -1030,7 +1030,12 @@ CREATE OR REPLACE FUNCTION public.fn_Booking_ConfirmationTreatments(p_BookingId 
 RETURNS TABLE(BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
               StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar)
 LANGUAGE sql STABLE AS $$
-    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+    -- COALESCE against bt.SlotCount (NOT NULL, the same DurationSlots value denormalized onto the
+    -- line at booking time -- see sp_Booking_CreateDraft) -- td.DurationSlots is NULL for any
+    -- booking whose TreatmentDurationId never got backfilled (legacy data), which would otherwise
+    -- crash Dapper materializing this into ConfirmationTreatmentLineDto's non-nullable short.
+    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName,
+        COALESCE(td.DurationSlots, bt.SlotCount) AS DurationSlots, COALESCE(td.PreTimeMinutes, 0) AS PreTimeMinutes, bt.Price,
         bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName
     FROM public.BookingTreatments bt
         JOIN public.Treatments t ON t.Id = bt.TreatmentId
@@ -1148,7 +1153,9 @@ CREATE OR REPLACE FUNCTION public.fn_Booking_GetByIdTreatments(p_BookingId int)
 RETURNS TABLE(BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
               StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar, ExpiresAt timestamptz)
 LANGUAGE sql STABLE AS $$
-    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+    -- COALESCE against bt.SlotCount, see fn_Booking_ConfirmationTreatments for why.
+    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName,
+        COALESCE(td.DurationSlots, bt.SlotCount) AS DurationSlots, COALESCE(td.PreTimeMinutes, 0) AS PreTimeMinutes, bt.Price,
         bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName, bt.ExpiresAt
     FROM public.BookingTreatments bt
         JOIN public.Treatments t ON t.Id = bt.TreatmentId
@@ -2209,7 +2216,9 @@ CREATE OR REPLACE FUNCTION public.fn_Booking_ForLocationTreatments(p_LocationId 
 RETURNS TABLE(BookingId int, BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
               StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar, ExpiresAt timestamptz)
 LANGUAGE sql STABLE AS $$
-    SELECT bt.BookingId, bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+    -- COALESCE against bt.SlotCount, see fn_Booking_ConfirmationTreatments for why.
+    SELECT bt.BookingId, bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName,
+        COALESCE(td.DurationSlots, bt.SlotCount) AS DurationSlots, COALESCE(td.PreTimeMinutes, 0) AS PreTimeMinutes, bt.Price,
         bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName, bt.ExpiresAt
     FROM public.BookingTreatments bt
         JOIN public.Treatments t ON t.Id = bt.TreatmentId
@@ -2390,9 +2399,9 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.sp_Admin_GetCustomerProfile(p_CustomerId int)
-RETURNS TABLE(Id int, Name varchar, Email varchar, Phone varchar, IsActive boolean, CreatedDate timestamptz)
+RETURNS TABLE(Id int, Name varchar, Email varchar, Phone varchar, IsActive boolean, CreatedDate timestamptz, IsWalkIn boolean)
 LANGUAGE sql STABLE AS $$
-    SELECT u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate
+    SELECT u.Id, u.Name, u.Email, u.Phone, u.IsActive, u.CreatedDate, u.IsWalkIn
     FROM public.Users u
     WHERE u.Id = p_CustomerId AND u.IsDelete = FALSE AND u.Role = 'Customer';
 $$;
@@ -3618,12 +3627,17 @@ LANGUAGE sql STABLE AS $$
     ORDER BY QuantityOnHand;
 $$;
 
+-- p_Lines is jsonb, not public.PurchaseOrderLineType[] -- the C# caller (AsPurchaseOrderLineList
+-- in DapperSp.cs) already serializes the line list to a JSON string rather than binding an actual
+-- Npgsql composite-array parameter (that needs a one-time NpgsqlDataSource.MapComposite<T>() call
+-- this codebase never made), so a composite-array-typed parameter here could never actually be
+-- called -- "function ... does not exist" for every purchase order, every time.
 CREATE OR REPLACE FUNCTION public.sp_Inventory_CreatePurchaseOrder(
-    p_LocationId int, p_SupplierId int, p_Lines public.PurchaseOrderLineType[], p_CreatedBy int DEFAULT NULL, OUT p_Id int
+    p_LocationId int, p_SupplierId int, p_Lines jsonb, p_CreatedBy int DEFAULT NULL, OUT p_Id int
 )
 LANGUAGE plpgsql AS $$
 BEGIN
-    IF p_Lines IS NULL OR array_length(p_Lines, 1) IS NULL THEN
+    IF p_Lines IS NULL OR jsonb_array_length(p_Lines) = 0 THEN
         RAISE EXCEPTION 'A purchase order needs at least one line.' USING ERRCODE = '50053';
     END IF;
 
@@ -3632,8 +3646,8 @@ BEGIN
     RETURNING Id INTO p_Id;
 
     INSERT INTO public.PurchaseOrderLines (PurchaseOrderId, ProductId, QuantityOrdered, UnitCost)
-    SELECT p_Id, (line).ProductId, (line).Quantity, (line).UnitCost
-    FROM unnest(p_Lines) AS line;
+    SELECT p_Id, (line->>'ProductId')::int, (line->>'Quantity')::int, (line->>'UnitCost')::numeric(10,2)
+    FROM jsonb_array_elements(p_Lines) AS line;
 END;
 $$;
 

@@ -4,11 +4,16 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Catalog.Infrastructure;
 
-internal sealed record ChainDto(int Id, string Name, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime);
+// Postgres `time`/`date` columns come back through Npgsql as TimeOnly/DateOnly (the registered
+// TimeOnlyTypeHandler/DateOnlyTypeHandler in DapperSp.cs), not TimeSpan/DateTime -- a positional
+// record needs the exact CLR type or Dapper can't find a matching constructor at all (throws
+// "no matching constructor" the moment a non-empty row actually comes back, which is why this
+// went unnoticed: every one of these endpoints returns 0 rows in an empty dev DB).
+internal sealed record ChainDto(int Id, string Name, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime);
 
 internal sealed record LocationDto(
     int Id, int ChainId, string Name, string? Address, decimal? Latitude, decimal? Longitude,
-    TimeSpan OpenTime, TimeSpan CloseTime, TimeSpan? BreakStartTime, TimeSpan? BreakEndTime, byte WorkingDaysMask, string TimeZoneId);
+    TimeOnly OpenTime, TimeOnly CloseTime, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask, string TimeZoneId);
 
 internal sealed record VenueSearchResultDto(
     int Id, int ChainId, string ChainName, string Name, string? Address,
@@ -22,27 +27,37 @@ internal sealed record LocationHolidayRow(DateOnly HolidayDate, string? Reason);
 
 internal sealed record LocationClosureDto(int Id, int LocationId, string LocationName, int ChainId, DateOnly HolidayDate, string? Reason, string Type);
 
-internal sealed record LocationClosureRow(int Id, int LocationId, string LocationName, int ChainId, DateTime HolidayDate, string? Reason, string Type);
+internal sealed record LocationClosureRow(int Id, int LocationId, string LocationName, int ChainId, DateOnly HolidayDate, string? Reason, string Type);
 
-internal sealed record LocationDayScheduleDto(int Id, byte DayBit, TimeSpan? OpenTime, TimeSpan? CloseTime, bool IsClosed, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
-internal sealed record LocationDayScheduleRow(int Id, byte DayBit, TimeSpan? OpenTime, TimeSpan? CloseTime, bool IsClosed, DateTime EffectiveFrom, DateTime? EffectiveTo);
+// DayBit is a Postgres smallint -- short (Int16), not byte, or positional materialization fails
+// the same way WorkingDaysMask did on LocationDto above.
+internal sealed record LocationDayScheduleDto(int Id, short DayBit, TimeOnly? OpenTime, TimeOnly? CloseTime, bool IsClosed, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
+internal sealed record LocationDayScheduleRow(int Id, short DayBit, TimeOnly? OpenTime, TimeOnly? CloseTime, bool IsClosed, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 
-internal sealed record TreatmentCategoryDto(int Id, string Name);
+// sp_Catalog_GetTreatmentCategories returns LocationId/IsActive too (RETURNS TABLE(Id, LocationId,
+// Name, IsActive)) -- this record was missing both, which is a column-COUNT mismatch (not just a
+// type one), same "no matching constructor" failure.
+internal sealed record TreatmentCategoryDto(int Id, int LocationId, string Name, bool IsActive);
 
 internal sealed record TherapistDto(int Id, string Name, bool IsActive, int? ChainId, int? LocationId);
 
 internal sealed record RoomDto(int Id, int LocationId, string Name, bool IsActive);
 
-internal sealed record AdminChainDto(int Id, string Name, bool IsActive);
-internal sealed record AdminLocationDto(int Id, int ChainId, string Name, string? Address, string TimeZoneId, bool IsActive);
-internal sealed record AdminTreatmentRow(int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes, DateTime EffectiveFrom, bool IsActive);
+// sp_Admin_GetChains/sp_Admin_GetLocations return several more columns than these previously
+// declared (BreakStartTime/BreakEndTime; Latitude/Longitude/OpenTime/CloseTime/BreakStartTime/
+// BreakEndTime/WorkingDaysMask) -- same column-count mismatch as TreatmentCategoryDto above.
+internal sealed record AdminChainDto(int Id, string Name, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, bool IsActive);
+internal sealed record AdminLocationDto(
+    int Id, int ChainId, string Name, string? Address, decimal? Latitude, decimal? Longitude,
+    TimeOnly OpenTime, TimeOnly CloseTime, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask, string TimeZoneId, bool IsActive);
+internal sealed record AdminTreatmentRow(int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, bool IsActive);
 internal sealed record AdminTreatmentDto(int Id, int CategoryId, string CategoryName, string Name, string? Description, decimal Price, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, bool IsActive);
 
 internal sealed record TreatmentPriceDto(int Id, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
-internal sealed record TreatmentPriceRow(int Id, decimal Price, DateTime EffectiveFrom, DateTime? EffectiveTo);
+internal sealed record TreatmentPriceRow(int Id, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 
 internal sealed record TreatmentDurationDto(int Id, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
-internal sealed record TreatmentDurationRow(int Id, short DurationSlots, short PreTimeMinutes, DateTime EffectiveFrom, DateTime? EffectiveTo);
+internal sealed record TreatmentDurationRow(int Id, short DurationSlots, short PreTimeMinutes, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 
 internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUser currentUser, CatalogDbService catalogDb, AdminDbService adminDb)
 {
@@ -68,7 +83,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await catalogDb.sp_Catalog_GetLocationHolidaysAsync(db, locationId, from, to);
-        return rows.Select(r => r.HolidayDate).ToList();
+        return [.. rows.Select(r => r.HolidayDate)];
     }
 
     public async Task<IEnumerable<AdminChainDto>> GetChainsForAdminAsync(int? chainId = null)
@@ -95,7 +110,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         var rows = await adminDb.sp_Admin_GetTreatmentsAsync(db, locationId);
         return rows.Select(r => new AdminTreatmentDto(
-            r.Id, r.CategoryId, r.CategoryName, r.Name, r.Description, r.Price, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom), r.IsActive));
+            r.Id, r.CategoryId, r.CategoryName, r.Name, r.Description, r.Price, r.DurationSlots, r.PreTimeMinutes, r.EffectiveFrom, r.IsActive));
     }
 
     public async Task<int> CreateChainAsync(string name, TimeSpan? breakStartTime, TimeSpan? breakEndTime)
@@ -146,8 +161,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         using var db = factory.Create();
         var rows = await catalogDb.sp_Catalog_GetLocationDayScheduleAsync(db, locationId);
         return rows.Select(r => new LocationDayScheduleDto(
-            r.Id, r.DayBit, r.OpenTime, r.CloseTime, r.IsClosed, DateOnly.FromDateTime(r.EffectiveFrom),
-            r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
+            r.Id, r.DayBit, r.OpenTime, r.CloseTime, r.IsClosed, r.EffectiveFrom, r.EffectiveTo));
     }
 
     public async Task<int> AddLocationDayScheduleAsync(
@@ -210,7 +224,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await catalogDb.sp_Catalog_GetTreatmentPricesAsync(db, treatmentId);
-        return rows.Select(r => new TreatmentPriceDto(r.Id, r.Price, DateOnly.FromDateTime(r.EffectiveFrom), r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
+        return rows.Select(r => new TreatmentPriceDto(r.Id, r.Price, r.EffectiveFrom, r.EffectiveTo));
     }
 
     public async Task<int> AddTreatmentPriceAsync(int treatmentId, decimal price, DateOnly effectiveFrom, DateOnly? effectiveTo)
@@ -229,7 +243,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await catalogDb.sp_Catalog_GetTreatmentDurationsAsync(db, treatmentId);
-        return rows.Select(r => new TreatmentDurationDto(r.Id, r.DurationSlots, r.PreTimeMinutes, DateOnly.FromDateTime(r.EffectiveFrom), r.EffectiveTo.HasValue ? DateOnly.FromDateTime(r.EffectiveTo.Value) : null));
+        return rows.Select(r => new TreatmentDurationDto(r.Id, r.DurationSlots, r.PreTimeMinutes, r.EffectiveFrom, r.EffectiveTo));
     }
 
     public async Task<int> AddTreatmentDurationAsync(int treatmentId, short durationSlots, short preTimeMinutes, DateOnly effectiveFrom, DateOnly? effectiveTo)
@@ -296,13 +310,13 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
     {
         using var db = factory.Create();
         var rows = await adminDb.sp_Admin_GetLocationClosuresAsync(db, locationId, chainId, id);
-        return rows.Select(r => new LocationClosureDto(r.Id, r.LocationId, r.LocationName, r.ChainId, DateOnly.FromDateTime(r.HolidayDate), r.Reason, r.Type));
+        return rows.Select(r => new LocationClosureDto(r.Id, r.LocationId, r.LocationName, r.ChainId, r.HolidayDate, r.Reason, r.Type));
     }
 
     public async Task CreateClosuresAsync(IEnumerable<int> locationIds, DateOnly fromDate, DateOnly toDate, string type, string? reason)
     {
         using var db = factory.Create();
-        await adminDb.sp_Admin_CreateLocationClosuresAsync(db, locationIds.ToArray(), fromDate, toDate, type, reason, currentUser.RequireUserId());
+        await adminDb.sp_Admin_CreateLocationClosuresAsync(db, [.. locationIds], fromDate, toDate, type, reason, currentUser.RequireUserId());
     }
 
     public async Task DeleteClosureAsync(int id)

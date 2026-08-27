@@ -13,11 +13,13 @@ internal sealed record TherapistShiftDto
     public string TherapistName { get; init; } = "";
     public int? RoomId { get; init; }
     public string ShiftType { get; init; } = "";
-    public TimeSpan StartTime { get; init; }
-    public TimeSpan EndTime { get; init; }
+    public TimeOnly StartTime { get; init; }
+    public TimeOnly EndTime { get; init; }
 }
 
-internal sealed record ShiftDetailsDto(int LocationId, DateTime WorkDate, int? RoomId, int TherapistId, string ShiftType);
+// WorkDate is a Postgres `date` column -- DateOnly (via the registered DateOnlyTypeHandler), not
+// DateTime, or positional materialization throws "no matching constructor" once a row comes back.
+internal sealed record ShiftDetailsDto(int LocationId, DateOnly WorkDate, int? RoomId, int TherapistId, string ShiftType);
 
 internal sealed record RoomOpeningDto
 {
@@ -29,20 +31,20 @@ internal sealed record RoomOpeningDto
     public string ShiftType { get; init; } = "";
 }
 
-internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, string ShiftType, int TreatmentCategoryId);
+internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateOnly WorkDate, string ShiftType, int TreatmentCategoryId);
 
 internal sealed record BlockedSlotDto
 {
     public int Id { get; init; }
     public int RoomId { get; init; }
     public string RoomName { get; init; } = "";
-    public TimeSpan StartTime { get; init; }
-    public TimeSpan EndTime { get; init; }
+    public TimeOnly StartTime { get; init; }
+    public TimeOnly EndTime { get; init; }
     public string Reason { get; init; } = "";
     public bool IsLocationBreak { get; init; }
 }
 
-internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
+internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateOnly WorkDate, TimeOnly StartTime, TimeOnly EndTime, string Reason);
 
 internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings, IReadOnlyList<BlockedSlotDto> BlockedSlots);
 

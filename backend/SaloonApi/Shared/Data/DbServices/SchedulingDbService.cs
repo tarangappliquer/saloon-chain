@@ -55,7 +55,7 @@ internal sealed class SchedulingDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Scheduling_RemoveTherapistShift(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Scheduling_RemoveTherapistShift(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Scheduling_UpdateTherapistShiftAsync(IDbConnection db, int id, TimeSpan startTime, TimeSpan endTime, int updatedBy)
@@ -65,7 +65,7 @@ internal sealed class SchedulingDbService
         args.Add("StartTime", startTime, DbType.Time);
         args.Add("EndTime", endTime, DbType.Time);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Scheduling_UpdateTherapistShift(@Id, @StartTime, @EndTime, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Scheduling_UpdateTherapistShift(@Id, @StartTime, @EndTime, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<int?> sp_Scheduling_GetShiftLocationIdAsync(IDbConnection db, int id)
@@ -105,7 +105,7 @@ internal sealed class SchedulingDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Scheduling_CloseRoom(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Scheduling_CloseRoom(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<int?> sp_Scheduling_GetRoomOpeningLocationIdAsync(IDbConnection db, int id)
@@ -177,7 +177,9 @@ internal sealed class SchedulingDbService
         args.Add("EndTime", endTime, DbType.Time);
         args.Add("Reason", reason, DbType.String);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Scheduling_BlockSlot(@RoomId, @BlockTypeId, @WorkDate, @StartTime, @EndTime, @Reason, @CreatedBy)", args, commandType: CommandType.Text);
+        // Named-argument call -- the function's declared order is (RoomId, WorkDate, StartTime,
+        // EndTime, Reason, BlockTypeId, CreatedBy), not this method's natural argument order.
+        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Scheduling_BlockSlot(p_RoomId => @RoomId, p_WorkDate => @WorkDate, p_StartTime => @StartTime, p_EndTime => @EndTime, p_Reason => @Reason, p_BlockTypeId => @BlockTypeId, p_CreatedBy => @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Scheduling_UnblockSlotAsync(IDbConnection db, int id, int updatedBy)
@@ -185,7 +187,7 @@ internal sealed class SchedulingDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Scheduling_UnblockSlot(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Scheduling_UnblockSlot(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Scheduling_UpdateBlockedSlotAsync(IDbConnection db, int id, TimeSpan startTime, TimeSpan endTime, string reason, int? blockTypeId, int updatedBy)
@@ -197,7 +199,7 @@ internal sealed class SchedulingDbService
         args.Add("EndTime", endTime, DbType.Time);
         args.Add("Reason", reason, DbType.String);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Scheduling_UpdateBlockedSlot(@Id, @BlockTypeId, @StartTime, @EndTime, @Reason, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Scheduling_UpdateBlockedSlot(@Id, @BlockTypeId, @StartTime, @EndTime, @Reason, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<BlockedSlotDetailsDto?> sp_Scheduling_GetBlockedSlotDetailsAsync(IDbConnection db, int id)

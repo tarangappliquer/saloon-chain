@@ -29,7 +29,7 @@ internal sealed class ProfileDbService
         args.Add("UserId", userId, DbType.Int32);
         args.Add("Name", name, DbType.String);
         args.Add("Phone", phone, DbType.String);
-        await db.ExecuteAsync("CALL public.sp_Profile_UpdateSelf(@UserId, @Name, @Phone)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Profile_UpdateSelf(@UserId, @Name, @Phone)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Profile_SetCustomerPhotoAsync(IDbConnection db, int userId, string photoPath)
@@ -37,7 +37,7 @@ internal sealed class ProfileDbService
         var args = new DynamicParameters();
         args.Add("UserId", userId, DbType.Int32);
         args.Add("PhotoPath", photoPath, DbType.String);
-        await db.ExecuteAsync("CALL public.sp_Profile_SetCustomerPhoto(@UserId, @PhotoPath)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Profile_SetCustomerPhoto(@UserId, @PhotoPath)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Profile_SetStaffPhotoAsync(IDbConnection db, int userId, string photoPath)
@@ -45,6 +45,6 @@ internal sealed class ProfileDbService
         var args = new DynamicParameters();
         args.Add("UserId", userId, DbType.Int32);
         args.Add("PhotoPath", photoPath, DbType.String);
-        await db.ExecuteAsync("CALL public.sp_Profile_SetStaffPhoto(@UserId, @PhotoPath)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Profile_SetStaffPhoto(@UserId, @PhotoPath)", args, commandType: CommandType.Text);
     }
 }

@@ -86,7 +86,7 @@ internal sealed class BookingDbService
         args.Add("CustomerId", customerId, DbType.Int32);
         args.Add("TreatmentId", treatmentId, DbType.Int32);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Booking_AddTreatment(@BookingId, @CustomerId, @TreatmentId, @CreatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Booking_AddTreatment(@BookingId, @CustomerId, @TreatmentId, @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<BookingLocationRow?> sp_Booking_RemoveTreatmentAsync(IDbConnection db, int bookingId, int customerId, int treatmentId, int? updatedBy)
@@ -235,7 +235,7 @@ internal sealed class BookingDbService
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Booking_RemoveProduct(@Id)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Booking_RemoveProduct(@Id)", args, commandType: CommandType.Text);
     }
 
     public Task<int?> sp_Booking_GetLocationIdAsync(IDbConnection db, int bookingId)
@@ -251,7 +251,7 @@ internal sealed class BookingDbService
         args.Add("BookingId", bookingId, DbType.Int32);
         args.Add("AppointmentStatusId", appointmentStatusId, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Booking_SetAppointmentStatus(@BookingId, @AppointmentStatusId, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Booking_SetAppointmentStatus(@BookingId, @AppointmentStatusId, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<BookingLocationRow>> sp_Booking_CancelAsAdminAsync(IDbConnection db, int bookingId, int? updatedBy, int? cancelReasonId)
@@ -268,6 +268,6 @@ internal sealed class BookingDbService
         var args = new DynamicParameters();
         args.Add("BookingId", bookingId, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Booking_MarkNoShow(@BookingId, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Booking_MarkNoShow(@BookingId, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 }

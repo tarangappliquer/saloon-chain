@@ -70,7 +70,7 @@ internal static class AdminBlockTypesEndpoints
 
             using var db = factory.Create();
             var id = await adminDb.sp_Admin_CreateBlockTypeAsync(
-                db, targetChainId, targetLocationId, req.Name, req.IsPaid, currentUser.RequireUserId());
+                db, targetChainId, targetLocationId, req.Name, req.IsPaid, req.DefaultDurationMinutes, req.ColorHex, currentUser.RequireUserId());
             return Results.Ok(new IdResponse(id));
         })
         .WithValidation<CreateBlockTypeRequest>()
@@ -82,7 +82,7 @@ internal static class AdminBlockTypesEndpoints
         {
             using var db = factory.Create();
             await adminDb.sp_Admin_UpdateBlockTypeAsync(
-                db, id, req.Name, req.IsPaid, req.IsActive, currentUser.RequireUserId());
+                db, id, req.Name, req.IsPaid, req.DefaultDurationMinutes, req.ColorHex, req.IsActive, currentUser.RequireUserId());
             return Results.NoContent();
         })
         .WithValidation<UpdateBlockTypeRequest>()

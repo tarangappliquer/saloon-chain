@@ -36,7 +36,7 @@ internal sealed class InventoryDbService
         args.Add("ContactPhone", contactPhone, DbType.String);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Inventory_UpdateSupplier(@Id, @Name, @ContactEmail, @ContactPhone, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Inventory_UpdateSupplier(@Id, @Name, @ContactEmail, @ContactPhone, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Inventory_DeleteSupplierAsync(IDbConnection db, int id, int? updatedBy)
@@ -44,7 +44,7 @@ internal sealed class InventoryDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Inventory_DeleteSupplier(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Inventory_DeleteSupplier(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Inventory_CreateProductAsync(IDbConnection db, int locationId, int? supplierId, string name, string? sku, decimal price, int quantityOnHand, int reorderThreshold, int? createdBy)
@@ -79,7 +79,7 @@ internal sealed class InventoryDbService
         args.Add("ReorderThreshold", reorderThreshold, DbType.Int32);
         args.Add("IsActive", isActive, DbType.Boolean);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Inventory_UpdateProduct(@Id, @SupplierId, @Name, @SKU, @Price, @ReorderThreshold, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Inventory_UpdateProduct(@Id, @SupplierId, @Name, @SKU, @Price, @ReorderThreshold, @IsActive, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public async Task sp_Inventory_DeleteProductAsync(IDbConnection db, int id, int? updatedBy)
@@ -87,7 +87,7 @@ internal sealed class InventoryDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Inventory_DeleteProduct(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Inventory_DeleteProduct(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<LowStockProductDto>> sp_Inventory_GetLowStockProductsAsync(IDbConnection db, int locationId)
@@ -97,14 +97,17 @@ internal sealed class InventoryDbService
         return db.QueryAsync<LowStockProductDto>("SELECT * FROM public.sp_Inventory_GetLowStockProducts(@LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<int> sp_Inventory_CreatePurchaseOrderAsync(IDbConnection db, int locationId, int supplierId, object lines, int? createdBy)
+    public Task<int> sp_Inventory_CreatePurchaseOrderAsync(IDbConnection db, int locationId, int supplierId, string lines, int? createdBy)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("SupplierId", supplierId, DbType.Int32);
-        args.Add("Lines", lines, DbType.Object);
+        args.Add("Lines", lines, DbType.String);
         args.Add("CreatedBy", createdBy, DbType.Int32);
-        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Inventory_CreatePurchaseOrder(@LocationId, @SupplierId, @Lines, @CreatedBy)", args, commandType: CommandType.Text);
+        // @Lines::jsonb -- p_Lines is jsonb (see the function's own comment); an explicit cast here
+        // means Npgsql doesn't need any special type inference for the plain JSON string `lines`
+        // (from AsPurchaseOrderLineList) to bind correctly.
+        return db.ExecuteScalarAsync<int>("SELECT * FROM public.sp_Inventory_CreatePurchaseOrder(@LocationId, @SupplierId, @Lines::jsonb, @CreatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<PurchaseOrderDto>> sp_Inventory_GetPurchaseOrdersAsync(IDbConnection db, int locationId)
@@ -130,7 +133,7 @@ internal sealed class InventoryDbService
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        await db.ExecuteAsync("CALL public.sp_Inventory_ReceivePurchaseOrder(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
+        await db.ExecuteAsync("SELECT public.sp_Inventory_ReceivePurchaseOrder(@Id, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<BookingProductDto>> sp_Booking_GetProductsAsync(IDbConnection db, int bookingId)

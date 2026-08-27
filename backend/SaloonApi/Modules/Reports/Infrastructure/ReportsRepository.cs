@@ -3,11 +3,15 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Reports.Infrastructure;
 
-internal sealed record SalesByServiceDto(int TreatmentId, string TreatmentName, string CategoryName, int BookingCount, decimal TotalRevenue);
-internal sealed record SalesByStaffDto(int TherapistId, string TherapistName, int BookingCount, decimal TotalRevenue);
-internal sealed record SalesByLocationDto(int LocationId, string LocationName, int BookingCount, decimal TotalRevenue);
-internal sealed record RetentionDto(int TotalCustomers, int ReturningCustomers, decimal RetentionRatePercent);
-internal sealed record NoShowRateDto(int TotalAppointments, int NoShowCount, decimal NoShowRatePercent);
+// BookingCount/TotalCustomers/etc are COUNT(*)/SUM(int) results -- Postgres returns bigint for
+// those, which Npgsql/Dapper materializes as long, not int (positional-record materialization
+// requires an exact type match, so `int` here throws "no matching constructor" the moment a row
+// actually comes back).
+internal sealed record SalesByServiceDto(int TreatmentId, string TreatmentName, string CategoryName, long BookingCount, decimal TotalRevenue);
+internal sealed record SalesByStaffDto(int TherapistId, string TherapistName, long BookingCount, decimal TotalRevenue);
+internal sealed record SalesByLocationDto(int LocationId, string LocationName, long BookingCount, decimal TotalRevenue);
+internal sealed record RetentionDto(long TotalCustomers, long ReturningCustomers, decimal RetentionRatePercent);
+internal sealed record NoShowRateDto(long TotalAppointments, long NoShowCount, decimal NoShowRatePercent);
 
 internal sealed class ReportsRepository(SqlConnectionFactory factory, ReportsDbService reportsDb)
 {

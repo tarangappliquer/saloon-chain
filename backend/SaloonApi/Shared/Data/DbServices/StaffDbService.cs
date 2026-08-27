@@ -9,24 +9,27 @@ namespace SaloonApi.Shared.Data.DbServices;
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class StaffDbService
 {
-    public Task<IEnumerable<StaffAttendanceRow>> sp_Staff_GetAttendanceAsync(IDbConnection db, int locationId, string workDate)
+    // p_WorkDate is a Postgres `date` parameter -- DbType.Date (not .String) so Npgsql sends it
+    // as a date, or Postgres can't resolve the function overload at all ("function ... does not
+    // exist", since text->date isn't an implicit cast Postgres will use for overload matching).
+    public Task<IEnumerable<StaffAttendanceRow>> sp_Staff_GetAttendanceAsync(IDbConnection db, int locationId, DateOnly workDate)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
-        args.Add("WorkDate", workDate, DbType.String);
+        args.Add("WorkDate", workDate, DbType.Date);
         return db.QueryAsync<StaffAttendanceRow>("SELECT * FROM public.sp_Staff_GetAttendance(@LocationId, @WorkDate)", args, commandType: CommandType.Text);
     }
 
-    public Task sp_Staff_LogAttendanceAsync(IDbConnection db, int locationId, int userId, string workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedBy)
+    public Task sp_Staff_LogAttendanceAsync(IDbConnection db, int locationId, int userId, DateOnly workDate, TimeSpan? arrivalTime, TimeSpan? leftTime, int loggedBy)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("UserId", userId, DbType.Int32);
-        args.Add("WorkDate", workDate, DbType.String);
+        args.Add("WorkDate", workDate, DbType.Date);
         args.Add("ArrivalTime", arrivalTime, DbType.Time);
         args.Add("LeftTime", leftTime, DbType.Time);
         args.Add("LoggedBy", loggedBy, DbType.Int32);
-        return db.ExecuteAsync("CALL public.sp_Staff_LogAttendance(@LocationId, @UserId, @WorkDate, @ArrivalTime, @LeftTime, @LoggedBy)", args, commandType: CommandType.Text);
+        return db.ExecuteAsync("SELECT public.sp_Staff_LogAttendance(@LocationId, @UserId, @WorkDate, @ArrivalTime, @LeftTime, @LoggedBy)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<UnattendedPreBookingAlertDto>> sp_Staff_GetUnattendedPreBookingAlertsAsync(IDbConnection db)

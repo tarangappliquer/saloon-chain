@@ -17,9 +17,9 @@ internal sealed record DashboardKpiDto
 internal sealed record DashboardUpcomingAppointmentDto
 {
     public int BookingId { get; init; }
-    public DateTime AppointmentDate { get; init; }
-    public TimeSpan StartTimeSlot { get; init; }
-    public TimeSpan EndTimeSlot { get; init; }
+    public DateOnly AppointmentDate { get; init; }
+    public TimeOnly StartTimeSlot { get; init; }
+    public TimeOnly EndTimeSlot { get; init; }
     public string CustomerName { get; init; } = "";
     public string LocationName { get; init; } = "";
     public string? TherapistName { get; init; }
