@@ -134,7 +134,8 @@ try
     builder.Services.AddOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>()
         .Configure<IOptionsMonitor<CorsOptions>, IOptionsMonitor<PortalUrlOptions>>((options, corsMonitor, portalMonitor) =>
         {
-            var configuredOrigins = corsMonitor.CurrentValue.AllowedOrigins ?? [];
+            var configuredOrigins = corsMonitor.CurrentValue.AllowedOrigins
+                .Split([',', ';', ' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var clientUrl = portalMonitor.CurrentValue.ClientPortalUrl;
             var adminUrl = portalMonitor.CurrentValue.AdminPortalUrl;
 
