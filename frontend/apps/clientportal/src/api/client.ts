@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { AuthApi, BookingApi, CatalogApi, ConfigApi, Configuration, PaymentApi, ProfileApi, ReviewApi } from '@saloon/api-client';
 import { appConfig } from '../config';
@@ -100,17 +101,58 @@ const axiosInstance = axios.create({ baseURL: API_BASE });
 // Public, no-auth endpoints -- attaching a Bearer token here would still work (the backend ignores
 // it), but it turns a same-origin-safe GET into one needing a CORS preflight (Authorization is a
 // non-simple header) and makes the server validate a token nobody asked for, on every single call.
-const NO_AUTH_HEADER_PATHS = ['/api/config/adminportal', '/api/config/clientportal', '/health'];
+const NO_AUTH_HEADER_PATHS = ['/health'];
+
+let activeRequestCount = 0;
+const loadingSubscribers = new Set<(isLoading: boolean) => void>();
+
+export function subscribeApiLoading(callback: (isLoading: boolean) => void) {
+  loadingSubscribers.add(callback);
+  callback(activeRequestCount > 0);
+  return () => {
+    loadingSubscribers.delete(callback);
+  };
+}
+
+export function useGlobalApiLoading(): boolean {
+  const [isLoading, setIsLoading] = useState(false);
+  useEffect(() => {
+    return subscribeApiLoading(setIsLoading);
+  }, []);
+  return isLoading;
+}
+
+function notifyLoadingSubscribers() {
+  const isLoading = activeRequestCount > 0;
+  loadingSubscribers.forEach((cb) => cb(isLoading));
+}
 
 axiosInstance.interceptors.request.use((config) => {
+  const suppress = config.headers?.['X-Suppress-Global-Loader'] === 'true';
+  if (!suppress) {
+    activeRequestCount++;
+    notifyLoadingSubscribers();
+  }
   const isPublicPath = NO_AUTH_HEADER_PATHS.some((p) => config.url?.endsWith(p));
   if (authToken && !isPublicPath) config.headers.set('Authorization', `Bearer ${authToken}`);
   return config;
 });
 
 axiosInstance.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const suppress = res.config.headers?.['X-Suppress-Global-Loader'] === 'true';
+    if (!suppress) {
+      activeRequestCount = Math.max(0, activeRequestCount - 1);
+      notifyLoadingSubscribers();
+    }
+    return res;
+  },
   async (error: AxiosError) => {
+    const suppress = error.config?.headers?.['X-Suppress-Global-Loader'] === 'true';
+    if (!suppress) {
+      activeRequestCount = Math.max(0, activeRequestCount - 1);
+      notifyLoadingSubscribers();
+    }
     const config = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
     const isNoRefreshPath = NO_REFRESH_PATHS.some((p) => config?.url?.endsWith(p));
 

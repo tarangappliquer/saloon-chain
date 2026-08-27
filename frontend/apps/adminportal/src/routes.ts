@@ -27,8 +27,8 @@ export const routes = {
   customerProfile: (id: Id) => `/customers/${id}`,
   calendar: (params?: { chainId?: Id | null; locationId?: Id | null; view?: string }) =>
     withQuery('/calendar', params),
-  inventory: '/inventory',
-  reports: '/reports',
+  inventory: (tab?: string) => withQuery('/inventory', { tab }),
+  reports: (tab?: string) => withQuery('/reports', { tab }),
   settings: '/settings',
   blockTypes: '/settings/block-types',
   appointmentStatuses: '/settings/appointment-statuses',

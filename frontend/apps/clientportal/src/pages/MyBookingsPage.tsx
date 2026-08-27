@@ -1,7 +1,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Star } from 'lucide-react';
-import { Badge, Button, Card, ConfirmDialog, LoadingFallback } from '@saloon/ui';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, LoadingFallback } from '@saloon/ui';
 import { ApiError, bookingApi, reviewApi } from '../api/client';
 import type { MyBooking } from '../api/types';
 import { useAuth } from '../features/auth/AuthContext';
@@ -12,17 +12,17 @@ type Tab = 'upcoming' | 'past' | 'cancelled' | 'draft';
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 function isPast(b: MyBooking, now: number): boolean {
-  const ends = b.treatments.map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
+  const ends = (b.treatments ?? []).map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
   return ends.length > 0 && now > Math.max(...ends);
 }
 
 function earliestStart(b: MyBooking): number {
-  const starts = b.treatments.map((t) => t.startTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
+  const starts = (b.treatments ?? []).map((t) => t.startTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
   return starts.length ? Math.min(...starts) : Infinity;
 }
 
 function latestEnd(b: MyBooking): number {
-  const ends = b.treatments.map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
+  const ends = (b.treatments ?? []).map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
   return ends.length ? Math.max(...ends) : -Infinity;
 }
 
@@ -350,9 +350,10 @@ export function MyBookingsPage() {
 
       <div className="space-y-4">
         {shown.length === 0 ? (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-muted-foreground">No {tab} bookings found.</p>
-          </Card>
+          <EmptyState
+            title={`No ${tab} bookings`}
+            description={`You don't have any ${tab} appointments at this time.`}
+          />
         ) : (
           shown.map((b) => <BookingCard key={b.id} b={b} onReload={loadBookings} />)
         )}

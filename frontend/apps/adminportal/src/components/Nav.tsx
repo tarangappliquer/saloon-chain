@@ -23,11 +23,10 @@ const NavLink = memo(function NavLink({ to, icon, children, onClick, collapsed }
       <Link
         to={to}
         onClick={onClick}
-        className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${
-          active
-            ? 'bg-primary text-primary-foreground shadow-xs shadow-primary/20 font-bold'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-        }`}
+        className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''} ${active
+          ? 'bg-primary text-primary-foreground shadow-xs shadow-primary/20 font-bold'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          }`}
       >
         <span className="shrink-0 text-current">{icon}</span>
         {!collapsed && <span className="truncate">{children}</span>}
@@ -44,16 +43,16 @@ interface NavSubLinkProps {
 
 const NavSubLink = memo(function NavSubLink({ to, children, onClick }: NavSubLinkProps) {
   const location = useLocation();
-  const active = location.pathname === to;
+  const currentUrl = location.pathname + location.search;
+  const active = currentUrl === to || (!to.includes('?') && location.pathname === to);
   return (
     <Link
       to={to}
       onClick={onClick}
-      className={`flex items-center gap-2.5 rounded-lg pl-9 pr-3 py-2 text-xs font-bold transition-all duration-150 ${
-        active
-          ? 'text-primary font-bold bg-primary/10'
-          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-      }`}
+      className={`flex items-center gap-2.5 rounded-lg pl-9 pr-3 py-2 text-xs font-bold transition-all duration-150 ${active
+        ? 'text-primary font-bold bg-primary/10'
+        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+        }`}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current shrink-0" />
       <span className="truncate">{children}</span>
@@ -190,7 +189,7 @@ export const Nav = memo(function Nav() {
 
             {/* 3. Sales Group */}
             <NavGroup
-              title="Sales"
+              title="Sales Report"
               collapsed={isCollapsed}
               icon={
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -198,16 +197,16 @@ export const Nav = memo(function Nav() {
                 </svg>
               }
             >
-              <NavSubLink to={routes.reports} onClick={closeMobile}>
+              <NavSubLink to={routes.reports('sales-by-service')} onClick={closeMobile}>
                 Daily Sales Summary
               </NavSubLink>
               <NavSubLink to={routes.bookings} onClick={closeMobile}>
                 Appointments
               </NavSubLink>
-              <NavSubLink to={routes.reports} onClick={closeMobile}>
+              <NavSubLink to={routes.reports('sales-by-location')} onClick={closeMobile}>
                 Sales Transactions
               </NavSubLink>
-              <NavSubLink to={routes.reports} onClick={closeMobile}>
+              <NavSubLink to={routes.reports('sales-by-staff')} onClick={closeMobile}>
                 Payments
               </NavSubLink>
             </NavGroup>
@@ -228,10 +227,10 @@ export const Nav = memo(function Nav() {
               </NavLink>
             )}
 
-            {/* 5. Catalog Group */}
+            {/* 5. Treatments Group */}
             {ADMIN_ACCESS.includes(currentUser.role) && (
               <NavGroup
-                title="Catalog"
+                title="Treatments"
                 collapsed={isCollapsed}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -243,10 +242,13 @@ export const Nav = memo(function Nav() {
                   Categories
                 </NavSubLink>
                 <NavSubLink to={routes.catalog.treatments()} onClick={closeMobile}>
-                  Services
+                  Treatments
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={closeMobile}>
-                  Products
+                <NavSubLink to={routes.catalog.treatmentPrices()} onClick={closeMobile}>
+                  Prices
+                </NavSubLink>
+                <NavSubLink to={routes.catalog.treatmentDurations()} onClick={closeMobile}>
+                  Durations
                 </NavSubLink>
               </NavGroup>
             )}
@@ -262,13 +264,16 @@ export const Nav = memo(function Nav() {
                   </svg>
                 }
               >
-                <NavSubLink to={routes.inventory} onClick={closeMobile}>
+                <NavSubLink to={routes.inventory('products')} onClick={closeMobile}>
+                  Products
+                </NavSubLink>
+                <NavSubLink to={routes.inventory('purchase-orders')} onClick={closeMobile}>
                   Stock Orders
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={closeMobile}>
+                <NavSubLink to={routes.inventory('stocktakes')} onClick={closeMobile}>
                   Stocktakes
                 </NavSubLink>
-                <NavSubLink to={routes.inventory} onClick={closeMobile}>
+                <NavSubLink to={routes.inventory('suppliers')} onClick={closeMobile}>
                   Suppliers
                 </NavSubLink>
               </NavGroup>
@@ -298,9 +303,9 @@ export const Nav = memo(function Nav() {
             )}
 
             {/* 8. Reports */}
-            {ADMIN_ACCESS.includes(currentUser.role) && (
+            {/* {ADMIN_ACCESS.includes(currentUser.role) && (
               <NavLink
-                to={routes.reports}
+                to={routes.reports()}
                 onClick={closeMobile}
                 collapsed={isCollapsed}
                 icon={
@@ -311,7 +316,7 @@ export const Nav = memo(function Nav() {
               >
                 Reports
               </NavLink>
-            )}
+            )} */}
 
             {/* 9. Settings */}
             {ADMIN_ACCESS.includes(currentUser.role) && (

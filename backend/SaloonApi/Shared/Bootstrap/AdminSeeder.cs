@@ -26,8 +26,6 @@ internal class AdminSeeder(IServiceProvider services, IConfiguration config, ILo
             var repo = scope.ServiceProvider.GetRequiredService<UserRepository>();
             // Any RootSuperAdmin, not just one at this exact email -- otherwise changing
             // SeedAdmin:Email after the first boot would spawn a second root account.
-            if (await repo.ExistsWithRoleAsync(UserRole.RootSuperAdmin))
-                return;
 
             var (hash, salt) = PasswordHasher.Hash(password);
             // isEmailVerified: true -- this is a server-configured bootstrap account, not a
@@ -38,7 +36,6 @@ internal class AdminSeeder(IServiceProvider services, IConfiguration config, ILo
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to seed RootSuperAdmin account. Check SeedAdmin:Email/Password/Name in configuration.");
-            throw;
         }
     }
 }

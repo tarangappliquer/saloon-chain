@@ -1,10 +1,10 @@
 import { lazy, memo, Suspense, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, TooltipProvider } from '@saloon/ui';
-import { API_BASE } from './api/client';
+import { ConnectivityBanner, ErrorBoundary, GlobalApiLoader, LoadingFallback, ThemeProvider, TooltipProvider } from '@saloon/ui';
+import { API_BASE, useGlobalApiLoading } from './api/client';
 import { routePatterns, routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
-import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
+import { appConfig } from './config';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
 import { Nav } from './components/Nav';
 import { ConfirmedStep } from './features/booking/ConfirmedStep';
@@ -33,7 +33,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 const EmulationBanner = memo(function EmulationBanner() {
   const { user, logout } = useAuth();
-  const { adminPortalUrl } = usePortalConfig();
+  const adminPortalUrl = appConfig.adminPortalUrl;
   if (!user?.isEmulated) return null;
 
   function exit() {
@@ -83,10 +83,11 @@ function AuthedLayout() {
 }
 
 function AppRoutes() {
-  const { refetch } = usePortalConfig();
+  const isApiLoading = useGlobalApiLoading();
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
-      <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
+      <GlobalApiLoader isLoading={isApiLoading} />
+      <ConnectivityBanner apiBase={API_BASE} />
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/" element={<Navigate to={routes.explore} replace />} />
@@ -158,9 +159,7 @@ function App() {
         <TooltipProvider delayDuration={300} skipDelayDuration={300}>
           <AuthProvider>
             <Suspense fallback={<LoadingFallback />}>
-              <PortalConfigProvider>
-                <AppRoutes />
-              </PortalConfigProvider>
+              <AppRoutes />
             </Suspense>
           </AuthProvider>
         </TooltipProvider>

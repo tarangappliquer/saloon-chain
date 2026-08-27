@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { EmptyState } from '@saloon/ui';
 import { catalogApi } from '../api/client';
 import type { Location, Treatment } from '../api/types';
 import { routes } from '../routes';
@@ -258,9 +259,15 @@ export function ExplorePage() {
             ))}
           </div>
         ) : filteredVenues.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-12 text-center">
-            <p className="text-sm font-semibold text-muted-foreground">No venues matching your search criteria.</p>
-          </div>
+          <EmptyState
+            title="No Venues Found"
+            description="No salons or venues matched your search criteria or selected filter category."
+            actionLabel="Reset Search & Filters"
+            onAction={() => {
+              setSearchQuery('');
+              setSelectedCategory('All');
+            }}
+          />
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredVenues.map((venue) => (

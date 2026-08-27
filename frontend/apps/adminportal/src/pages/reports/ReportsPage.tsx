@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Card, KpiTile, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminReportsApi, API_BASE, ApiError, getAuthToken } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -84,12 +85,23 @@ export function ReportsPage() {
   const { user } = useAuth();
   const canSeeChainRollup = user?.role === 'RootSuperAdmin' || user?.role === 'SuperAdmin' || user?.role === 'Admin';
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab') as Tab | null;
+  const tab: Tab = urlTab && ['sales-by-service', 'sales-by-staff', 'sales-by-location', 'retention', 'no-show-rate'].includes(urlTab) ? urlTab : 'sales-by-service';
+
+  const setTab = (newTab: Tab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', newTab);
+      return next;
+    });
+  };
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(null);
   const [range, setRange] = useState(defaultRange());
-  const [tab, setTab] = useState<Tab>('sales-by-service');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

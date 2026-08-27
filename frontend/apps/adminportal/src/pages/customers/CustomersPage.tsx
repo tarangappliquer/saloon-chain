@@ -1,9 +1,9 @@
 import { startTransition, useCallback, useDeferredValue, useEffect, useOptimistic, useRef, useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, EmptyState, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
-import { usePortalConfig } from '../../features/config/PortalConfigContext';
+import { appConfig } from '../../config';
 import { routes } from '../../routes';
 import { ADMIN_ACCESS } from '../../constants';
 import type { AdminCustomer, AdminCustomersPage, AuthResponse, CustomerSummary } from '../../api/types';
@@ -17,7 +17,7 @@ function emptyForm() {
 export function CustomersPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const { clientPortalUrl } = usePortalConfig();
+  const clientPortalUrl = appConfig.clientPortalUrl;
   // Manager+ get the full manage view (list/edit/deactivate/delete, all AdminAccess-gated on the
   // backend). Receptionist reaches this page too (merged in from the old standalone POS page) but
   // only has StaffAccess/CustomerManagement -- they get a lean search-and-checkout view instead of
@@ -376,7 +376,12 @@ export function CustomersPage() {
               <LoadingFallback />
             </CardContent>
           ) : optimisticCustomers.length === 0 ? (
-            <CardContent className="py-8 text-center text-xs text-muted-foreground">No customers found.</CardContent>
+            <CardContent className="py-6">
+              <EmptyState
+                title="No Customers Found"
+                description="No client profiles match your current search query or filter."
+              />
+            </CardContent>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">

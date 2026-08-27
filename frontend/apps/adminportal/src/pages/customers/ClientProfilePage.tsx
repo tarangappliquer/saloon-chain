@@ -1,6 +1,6 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { X } from 'lucide-react';
 import { adminCatalogApi, adminCustomersApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -260,9 +260,12 @@ export function ClientProfilePage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Client Profile" />
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-destructive">{error ?? 'Customer not found.'}</CardContent>
-        </Card>
+        <EmptyState
+          title="Customer Not Found"
+          description={error ?? 'The requested customer profile could not be located.'}
+          actionLabel="Back to Customers"
+          onAction={() => navigate(routes.customers)}
+        />
       </div>
     );
   }

@@ -10,6 +10,33 @@ internal static class StaticLogger
 
     private static bool _cleanedLogs;
 
+    // Env-driven toggles, both default false when the var is unset/unparseable.
+    private static bool EnvFlag(string name, bool defaultValue)
+    {
+        var envVar = Environment.GetEnvironmentVariable(name)?.Trim();
+
+        if (string.IsNullOrWhiteSpace(envVar))
+        {
+            return defaultValue;
+        }
+
+        // Handle standard boolean representations (true/false) and numeric ones (1/0)
+        if (bool.TryParse(envVar, out var parsedBool))
+        {
+            return parsedBool;
+        }
+
+        return envVar switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => defaultValue
+        };
+    }
+
+    public static bool CleanLogsFromEnv => EnvFlag("CLEAN_LOGS", false);
+    private static bool ConsoleLogsFromEnv => EnvFlag("CONSOLE_LOGS", true);
+
     public static void Initialize(bool cleanLogs = false)
     {
         if (cleanLogs && !_cleanedLogs)
@@ -26,7 +53,7 @@ internal static class StaticLogger
         }
     }
 
-    public static void CleanupLogs(string? logsDirectory = null)
+    private static void CleanupLogs(string? logsDirectory = null)
     {
         try
         {
@@ -63,7 +90,7 @@ internal static class StaticLogger
         }
     }
 
-    public static Serilog.LoggerConfiguration GetLoggerConfiguration(this LoggerConfiguration loggerConfiguration, bool isMainLog)
+    public static LoggerConfiguration GetLoggerConfiguration(this LoggerConfiguration loggerConfiguration, bool isMainLog)
     {
         return loggerConfiguration
             .Destructure.With<RedactSensitivePropertiesPolicy>()
@@ -78,7 +105,7 @@ internal static class StaticLogger
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
             .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-            .WriteTo.Console(SerilogFormatter)
+            .WriteTo.Conditional(_ => ConsoleLogsFromEnv, wt => wt.Console(SerilogFormatter))
             .WriteTo.File(SerilogFormatter, "Logs/log-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31, shared: true)
             .WriteTo.Conditional(m => m.Level >= Serilog.Events.LogEventLevel.Error, (wt) => wt.File(SerilogFormatter, "Logs/error-.jsonl", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31, shared: true));
     }

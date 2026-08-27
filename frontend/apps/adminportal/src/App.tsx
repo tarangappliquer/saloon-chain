@@ -1,10 +1,9 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { ConnectivityBanner, ErrorBoundary, LoadingFallback, ThemeProvider, TooltipProvider } from '@saloon/ui';
-import { API_BASE } from './api/client';
+import { ConnectivityBanner, ErrorBoundary, GlobalApiLoader, LoadingFallback, ThemeProvider, TooltipProvider } from '@saloon/ui';
+import { API_BASE, useGlobalApiLoading } from './api/client';
 import { routes } from './routes';
 import { AuthProvider, useAuth } from './features/auth/AuthContext';
-import { PortalConfigProvider, usePortalConfig } from './features/config/PortalConfigContext';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
 import { Nav } from './components/Nav';
 import { ADMIN_ACCESS, LOCATION_MANAGEMENT, MANAGER_ONLY, POS_ACCESS, ROOT_SUPER_ADMIN_ONLY, STAFF_ACCESS } from './constants';
@@ -69,10 +68,11 @@ function AuthedLayout() {
 }
 
 function AppRoutes() {
-  const { refetch } = usePortalConfig();
+  const isApiLoading = useGlobalApiLoading();
   return (
-    <>
-      <ConnectivityBanner apiBase={API_BASE} onServerUp={refetch} />
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+      <GlobalApiLoader isLoading={isApiLoading} />
+      <ConnectivityBanner apiBase={API_BASE} />
       <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
         <Routes>
           <Route path={routes.login} element={<LoginPage />} />
@@ -194,7 +194,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.inventory}
+              path={routes.inventory()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <InventoryPage />
@@ -210,7 +210,7 @@ function AppRoutes() {
               }
             />
             <Route
-              path={routes.reports}
+              path={routes.reports()}
               element={
                 <RequireRole roles={ADMIN_ACCESS}>
                   <ReportsPage />
@@ -277,7 +277,7 @@ function AppRoutes() {
           </Route>
         </Routes>
       </Suspense>
-    </>
+    </div>
   );
 }
 
@@ -288,9 +288,7 @@ function App() {
         <TooltipProvider delayDuration={300} skipDelayDuration={300}>
           <AuthProvider>
             <Suspense fallback={<LoadingFallback maxW="max-w-4xl" />}>
-              <PortalConfigProvider>
-                <AppRoutes />
-              </PortalConfigProvider>
+              <AppRoutes />
             </Suspense>
           </AuthProvider>
         </TooltipProvider>

@@ -1,9 +1,10 @@
 import { useEffect, useState, useOptimistic, startTransition, type SyntheticEvent } from 'react';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
+import { useSearchParams } from 'react-router-dom';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminInventoryApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
 
-type Tab = 'products' | 'suppliers' | 'purchase-orders';
+type Tab = 'products' | 'suppliers' | 'purchase-orders' | 'stocktakes';
 
 // Local plain-number shapes for the generated DTOs -- the openapi-generator emits branded
 // placeholder types (e.g. numeric fields typed as an empty interface named after whichever
@@ -55,11 +56,22 @@ function money(n: number) {
 }
 
 export function InventoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab') as Tab | null;
+  const tab: Tab = urlTab && ['products', 'suppliers', 'purchase-orders', 'stocktakes'].includes(urlTab) ? urlTab : 'products';
+
+  const setTab = (newTab: Tab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', newTab);
+      return next;
+    });
+  };
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(null);
-  const [tab, setTab] = useState<Tab>('products');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -121,7 +133,7 @@ export function InventoryPage() {
       )}
 
       <div className="flex rounded-lg border border-input overflow-hidden w-fit">
-        {(['products', 'suppliers', 'purchase-orders'] as const).map((t) => (
+        {(['products', 'suppliers', 'purchase-orders', 'stocktakes'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -140,8 +152,10 @@ export function InventoryPage() {
         <ProductsTab locationId={locationId} setError={setError} />
       ) : tab === 'suppliers' ? (
         <SuppliersTab chainId={chainId} setError={setError} />
-      ) : (
+      ) : tab === 'purchase-orders' ? (
         <PurchaseOrdersTab locationId={locationId} chainId={chainId} setError={setError} />
+      ) : (
+        <StocktakesTab locationId={locationId} setError={setError} />
       )}
     </div>
   );
@@ -584,5 +598,76 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
         )}
       </Card>
     </div>
+  );
+}
+
+function StocktakesTab({ locationId, setError }: { locationId: number; setError: (e: string | null) => void }) {
+  const [products, setProducts] = useState<ProductRow[] | null>(null);
+
+  function load() {
+    setProducts(null);
+    adminInventoryApi
+      .apiAdminInventoryProductsGet(locationId)
+      .then(({ data }) => setProducts(data as unknown as ProductRow[]))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load stock audit.'));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
+  return (
+    <Card className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-base font-bold text-foreground">Stocktake & Inventory Audit</h2>
+          <p className="text-xs text-muted-foreground">Verify physical stock counts against recorded quantities on hand.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={load}>
+          Refresh Audit
+        </Button>
+      </div>
+
+      {products === null ? (
+        <LoadingFallback />
+      ) : products.length === 0 ? (
+        <EmptyState title="No Inventory Items" description="No products available for stock count at this location." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
+                <th className="px-4 py-3">Product</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">On Hand</th>
+                <th className="px-4 py-3">Reorder Point</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {products.map((p) => {
+                const isLow = p.quantityOnHand <= p.reorderThreshold;
+                return (
+                  <tr key={p.id} className="hover:bg-accent/30 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-foreground">{p.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground font-mono">{p.sku || '--'}</td>
+                    <td className="px-4 py-3 font-bold">{p.quantityOnHand}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{p.reorderThreshold}</td>
+                    <td className="px-4 py-3">
+                      {isLow ? (
+                        <Badge variant="danger">Low Stock Alert</Badge>
+                      ) : (
+                        <Badge variant="secondary">In Stock</Badge>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

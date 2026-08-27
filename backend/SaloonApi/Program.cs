@@ -12,7 +12,6 @@ using SaloonApi.Modules.Booking.Endpoints;
 using SaloonApi.Modules.Booking.Infrastructure;
 using SaloonApi.Modules.Catalog.Endpoints;
 using SaloonApi.Modules.Catalog.Infrastructure;
-using SaloonApi.Modules.Config.Endpoints;
 using SaloonApi.Modules.Identity.Application;
 using SaloonApi.Modules.Identity.Endpoints;
 using SaloonApi.Modules.Identity.Infrastructure;
@@ -49,7 +48,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using System.Text;
 
-StaticLogger.Initialize(cleanLogs: true);
+StaticLogger.Initialize(StaticLogger.CleanLogsFromEnv);
 
 try
 {
@@ -61,7 +60,7 @@ try
 
     builder.Host.UseSerilog((_, cfg) =>
     {
-        cfg.GetLoggerConfiguration(true);
+        cfg.GetLoggerConfiguration(isMainLog: true);
     });
 
     builder.Services.AddOpenApi(options =>
@@ -285,7 +284,6 @@ try
     app.MapHealthChecks("/health");
 
     app.MapAuthEndpoints();
-    app.MapConfigEndpoints();
     app.MapCatalogEndpoints();
     app.MapBookingEndpoints();
     app.MapPaymentEndpoints();

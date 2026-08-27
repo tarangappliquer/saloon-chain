@@ -2,7 +2,7 @@ import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError } from '../api/client';
 import type { CustomerSummary } from '../api/types';
-import { usePortalConfig } from '../features/config/PortalConfigContext';
+import { appConfig } from '../config';
 
 interface AddAppointmentModalProps {
   isOpen: boolean;
@@ -26,7 +26,7 @@ export function AddAppointmentModal({
   workDate,
   startTime,
 }: AddAppointmentModalProps) {
-  const { clientPortalUrl } = usePortalConfig();
+  const clientPortalUrl = appConfig.clientPortalUrl;
 
   const [customerMode, setCustomerMode] = useState<'search' | 'new'>('search');
   const [searchQuery, setSearchQuery] = useState('');
