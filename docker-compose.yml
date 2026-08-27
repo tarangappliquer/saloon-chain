@@ -36,7 +36,7 @@ services:
       Cors__AllowedOrigins__3: "http://localhost:8081"
       Serilog__MinimumLevel__Default: "${LOG_LEVEL:-Information}"
       Serilog__MinimumLevel__Override__Microsoft: "${MICROSOFT_LOG_LEVEL:-Warning}"
-      CLEAN_LOGS: "${BACKEND_CLEAN_LOGS:-false}"
+      CLEAN_LOGS_ON_STARTUP: "${BACKEND_CLEAN_LOGS_ON_STARTUP:-false}"
       CONSOLE_LOGS: "${BACKEND_CONSOLE_LOGS:-false}"
       Portals__AdminPortalUrl: "http://198.245.65.114:5173"
       Portals__ClientPortalUrl: "http://198.245.65.114:5174"

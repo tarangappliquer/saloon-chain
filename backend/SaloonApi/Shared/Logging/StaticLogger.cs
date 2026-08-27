@@ -34,7 +34,7 @@ internal static class StaticLogger
         };
     }
 
-    public static bool CleanLogsFromEnv => EnvFlag("CLEAN_LOGS", false);
+    public static bool CleanLogsOnStartupFromEnv => EnvFlag("CLEAN_LOGS_ON_STARTUP", false);
     private static bool ConsoleLogsFromEnv => EnvFlag("CONSOLE_LOGS", false);
 
     public static void Initialize(bool cleanLogs = false)
