@@ -11,7 +11,11 @@ internal sealed record ScheduleTreatmentRow(DateTime ExpiresAt, int LocationId);
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class BookingDbService
 {
-    public Task<RefCursorGridReader> sp_Booking_GetAvailabilityDataAsync(
+    // Each result set is now its own single-purpose fn_Booking_Availability* function (see
+    // db/postgres/03_procs_postgres.sql) instead of a hand-rolled refcursor procedure -- Dapper's
+    // own QueryMultipleAsync already gives one round trip + ordered ReadAsync<T>() calls for free,
+    // so no custom RefCursorGridReader plumbing is needed here.
+    public Task<SqlMapper.GridReader> sp_Booking_GetAvailabilityDataAsync(
         IDbConnection db, int locationId, int[] treatmentIds, DateOnly date, int? excludeBookingId)
     {
         var args = new DynamicParameters();
@@ -19,10 +23,17 @@ internal sealed class BookingDbService
         args.Add("TreatmentIds", treatmentIds);
         args.Add("WorkDate", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
         args.Add("ExcludeBookingId", excludeBookingId, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetAvailabilityData", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_AvailabilityLocationHours(@LocationId, @WorkDate);
+            SELECT * FROM public.fn_Booking_AvailabilityTreatments(@LocationId, @TreatmentIds);
+            SELECT * FROM public.fn_Booking_AvailabilityEligiblePairs(@LocationId, @TreatmentIds, @WorkDate);
+            SELECT * FROM public.fn_Booking_AvailabilityScheduledLines(@WorkDate, @ExcludeBookingId);
+            SELECT * FROM public.fn_Booking_AvailabilityBlockedSlots(@LocationId, @WorkDate);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Booking_GetAvailabilityDataRangeAsync(
+    public Task<SqlMapper.GridReader> sp_Booking_GetAvailabilityDataRangeAsync(
         IDbConnection db, int locationId, int[] treatmentIds, DateOnly from, DateOnly to, int? excludeBookingId)
     {
         var args = new DynamicParameters();
@@ -31,7 +42,15 @@ internal sealed class BookingDbService
         args.Add("FromDate", from.ToDateTime(TimeOnly.MinValue), DbType.Date);
         args.Add("ToDate", to.ToDateTime(TimeOnly.MinValue), DbType.Date);
         args.Add("ExcludeBookingId", excludeBookingId, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetAvailabilityDataRange", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_AvailabilityRangeLocation(@LocationId);
+            SELECT * FROM public.fn_Booking_AvailabilityRangeDayHours(@LocationId, @FromDate, @ToDate);
+            SELECT * FROM public.fn_Booking_AvailabilityTreatments(@LocationId, @TreatmentIds);
+            SELECT * FROM public.fn_Booking_AvailabilityRangeEligiblePairs(@LocationId, @TreatmentIds, @FromDate, @ToDate);
+            SELECT * FROM public.fn_Booking_AvailabilityRangeScheduledLines(@FromDate, @ToDate, @ExcludeBookingId);
+            SELECT * FROM public.fn_Booking_AvailabilityRangeBlockedSlots(@LocationId, @FromDate, @ToDate);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<bool> sp_Booking_HasLocationRoomOpeningsAsync(IDbConnection db, int locationId)

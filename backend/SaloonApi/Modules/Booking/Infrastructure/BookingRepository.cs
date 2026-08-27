@@ -4,12 +4,62 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Booking.Infrastructure;
 
-internal sealed record LocationHoursRow(TimeOnly OpenTime, TimeOnly CloseTime, TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask, bool IsHoliday);
-internal sealed record LocationHoursRangeHeaderRow(TimeOnly? BreakStartTime, TimeOnly? BreakEndTime, short WorkingDaysMask);
-internal sealed record TreatmentRow(int Id, int CategoryId, short DurationSlots, decimal Price);
-internal sealed record EligiblePairRow(int RoomId, int TherapistId, string ShiftType, TimeOnly ShiftStart, TimeOnly ShiftEnd, DateOnly WorkDate);
-internal sealed record ExistingBookingRow(int RoomId, int TherapistId, DateTime StartTime, DateTime EndTime, string Status);
-internal sealed record BlockedRangeRangeRow(int RoomId, TimeOnly StartTime, TimeOnly EndTime, DateOnly WorkDate);
+// Init-property (not positional-constructor) records: Dapper materializes these by matching
+// property NAME to column name, independent of column order/count -- a missing column leaves the
+// property at its default, an extra column is ignored. Positional records instead require the SQL
+// column order to exactly match the constructor's parameter order, which is what caused the
+// EligiblePairRow/BlockedRangeRangeRow column-order crash this shape change fixes for good.
+internal sealed record LocationHoursRow
+{
+    public TimeOnly OpenTime { get; init; }
+    public TimeOnly CloseTime { get; init; }
+    public TimeOnly? BreakStartTime { get; init; }
+    public TimeOnly? BreakEndTime { get; init; }
+    public short WorkingDaysMask { get; init; }
+    public bool IsHoliday { get; init; }
+}
+
+internal sealed record LocationHoursRangeHeaderRow
+{
+    public TimeOnly? BreakStartTime { get; init; }
+    public TimeOnly? BreakEndTime { get; init; }
+    public short WorkingDaysMask { get; init; }
+}
+
+internal sealed record TreatmentRow
+{
+    public int Id { get; init; }
+    public int CategoryId { get; init; }
+    public short DurationSlots { get; init; }
+    public decimal Price { get; init; }
+}
+
+internal sealed record EligiblePairRow
+{
+    public int RoomId { get; init; }
+    public int TherapistId { get; init; }
+    public string ShiftType { get; init; } = "";
+    public TimeOnly ShiftStart { get; init; }
+    public TimeOnly ShiftEnd { get; init; }
+    public DateOnly WorkDate { get; init; }
+}
+
+internal sealed record ExistingBookingRow
+{
+    public int RoomId { get; init; }
+    public int TherapistId { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public string Status { get; init; } = "";
+}
+
+internal sealed record BlockedRangeRangeRow
+{
+    public int RoomId { get; init; }
+    public TimeOnly StartTime { get; init; }
+    public TimeOnly EndTime { get; init; }
+    public DateOnly WorkDate { get; init; }
+}
 
 internal sealed record AvailabilityData(
     LocationHoursRow Location,
@@ -18,7 +68,12 @@ internal sealed record AvailabilityData(
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
     IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
-internal sealed record LocationHoursRangeRow(DateOnly WorkDate, TimeOnly OpenTime, TimeOnly CloseTime);
+internal sealed record LocationHoursRangeRow
+{
+    public DateOnly WorkDate { get; init; }
+    public TimeOnly OpenTime { get; init; }
+    public TimeOnly CloseTime { get; init; }
+}
 
 internal sealed record AvailabilityRangeData(
     LocationHoursRangeHeaderRow Location,

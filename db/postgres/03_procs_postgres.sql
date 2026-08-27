@@ -188,325 +188,301 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -------------------------------------------------------------------------------------------------
--- Booking availability (multi-resultset -> refcursor procedures)
+-- Booking availability (single-purpose functions -- one per result set, called together via
+-- Dapper QueryMultipleAsync instead of a hand-rolled refcursor procedure; see BookingDbService.cs)
 -------------------------------------------------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetAvailabilityData(
-    IN p_LocationId int,
-    IN p_TreatmentIds int[],
-    IN p_WorkDate date,
-    IN p_ExcludeBookingId int DEFAULT NULL,
-    INOUT p_cur_LocationHours refcursor DEFAULT 'cur_avail_location_hours',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_avail_treatments',
-    INOUT p_cur_EligiblePairs refcursor DEFAULT 'cur_avail_eligible_pairs',
-    INOUT p_cur_ScheduledLines refcursor DEFAULT 'cur_avail_scheduled_lines',
-    INOUT p_cur_BlockedSlots refcursor DEFAULT 'cur_avail_blocked_slots'
-)
-LANGUAGE plpgsql AS $$
-DECLARE
-    v_DayBit smallint := public.fn_DayBit(p_WorkDate);
-    v_Today date := public.fn_UtcToday();
-BEGIN
-    -- 1) location hours (+ explicit holiday flag). OpenTime/CloseTime resolve to this WorkDate's
-    -- scheduled override (LocationDaySchedule) if one is effective, else the location's own
-    -- default hours. An override marked IsClosed rolls into IsHoliday, same "no slots" outcome as
-    -- an explicit holiday.
-    OPEN p_cur_LocationHours FOR
-        SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime,
-               COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
-               COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
-               l.WorkingDaysMask,
-               (COALESCE(dh.IsClosed, FALSE) OR EXISTS (
-                   SELECT 1 FROM public.LocationHolidays h
-                   WHERE h.LocationId = l.Id AND h.HolidayDate = p_WorkDate AND h.IsDelete = FALSE AND h.IsActive = TRUE
-               )) AS IsHoliday
+-- 1) location hours (+ explicit holiday flag). OpenTime/CloseTime resolve to this WorkDate's
+-- scheduled override (LocationDaySchedule) if one is effective, else the location's own default
+-- hours. An override marked IsClosed rolls into IsHoliday, same "no slots" outcome as an explicit
+-- holiday.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityLocationHours(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(OpenTime time, CloseTime time, BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint, IsHoliday boolean)
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime,
+           COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask,
+           (COALESCE(dh.IsClosed, FALSE) OR EXISTS (
+               SELECT 1 FROM public.LocationHolidays h
+               WHERE h.LocationId = l.Id AND h.HolidayDate = p_WorkDate AND h.IsDelete = FALSE AND h.IsActive = TRUE
+           )) AS IsHoliday
+    FROM public.Locations l
+        JOIN public.SaloonChains c ON c.Id = l.ChainId
+        LEFT JOIN LATERAL (
+            SELECT ds.OpenTime, ds.CloseTime, ds.IsClosed
+            FROM public.LocationDaySchedule ds
+            WHERE ds.LocationId = l.Id AND ds.DayBit = public.fn_DayBit(p_WorkDate) AND ds.EffectiveFrom <= p_WorkDate
+                AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= p_WorkDate) AND ds.IsDelete = FALSE
+            ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
+            LIMIT 1
+        ) dh ON TRUE
+    WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
+$$;
+
+-- 1b) per-date resolved OpenTime/CloseTime for every date in a range. A date whose override is
+-- IsClosed is dropped entirely -- GetAvailableDatesAsync treats a date missing here the same as a
+-- holiday (no slots), so no separate closed-flag column is needed. (Single-date availability gets
+-- its hours from fn_Booking_AvailabilityLocationHours above instead.)
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeDayHours(p_LocationId int, p_FromDate date, p_ToDate date)
+RETURNS TABLE(WorkDate date, OpenTime time, CloseTime time)
+LANGUAGE sql STABLE AS $$
+    SELECT ds.WorkDate,
+           COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
+    FROM (SELECT generate_series(p_FromDate, p_ToDate, interval '1 day')::date AS WorkDate) ds
+        CROSS JOIN public.Locations l
+        LEFT JOIN LATERAL (
+            SELECT lds.OpenTime, lds.CloseTime, lds.IsClosed
+            FROM public.LocationDaySchedule lds
+            WHERE lds.LocationId = l.Id
+                AND lds.DayBit = public.fn_DayBit(ds.WorkDate)
+                AND lds.EffectiveFrom <= ds.WorkDate
+                AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= ds.WorkDate) AND lds.IsDelete = FALSE
+            ORDER BY CASE WHEN lds.EffectiveTo = lds.EffectiveFrom THEN 1 WHEN lds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, lds.EffectiveFrom DESC
+            LIMIT 1
+        ) dh ON TRUE
+    WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE
+        AND (dh.IsClosed IS NULL OR dh.IsClosed = FALSE);
+$$;
+
+-- Location's break times/working-days-mask -- date-independent (no per-date holiday flag either --
+-- callers already resolve holiday dates for the whole range separately via LocationHolidays).
+-- OpenTime/CloseTime are NOT included here -- they can vary per date, see the DayHours function above.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeLocation(p_LocationId int)
+RETURNS TABLE(BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint)
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
+           COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
+           l.WorkingDaysMask
+    FROM public.Locations l
+        JOIN public.SaloonChains c ON c.Id = l.ChainId
+    WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
+$$;
+
+-- 2) requested treatments (duration/category/price) as offered at this location -- shared by both
+-- the single-date and range availability reads, since price/duration are always resolved as of
+-- today regardless of which date(s) are being checked for open slots.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityTreatments(p_LocationId int, p_TreatmentIds int[])
+RETURNS TABLE(Id int, CategoryId int, DurationSlots smallint, Price numeric)
+LANGUAGE sql STABLE AS $$
+    SELECT t.Id, t.CategoryId, cd.DurationSlots, cp.Price
+    FROM public.Treatments t
+        JOIN unnest(p_TreatmentIds) AS ti(Id) ON ti.Id = t.Id
+        JOIN LATERAL (
+            SELECT tp.Price FROM public.TreatmentPrices tp
+            WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= public.fn_UtcToday() AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= public.fn_UtcToday()) AND tp.IsDelete = FALSE
+            ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
+            LIMIT 1
+        ) cp ON TRUE
+        JOIN LATERAL (
+            SELECT td.DurationSlots FROM public.TreatmentDurations td
+            WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= public.fn_UtcToday() AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= public.fn_UtcToday()) AND td.IsDelete = FALSE
+            ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
+            LIMIT 1
+        ) cd ON TRUE
+    WHERE t.LocationId = p_LocationId AND t.IsDelete = FALSE AND t.IsActive = TRUE
+        AND t.EffectiveFrom <= public.fn_UtcToday();
+$$;
+
+-- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityEligiblePairs(p_LocationId int, p_TreatmentIds int[], p_WorkDate date)
+RETURNS TABLE(RoomId int, TherapistId int, ShiftType varchar, ShiftStart time, ShiftEnd time, WorkDate date)
+LANGUAGE sql STABLE AS $$
+    WITH loc AS (
+        SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
         FROM public.Locations l
-            JOIN public.SaloonChains c ON c.Id = l.ChainId
             LEFT JOIN LATERAL (
-                SELECT ds.OpenTime, ds.CloseTime, ds.IsClosed
+                SELECT ds.OpenTime, ds.CloseTime
                 FROM public.LocationDaySchedule ds
-                WHERE ds.LocationId = l.Id AND ds.DayBit = v_DayBit AND ds.EffectiveFrom <= p_WorkDate
+                WHERE ds.LocationId = l.Id AND ds.DayBit = public.fn_DayBit(p_WorkDate) AND ds.EffectiveFrom <= p_WorkDate
                     AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= p_WorkDate) AND ds.IsDelete = FALSE
                 ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
                 LIMIT 1
             ) dh ON TRUE
-        WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
-
-    -- 2) requested treatments (duration/category/price) as offered at this location
-    OPEN p_cur_Treatments FOR
-        SELECT t.Id, t.CategoryId, cd.DurationSlots, cp.Price
+        WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE
+    ),
+    target_categories AS (
+        SELECT DISTINCT t.CategoryId
         FROM public.Treatments t
             JOIN unnest(p_TreatmentIds) AS ti(Id) ON ti.Id = t.Id
-            JOIN LATERAL (
-                SELECT tp.Price FROM public.TreatmentPrices tp
-                WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= v_Today AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= v_Today) AND tp.IsDelete = FALSE
-                ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
-                LIMIT 1
-            ) cp ON TRUE
-            JOIN LATERAL (
-                SELECT td.DurationSlots FROM public.TreatmentDurations td
-                WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= v_Today AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= v_Today) AND td.IsDelete = FALSE
-                ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
-                LIMIT 1
-            ) cd ON TRUE
         WHERE t.LocationId = p_LocationId AND t.IsDelete = FALSE AND t.IsActive = TRUE
-            AND t.EffectiveFrom <= v_Today;
+    ),
+    active_rooms AS (
+        SELECT r.Id AS RoomId
+        FROM public.Rooms r
+        WHERE r.LocationId = p_LocationId AND r.IsDelete = FALSE AND r.IsActive = TRUE
+    ),
+    eligible_rooms AS (
+        SELECT r.RoomId, rca.ShiftType
+        FROM active_rooms r
+            JOIN public.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = p_WorkDate AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
+        WHERE rca.TreatmentCategoryId IN (SELECT CategoryId FROM target_categories)
 
-    -- 3) eligible room/therapist pairs for the date, for the category of the requested treatments
-    OPEN p_cur_EligiblePairs FOR
-        WITH loc AS (
-            SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
-            FROM public.Locations l
-                LEFT JOIN LATERAL (
-                    SELECT ds.OpenTime, ds.CloseTime
-                    FROM public.LocationDaySchedule ds
-                    WHERE ds.LocationId = l.Id AND ds.DayBit = v_DayBit AND ds.EffectiveFrom <= p_WorkDate
-                        AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= p_WorkDate) AND ds.IsDelete = FALSE
-                    ORDER BY CASE WHEN ds.EffectiveTo = ds.EffectiveFrom THEN 1 WHEN ds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, ds.EffectiveFrom DESC
-                    LIMIT 1
-                ) dh ON TRUE
-            WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE
-        ),
-        target_categories AS (
-            SELECT DISTINCT t.CategoryId
-            FROM public.Treatments t
-                JOIN unnest(p_TreatmentIds) AS ti(Id) ON ti.Id = t.Id
-            WHERE t.LocationId = p_LocationId AND t.IsDelete = FALSE AND t.IsActive = TRUE
-        ),
-        active_rooms AS (
-            SELECT r.Id AS RoomId
-            FROM public.Rooms r
-            WHERE r.LocationId = p_LocationId AND r.IsDelete = FALSE AND r.IsActive = TRUE
-        ),
-        eligible_rooms AS (
-            SELECT r.RoomId, rca.ShiftType
-            FROM active_rooms r
-                JOIN public.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = p_WorkDate AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
-            WHERE rca.TreatmentCategoryId IN (SELECT CategoryId FROM target_categories)
+        UNION ALL
 
-            UNION ALL
-
-            SELECT r.RoomId, 'FullDay' AS ShiftType
-            FROM active_rooms r
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM public.RoomCategoryAssignments rca2
-                    JOIN public.Rooms r2 ON r2.Id = rca2.RoomId
-                WHERE r2.LocationId = p_LocationId AND rca2.IsDelete = FALSE AND rca2.IsActive = TRUE
-            )
-        ),
-        eligible_shifts AS (
-            SELECT sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
-            FROM public.ShiftAssignments sa
-            WHERE sa.LocationId = p_LocationId AND sa.WorkDate = p_WorkDate AND sa.IsDelete = FALSE AND sa.IsActive = TRUE
-
-            UNION ALL
-
-            SELECT NULL::int AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, loc.OpenTime AS ShiftStart, loc.CloseTime AS ShiftEnd
-            FROM public.TherapistProfile tp
-                CROSS JOIN loc
-            WHERE tp.IsDelete = FALSE AND tp.IsActive = TRUE
-                AND (tp.LocationId = p_LocationId OR tp.LocationId IS NULL)
-                AND NOT EXISTS (
-                    SELECT 1 FROM public.ShiftAssignments sa2
-                    WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = FALSE AND sa2.IsActive = TRUE
-                )
+        SELECT r.RoomId, 'FullDay' AS ShiftType
+        FROM active_rooms r
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.RoomCategoryAssignments rca2
+                JOIN public.Rooms r2 ON r2.Id = rca2.RoomId
+            WHERE r2.LocationId = p_LocationId AND rca2.IsDelete = FALSE AND rca2.IsActive = TRUE
         )
-        -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift
-        -- explicitly assigned to a room only pairs with that same room.
-        SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
-        FROM eligible_rooms er
-            JOIN eligible_shifts es
-            ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
-                AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
+    ),
+    eligible_shifts AS (
+        SELECT sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+        FROM public.ShiftAssignments sa
+        WHERE sa.LocationId = p_LocationId AND sa.WorkDate = p_WorkDate AND sa.IsDelete = FALSE AND sa.IsActive = TRUE
 
-    -- 4) scheduled treatment lines that day, anywhere -- NOT scoped to this location.
-    OPEN p_cur_ScheduledLines FOR
-        SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
-        FROM public.BookingTreatments bt
-            JOIN public.Bookings b ON b.Id = bt.BookingId
-        WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
-            AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
-            AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
-            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
+        UNION ALL
 
-    -- 5) admin-blocked room/time ranges that day (lunch break, therapist leave, etc)
-    OPEN p_cur_BlockedSlots FOR
-        SELECT bs.RoomId, bs.StartTime, bs.EndTime
-        FROM public.BlockedSlots bs
-            JOIN public.Rooms r ON r.Id = bs.RoomId
-        WHERE r.LocationId = p_LocationId AND bs.WorkDate = p_WorkDate AND bs.IsDelete = FALSE;
-END;
+        SELECT NULL::int AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, loc.OpenTime AS ShiftStart, loc.CloseTime AS ShiftEnd
+        FROM public.TherapistProfile tp
+            CROSS JOIN loc
+        WHERE tp.IsDelete = FALSE AND tp.IsActive = TRUE
+            AND (tp.LocationId = p_LocationId OR tp.LocationId IS NULL)
+            AND NOT EXISTS (
+                SELECT 1 FROM public.ShiftAssignments sa2
+                WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = FALSE AND sa2.IsActive = TRUE
+            )
+    )
+    -- es.RoomId IS NULL covers legacy/no-shift-assignment rows (works any room); a shift
+    -- explicitly assigned to a room only pairs with that same room.
+    SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd, p_WorkDate AS WorkDate
+    FROM eligible_rooms er
+        JOIN eligible_shifts es
+        ON (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+            AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
 $$;
 
--- Range-aware sibling of sp_Booking_GetAvailabilityData: same eligibility rules, evaluated for
--- every date in [p_FromDate, p_ToDate] via generate_series() instead of one p_WorkDate.
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetAvailabilityDataRange(
-    IN p_LocationId int,
-    IN p_TreatmentIds int[],
-    IN p_FromDate date,
-    IN p_ToDate date,
-    IN p_ExcludeBookingId int DEFAULT NULL,
-    INOUT p_cur_Location refcursor DEFAULT 'cur_availrange_location',
-    INOUT p_cur_DayHours refcursor DEFAULT 'cur_availrange_day_hours',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_availrange_treatments',
-    INOUT p_cur_EligiblePairs refcursor DEFAULT 'cur_availrange_eligible_pairs',
-    INOUT p_cur_ScheduledLines refcursor DEFAULT 'cur_availrange_scheduled_lines',
-    INOUT p_cur_BlockedSlots refcursor DEFAULT 'cur_availrange_blocked_slots'
-)
-LANGUAGE plpgsql AS $$
-DECLARE
-    v_Today date := public.fn_UtcToday();
-BEGIN
-    -- 1) location -- break times/working-days-mask are date-independent (no per-date holiday flag
-    -- either -- callers already resolve holiday dates for the whole range separately). OpenTime/
-    -- CloseTime are NOT included here -- they can vary per date, see result set 1b below.
-    OPEN p_cur_Location FOR
-        SELECT COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
-               COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
-               l.WorkingDaysMask
-        FROM public.Locations l
-            JOIN public.SaloonChains c ON c.Id = l.ChainId
-        WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
-
-    -- 1b) per-date resolved OpenTime/CloseTime for every date in the range. A date whose override
-    -- is IsClosed is dropped entirely -- GetAvailableDatesAsync treats a date missing here the same
-    -- as a holiday (no slots), so no separate closed-flag column is needed.
-    OPEN p_cur_DayHours FOR
-        SELECT ds.WorkDate,
-               COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
-        FROM (SELECT generate_series(p_FromDate, p_ToDate, interval '1 day')::date AS WorkDate) ds
+-- Range-aware sibling of fn_Booking_AvailabilityEligiblePairs above: same eligibility rules,
+-- evaluated for every date in [p_FromDate, p_ToDate] via generate_series() instead of one p_WorkDate.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeEligiblePairs(p_LocationId int, p_TreatmentIds int[], p_FromDate date, p_ToDate date)
+RETURNS TABLE(RoomId int, TherapistId int, ShiftType varchar, ShiftStart time, ShiftEnd time, WorkDate date)
+LANGUAGE sql STABLE AS $$
+    WITH dates AS (
+        SELECT generate_series(p_FromDate, p_ToDate, interval '1 day')::date AS WorkDate
+    ),
+    day_hours AS (
+        SELECT d.WorkDate, COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
+        FROM dates d
             CROSS JOIN public.Locations l
             LEFT JOIN LATERAL (
-                SELECT lds.OpenTime, lds.CloseTime, lds.IsClosed
+                SELECT lds.OpenTime, lds.CloseTime
                 FROM public.LocationDaySchedule lds
                 WHERE lds.LocationId = l.Id
-                    AND lds.DayBit = public.fn_DayBit(ds.WorkDate)
-                    AND lds.EffectiveFrom <= ds.WorkDate
-                    AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= ds.WorkDate) AND lds.IsDelete = FALSE
+                    AND lds.DayBit = public.fn_DayBit(d.WorkDate)
+                    AND lds.EffectiveFrom <= d.WorkDate
+                    AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= d.WorkDate) AND lds.IsDelete = FALSE
                 ORDER BY CASE WHEN lds.EffectiveTo = lds.EffectiveFrom THEN 1 WHEN lds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, lds.EffectiveFrom DESC
                 LIMIT 1
             ) dh ON TRUE
         WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE
-            AND (dh.IsClosed IS NULL OR dh.IsClosed = FALSE);
-
-    -- 2) requested treatments (duration/category/price) -- same for every date in the range
-    OPEN p_cur_Treatments FOR
-        SELECT t.Id, t.CategoryId, cd.DurationSlots, cp.Price
+    ),
+    target_categories AS (
+        SELECT DISTINCT t.CategoryId
         FROM public.Treatments t
             JOIN unnest(p_TreatmentIds) AS ti(Id) ON ti.Id = t.Id
-            JOIN LATERAL (
-                SELECT tp.Price FROM public.TreatmentPrices tp
-                WHERE tp.TreatmentId = t.Id AND tp.EffectiveFrom <= v_Today AND (tp.EffectiveTo IS NULL OR tp.EffectiveTo >= v_Today) AND tp.IsDelete = FALSE
-                ORDER BY CASE WHEN tp.EffectiveTo = tp.EffectiveFrom THEN 1 WHEN tp.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, tp.EffectiveFrom DESC
-                LIMIT 1
-            ) cp ON TRUE
-            JOIN LATERAL (
-                SELECT td.DurationSlots FROM public.TreatmentDurations td
-                WHERE td.TreatmentId = t.Id AND td.EffectiveFrom <= v_Today AND (td.EffectiveTo IS NULL OR td.EffectiveTo >= v_Today) AND td.IsDelete = FALSE
-                ORDER BY CASE WHEN td.EffectiveTo = td.EffectiveFrom THEN 1 WHEN td.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, td.EffectiveFrom DESC
-                LIMIT 1
-            ) cd ON TRUE
         WHERE t.LocationId = p_LocationId AND t.IsDelete = FALSE AND t.IsActive = TRUE
-            AND t.EffectiveFrom <= v_Today;
+    ),
+    active_rooms AS (
+        SELECT r.Id AS RoomId
+        FROM public.Rooms r
+        WHERE r.LocationId = p_LocationId AND r.IsDelete = FALSE AND r.IsActive = TRUE
+    ),
+    eligible_rooms AS (
+        SELECT d.WorkDate, r.RoomId, rca.ShiftType
+        FROM dates d
+            CROSS JOIN active_rooms r
+            JOIN public.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = d.WorkDate AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
+        WHERE rca.TreatmentCategoryId IN (SELECT CategoryId FROM target_categories)
 
-    -- 3) eligible room/therapist pairs for every date in range -- same rules as the single-date
-    -- version, just joined against a generated date spine instead of one p_WorkDate.
-    OPEN p_cur_EligiblePairs FOR
-        WITH dates AS (
-            SELECT generate_series(p_FromDate, p_ToDate, interval '1 day')::date AS WorkDate
-        ),
-        day_hours AS (
-            SELECT d.WorkDate, COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime
-            FROM dates d
-                CROSS JOIN public.Locations l
-                LEFT JOIN LATERAL (
-                    SELECT lds.OpenTime, lds.CloseTime
-                    FROM public.LocationDaySchedule lds
-                    WHERE lds.LocationId = l.Id
-                        AND lds.DayBit = public.fn_DayBit(d.WorkDate)
-                        AND lds.EffectiveFrom <= d.WorkDate
-                        AND (lds.EffectiveTo IS NULL OR lds.EffectiveTo >= d.WorkDate) AND lds.IsDelete = FALSE
-                    ORDER BY CASE WHEN lds.EffectiveTo = lds.EffectiveFrom THEN 1 WHEN lds.EffectiveTo IS NOT NULL THEN 2 ELSE 3 END, lds.EffectiveFrom DESC
-                    LIMIT 1
-                ) dh ON TRUE
-            WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE
-        ),
-        target_categories AS (
-            SELECT DISTINCT t.CategoryId
-            FROM public.Treatments t
-                JOIN unnest(p_TreatmentIds) AS ti(Id) ON ti.Id = t.Id
-            WHERE t.LocationId = p_LocationId AND t.IsDelete = FALSE AND t.IsActive = TRUE
-        ),
-        active_rooms AS (
-            SELECT r.Id AS RoomId
-            FROM public.Rooms r
-            WHERE r.LocationId = p_LocationId AND r.IsDelete = FALSE AND r.IsActive = TRUE
-        ),
-        eligible_rooms AS (
-            SELECT d.WorkDate, r.RoomId, rca.ShiftType
-            FROM dates d
-                CROSS JOIN active_rooms r
-                JOIN public.RoomCategoryAssignments rca ON rca.RoomId = r.RoomId AND rca.WorkDate = d.WorkDate AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
-            WHERE rca.TreatmentCategoryId IN (SELECT CategoryId FROM target_categories)
+        UNION ALL
 
-            UNION ALL
-
-            SELECT d.WorkDate, r.RoomId, 'FullDay' AS ShiftType
-            FROM dates d
-                CROSS JOIN active_rooms r
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM public.RoomCategoryAssignments rca2
-                    JOIN public.Rooms r2 ON r2.Id = rca2.RoomId
-                WHERE r2.LocationId = p_LocationId AND rca2.IsDelete = FALSE AND rca2.IsActive = TRUE
-            )
-        ),
-        eligible_shifts AS (
-            SELECT sa.WorkDate, sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
-            FROM public.ShiftAssignments sa
-            WHERE sa.LocationId = p_LocationId AND sa.WorkDate BETWEEN p_FromDate AND p_ToDate AND sa.IsDelete = FALSE AND sa.IsActive = TRUE
-
-            UNION ALL
-
-            -- "Ever" (not "not this date") -- a per-date check here would make a fully
-            -- shift-scheduled therapist's day off look available all day in every room, for every
-            -- date in the range.
-            SELECT d.WorkDate, NULL::int AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, dh.OpenTime AS ShiftStart, dh.CloseTime AS ShiftEnd
-            FROM dates d
-                CROSS JOIN public.TherapistProfile tp
-                JOIN day_hours dh ON dh.WorkDate = d.WorkDate
-            WHERE tp.IsDelete = FALSE AND tp.IsActive = TRUE
-                AND (tp.LocationId = p_LocationId OR tp.LocationId IS NULL)
-                AND NOT EXISTS (
-                    SELECT 1 FROM public.ShiftAssignments sa2
-                    WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = FALSE AND sa2.IsActive = TRUE
-                )
+        SELECT d.WorkDate, r.RoomId, 'FullDay' AS ShiftType
+        FROM dates d
+            CROSS JOIN active_rooms r
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.RoomCategoryAssignments rca2
+                JOIN public.Rooms r2 ON r2.Id = rca2.RoomId
+            WHERE r2.LocationId = p_LocationId AND rca2.IsDelete = FALSE AND rca2.IsActive = TRUE
         )
-        SELECT DISTINCT er.WorkDate, er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd
-        FROM eligible_rooms er
-            JOIN eligible_shifts es
-            ON es.WorkDate = er.WorkDate
-                AND (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
-                AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
+    ),
+    eligible_shifts AS (
+        SELECT sa.WorkDate, sa.RoomId, sa.TherapistId, sa.ShiftType, sa.StartTime AS ShiftStart, sa.EndTime AS ShiftEnd
+        FROM public.ShiftAssignments sa
+        WHERE sa.LocationId = p_LocationId AND sa.WorkDate BETWEEN p_FromDate AND p_ToDate AND sa.IsDelete = FALSE AND sa.IsActive = TRUE
 
-    -- 4) scheduled treatment lines across the whole range, anywhere -- NOT scoped to this location.
-    OPEN p_cur_ScheduledLines FOR
-        SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
-        FROM public.BookingTreatments bt
-            JOIN public.Bookings b ON b.Id = bt.BookingId
-        WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date BETWEEN p_FromDate AND p_ToDate
-            AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
-            AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
-            AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
+        UNION ALL
 
-    -- 5) admin-blocked room/time ranges across the whole range
-    OPEN p_cur_BlockedSlots FOR
-        SELECT bs.WorkDate, bs.RoomId, bs.StartTime, bs.EndTime
-        FROM public.BlockedSlots bs
-            JOIN public.Rooms r ON r.Id = bs.RoomId
-        WHERE r.LocationId = p_LocationId AND bs.WorkDate BETWEEN p_FromDate AND p_ToDate AND bs.IsDelete = FALSE;
-END;
+        -- "Ever" (not "not this date") -- a per-date check here would make a fully
+        -- shift-scheduled therapist's day off look available all day in every room, for every
+        -- date in the range.
+        SELECT d.WorkDate, NULL::int AS RoomId, tp.Id AS TherapistId, 'FullDay' AS ShiftType, dh.OpenTime AS ShiftStart, dh.CloseTime AS ShiftEnd
+        FROM dates d
+            CROSS JOIN public.TherapistProfile tp
+            JOIN day_hours dh ON dh.WorkDate = d.WorkDate
+        WHERE tp.IsDelete = FALSE AND tp.IsActive = TRUE
+            AND (tp.LocationId = p_LocationId OR tp.LocationId IS NULL)
+            AND NOT EXISTS (
+                SELECT 1 FROM public.ShiftAssignments sa2
+                WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = FALSE AND sa2.IsActive = TRUE
+            )
+    )
+    SELECT DISTINCT er.RoomId, es.TherapistId, es.ShiftType, es.ShiftStart, es.ShiftEnd, er.WorkDate
+    FROM eligible_rooms er
+        JOIN eligible_shifts es
+        ON es.WorkDate = er.WorkDate
+            AND (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+            AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
+$$;
+
+-- 4) scheduled treatment lines on the date, anywhere -- NOT scoped to this location.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityScheduledLines(p_WorkDate date, p_ExcludeBookingId int DEFAULT NULL)
+RETURNS TABLE(RoomId int, TherapistId int, StartTime timestamptz, EndTime timestamptz, Status varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
+    FROM public.BookingTreatments bt
+        JOIN public.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+        AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
+        AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
+$$;
+
+-- Range-aware sibling of fn_Booking_AvailabilityScheduledLines above -- same "anywhere, not scoped
+-- to this location" shape, across the whole range instead of one date.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeScheduledLines(p_FromDate date, p_ToDate date, p_ExcludeBookingId int DEFAULT NULL)
+RETURNS TABLE(RoomId int, TherapistId int, StartTime timestamptz, EndTime timestamptz, Status varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
+    FROM public.BookingTreatments bt
+        JOIN public.Bookings b ON b.Id = bt.BookingId
+    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date BETWEEN p_FromDate AND p_ToDate
+        AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
+        AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
+        AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
+$$;
+
+-- 5) admin-blocked room/time ranges that day (lunch break, therapist leave, etc)
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityBlockedSlots(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(RoomId int, StartTime time, EndTime time, WorkDate date)
+LANGUAGE sql STABLE AS $$
+    SELECT bs.RoomId, bs.StartTime, bs.EndTime, p_WorkDate AS WorkDate
+    FROM public.BlockedSlots bs
+        JOIN public.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = p_LocationId AND bs.WorkDate = p_WorkDate AND bs.IsDelete = FALSE;
+$$;
+
+-- Range-aware sibling of fn_Booking_AvailabilityBlockedSlots above.
+CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeBlockedSlots(p_LocationId int, p_FromDate date, p_ToDate date)
+RETURNS TABLE(RoomId int, StartTime time, EndTime time, WorkDate date)
+LANGUAGE sql STABLE AS $$
+    SELECT bs.RoomId, bs.StartTime, bs.EndTime, bs.WorkDate
+    FROM public.BlockedSlots bs
+        JOIN public.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = p_LocationId AND bs.WorkDate BETWEEN p_FromDate AND p_ToDate AND bs.IsDelete = FALSE;
 $$;
 
 -------------------------------------------------------------------------------------------------
