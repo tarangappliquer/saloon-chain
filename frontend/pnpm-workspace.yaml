@@ -6,3 +6,7 @@ packages:
 peerDependencyRules:
   ignoreMissing:
     - '@uppy/core'
+  allowedVersions:
+    # @uppy/image-editor@4 declares a conservative peer of @uppy/core@^5, but
+    # its 4.x line runs fine on the @uppy/core@4 the rest of the stack uses.
+    '@uppy/image-editor>@uppy/core': '4'
