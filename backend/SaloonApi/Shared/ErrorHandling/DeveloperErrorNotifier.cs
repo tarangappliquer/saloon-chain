@@ -61,7 +61,9 @@ internal sealed class DeveloperErrorNotifier(
                 Subject: subject,
                 HtmlBody: htmlBody);
 
-            await emailSender.SendAsync(emailMessage, ct).ConfigureAwait(false);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+            await emailSender.SendAsync(emailMessage, timeoutCts.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

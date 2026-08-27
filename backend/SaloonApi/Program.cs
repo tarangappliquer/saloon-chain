@@ -59,8 +59,6 @@ try
 
     builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
-    Log.Error("Database connection string: {@ConnectionString}", builder.Configuration.GetConnectionString("SaloonDb") ?? "N/A");
-
     builder.Host.UseSerilog((_, cfg) =>
     {
         cfg.GetLoggerConfiguration(true);
