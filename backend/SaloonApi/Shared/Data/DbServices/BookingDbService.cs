@@ -5,7 +5,11 @@ using SaloonApi.Modules.Booking.Infrastructure;
 
 namespace SaloonApi.Shared.Data.DbServices;
 
-internal sealed record ScheduleTreatmentRow(DateTime ExpiresAt, int LocationId);
+internal sealed record ScheduleTreatmentRow
+{
+    public DateTime ExpiresAt { get; init; }
+    public int LocationId { get; init; }
+}
 
 [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Registered as Singleton service in DI container")]
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]

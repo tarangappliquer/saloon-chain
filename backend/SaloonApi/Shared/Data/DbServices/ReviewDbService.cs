@@ -19,7 +19,11 @@ internal sealed class ReviewDbService
         var args = new DynamicParameters();
         args.Add("BookingId", bookingId, DbType.Int32);
         args.Add("CustomerId", customerId, DbType.Int32);
-        args.Add("Rating", rating, DbType.Int32);
+        // DbType.Int16, not Int32 -- sp_Review_Create's p_Rating is smallint; Postgres won't
+        // implicitly resolve an int4 argument to a smallint-typed parameter for function-overload
+        // matching (only assignment casts, not function-call casts), so int4 => "function ...
+        // does not exist".
+        args.Add("Rating", rating, DbType.Int16);
         args.Add("Comment", comment, DbType.String);
         return db.ExecuteScalarAsync<int>(
             "SELECT * FROM public.sp_Review_Create(p_BookingId => @BookingId, p_CustomerId => @CustomerId, p_Rating => @Rating, p_Comment => @Comment)",

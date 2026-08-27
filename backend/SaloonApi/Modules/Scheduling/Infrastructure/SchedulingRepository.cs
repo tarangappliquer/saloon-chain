@@ -44,7 +44,19 @@ internal sealed record BlockedSlotDto
     public bool IsLocationBreak { get; init; }
 }
 
-internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateOnly WorkDate, TimeOnly StartTime, TimeOnly EndTime, string Reason);
+// Init-property -- sp_Scheduling_GetBlockedSlotDetails returns 11 columns (BlockTypeId/
+// BlockTypeName/IsPaid/ColorHex included), but only Id/LocationId/WorkDate are ever read by
+// callers; positional matching would require every column to be declared and ordered exactly.
+internal sealed record BlockedSlotDetailsDto
+{
+    public int Id { get; init; }
+    public int LocationId { get; init; }
+    public int RoomId { get; init; }
+    public DateOnly WorkDate { get; init; }
+    public TimeOnly StartTime { get; init; }
+    public TimeOnly EndTime { get; init; }
+    public string Reason { get; init; } = "";
+}
 
 internal sealed record RosterDto(IReadOnlyList<TherapistShiftDto> TherapistShifts, IReadOnlyList<RoomOpeningDto> RoomOpenings, IReadOnlyList<BlockedSlotDto> BlockedSlots);
 

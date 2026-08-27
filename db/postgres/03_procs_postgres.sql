@@ -776,10 +776,12 @@ $$;
 CREATE OR REPLACE FUNCTION public.sp_Booking_ScheduleTreatment(
     p_BookingId int, p_CustomerId int, p_TreatmentId int, p_RoomId int, p_TherapistId int,
     p_StartTime timestamptz, p_EndTime timestamptz, p_UpdatedBy int DEFAULT NULL,
-    OUT p_ExpiresAt timestamptz, OUT p_LocationId int
+    OUT "ExpiresAt" timestamptz, OUT "LocationId" int
 )
 LANGUAGE plpgsql AS $$
 DECLARE
+    v_ExpiresAt timestamptz;
+    v_LocationId int;
     v_RoomLockKey text := 'room_' || p_RoomId || '_' || to_char(p_StartTime AT TIME ZONE 'utc', 'YYYY-MM-DD');
     v_TherapistLockKey text := 'therapist_' || p_TherapistId || '_' || to_char(p_StartTime AT TIME ZONE 'utc', 'YYYY-MM-DD');
 BEGIN
@@ -788,14 +790,14 @@ BEGIN
     PERFORM public.fn_AcquireBookingLock(v_RoomLockKey);
     PERFORM public.fn_AcquireBookingLock(v_TherapistLockKey);
 
-    SELECT b.LocationId INTO p_LocationId
+    SELECT b.LocationId INTO v_LocationId
     FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId
     WHERE bt.BookingId = p_BookingId AND bt.TreatmentId = p_TreatmentId AND bt.IsDelete = FALSE
         AND b.CustomerId = p_CustomerId AND b.IsDelete = FALSE AND b.Status = 'Draft'
     LIMIT 1;
 
-    IF p_LocationId IS NULL THEN
+    IF v_LocationId IS NULL THEN
         RAISE EXCEPTION 'Booking or treatment not found.' USING ERRCODE = '50008';
     END IF;
 
@@ -812,16 +814,19 @@ BEGIN
         RAISE EXCEPTION 'Slot no longer available.' USING ERRCODE = '50002';
     END IF;
 
-    PERFORM public.sp_Booking_ValidateSlotEligibility(p_LocationId, p_TreatmentId, p_RoomId, p_TherapistId, p_StartTime, p_EndTime);
+    PERFORM public.sp_Booking_ValidateSlotEligibility(v_LocationId, p_TreatmentId, p_RoomId, p_TherapistId, p_StartTime, p_EndTime);
 
-    p_ExpiresAt := now() + interval '5 minutes';
+    v_ExpiresAt := now() + interval '5 minutes';
 
     UPDATE public.BookingTreatments
     SET RoomId = p_RoomId, TherapistId = p_TherapistId, StartTime = p_StartTime, EndTime = p_EndTime,
-        ExpiresAt = p_ExpiresAt, UpdatedBy = p_UpdatedBy, UpdatedDate = now()
+        ExpiresAt = v_ExpiresAt, UpdatedBy = p_UpdatedBy, UpdatedDate = now()
     WHERE BookingId = p_BookingId AND TreatmentId = p_TreatmentId AND IsDelete = FALSE;
 
     UPDATE public.Bookings SET UpdatedDate = now(), UpdatedBy = p_UpdatedBy WHERE Id = p_BookingId;
+
+    "ExpiresAt" := v_ExpiresAt;
+    "LocationId" := v_LocationId;
 END;
 $$;
 
@@ -951,7 +956,7 @@ BEGIN
         RAISE EXCEPTION 'CustomerId is required.' USING ERRCODE = '50003';
     END IF;
 
-    IF EXISTS (SELECT 1 FROM public.Bookings WHERE Id = p_BookingId AND Status = 'Confirmed' AND IsDelete = FALSE) THEN
+    IF EXISTS (SELECT 1 FROM public.Bookings b WHERE b.Id = p_BookingId AND b.Status = 'Confirmed' AND b.IsDelete = FALSE) THEN
         RETURN QUERY
         SELECT b.LocationId, bt.RoomId, (bt.StartTime AT TIME ZONE 'utc')::date AS WorkDate
         FROM public.BookingTreatments bt
@@ -961,29 +966,29 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM public.Bookings
-        WHERE Id = p_BookingId AND CustomerId = p_CustomerId AND IsDelete = FALSE AND Status = 'Draft'
+        SELECT 1 FROM public.Bookings b
+        WHERE b.Id = p_BookingId AND b.CustomerId = p_CustomerId AND b.IsDelete = FALSE AND b.Status = 'Draft'
     ) THEN
         RAISE EXCEPTION 'Booking not found or already finalized.' USING ERRCODE = '50003';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM public.BookingTreatments WHERE BookingId = p_BookingId AND IsDelete = FALSE) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.BookingTreatments bt WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE) THEN
         RAISE EXCEPTION 'Booking has no treatments.' USING ERRCODE = '50003';
     END IF;
 
     IF EXISTS (
-        SELECT 1 FROM public.BookingTreatments
-        WHERE BookingId = p_BookingId AND IsDelete = FALSE AND StartTime IS NULL
+        SELECT 1 FROM public.BookingTreatments bt
+        WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE AND bt.StartTime IS NULL
     ) THEN
         RAISE EXCEPTION 'Every treatment needs a time before confirming.' USING ERRCODE = '50003';
     END IF;
 
-    UPDATE public.Bookings
+    UPDATE public.Bookings b
     SET Status = 'Confirmed', UpdatedBy = COALESCE(p_UpdatedBy, p_CustomerId), UpdatedDate = now()
-    WHERE Id = p_BookingId;
+    WHERE b.Id = p_BookingId;
 
     -- A booking only ever binds the customer to the location once it's actually confirmed.
-    SELECT CustomerId, LocationId INTO v_BoundCustomerId, v_BoundLocationId FROM public.Bookings WHERE Id = p_BookingId;
+    SELECT b.CustomerId, b.LocationId INTO v_BoundCustomerId, v_BoundLocationId FROM public.Bookings b WHERE b.Id = p_BookingId;
     PERFORM public.sp_CustomerLocation_Bind(v_BoundCustomerId, v_BoundLocationId, v_BoundCreatedBy);
 
     -- Retail stock check + deduction, atomic with the confirm -- a booking never commits to
@@ -1002,9 +1007,9 @@ BEGIN
     FROM public.BookingProducts bp
     WHERE bp.ProductId = p.Id AND bp.BookingId = p_BookingId AND bp.IsDelete = FALSE;
 
-    UPDATE public.BookingTreatments
+    UPDATE public.BookingTreatments bt
     SET ExpiresAt = NULL, UpdatedBy = COALESCE(p_UpdatedBy, p_CustomerId), UpdatedDate = now()
-    WHERE BookingId = p_BookingId AND IsDelete = FALSE;
+    WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE;
 
     RETURN QUERY
     SELECT b.LocationId, bt.RoomId, (bt.StartTime AT TIME ZONE 'utc')::date AS WorkDate
@@ -4084,13 +4089,17 @@ BEGIN
         RAISE EXCEPTION 'Departure/Left time is immutable once set and cannot be modified.' USING ERRCODE = '50041';
     END IF;
 
-    IF EXISTS (SELECT 1 FROM public.StaffAttendance WHERE LocationId = p_LocationId AND UserId = p_UserId AND WorkDate = p_WorkDate) THEN
-        UPDATE public.StaffAttendance
-        SET ArrivalTime = COALESCE(ArrivalTime, p_ArrivalTime),
-            LeftTime = COALESCE(LeftTime, p_LeftTime),
+    -- Aliased and qualified throughout (sa.LocationId, not bare LocationId) -- this function's own
+    -- RETURNS TABLE(LocationId int, UserId int, WorkDate date, ArrivalTime time, LeftTime time, ...)
+    -- makes those names PL/pgSQL variables in scope here, which an unqualified reference to
+    -- StaffAttendance's own columns of the same name would collide with ("ambiguous").
+    IF EXISTS (SELECT 1 FROM public.StaffAttendance sa WHERE sa.LocationId = p_LocationId AND sa.UserId = p_UserId AND sa.WorkDate = p_WorkDate) THEN
+        UPDATE public.StaffAttendance sa
+        SET ArrivalTime = COALESCE(sa.ArrivalTime, p_ArrivalTime),
+            LeftTime = COALESCE(sa.LeftTime, p_LeftTime),
             UpdatedBy = p_LoggedBy,
             UpdatedDate = now()
-        WHERE LocationId = p_LocationId AND UserId = p_UserId AND WorkDate = p_WorkDate;
+        WHERE sa.LocationId = p_LocationId AND sa.UserId = p_UserId AND sa.WorkDate = p_WorkDate;
     ELSE
         INSERT INTO public.StaffAttendance (LocationId, UserId, WorkDate, ArrivalTime, LeftTime, CreatedBy)
         VALUES (p_LocationId, p_UserId, p_WorkDate, p_ArrivalTime, p_LeftTime, p_LoggedBy);
