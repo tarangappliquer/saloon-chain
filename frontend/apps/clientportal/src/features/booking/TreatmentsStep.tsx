@@ -2,7 +2,7 @@ import { useActionState, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, bookingApi } from '../../api/client';
 import type { DraftResponse } from '@saloon/api-client';
-import { useBookingContext } from '../../pages/BookPage';
+import { useBookingContext } from './bookingContext';
 import { routes } from '../../routes';
 import { TreatmentPicker } from './TreatmentPicker';
 

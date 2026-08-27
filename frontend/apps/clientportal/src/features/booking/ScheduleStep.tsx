@@ -5,7 +5,7 @@ import { AlertTriangle, Info, MapPin, Store } from 'lucide-react';
 import { bookingApi, catalogApi } from '../../api/client';
 import type { Treatment } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { useBookingContext } from '../../pages/BookPage';
+import { useBookingContext } from './bookingContext';
 import { routes } from '../../routes';
 import { MonthYearPicker } from './MonthYearPicker';
 import { SlotPicker } from './SlotPicker';

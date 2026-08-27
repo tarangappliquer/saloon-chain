@@ -1,25 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Outlet, useMatch, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { Suspense, useEffect, useState } from 'react';
+import { Outlet, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Select, { type SingleValue } from 'react-select';
-import { Button, ConfirmDialog, PageHeader } from '@saloon/ui';
+import { Button, ConfirmDialog, LoadingFallback, PageHeader } from '@saloon/ui';
 import { ApiError, bookingApi, catalogApi } from '../api/client';
 import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
 import { findChainForLocation } from '../api/findChainForLocation';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 import { routes } from '../routes';
 import { useAuth } from '../features/auth/AuthContext';
-
-export interface BookingContext {
-  treatments: Treatment[];
-  locationId: number | null;
-  saloonName: string | null;
-  locationName: string | null;
-}
-
-// oxlint-disable-next-line react/only-export-components
-export function useBookingContext() {
-  return useOutletContext<BookingContext>();
-}
+import type { BookingContext } from '../features/booking/bookingContext';
 
 export function BookPage() {
   const { user } = useAuth();
@@ -196,7 +185,9 @@ export function BookPage() {
         </div>
       )}
 
-      <Outlet key={locationId} context={{ treatments, locationId, saloonName, locationName } satisfies BookingContext} />
+      <Suspense fallback={<LoadingFallback />}>
+        <Outlet key={locationId} context={{ treatments, locationId, saloonName, locationName } satisfies BookingContext} />
+      </Suspense>
     </div>
   );
 }

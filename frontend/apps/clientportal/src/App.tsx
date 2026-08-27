@@ -7,11 +7,12 @@ import { AuthProvider, useAuth } from './features/auth/AuthContext';
 import { appConfig } from './config';
 import { VerifyEmailGate } from './components/VerifyEmailGate';
 import { Nav } from './components/Nav';
-import { ConfirmedStep } from './features/booking/ConfirmedStep';
-import { PaymentStep } from './features/booking/PaymentStep';
-import { ScheduleStep } from './features/booking/ScheduleStep';
-import { SummaryStep } from './features/booking/SummaryStep';
-import { TreatmentsStep } from './features/booking/TreatmentsStep';
+
+const ConfirmedStep = lazy(() => import('./features/booking/ConfirmedStep').then((m) => ({ default: m.ConfirmedStep })));
+const PaymentStep = lazy(() => import('./features/booking/PaymentStep').then((m) => ({ default: m.PaymentStep })));
+const ScheduleStep = lazy(() => import('./features/booking/ScheduleStep').then((m) => ({ default: m.ScheduleStep })));
+const SummaryStep = lazy(() => import('./features/booking/SummaryStep').then((m) => ({ default: m.SummaryStep })));
+const TreatmentsStep = lazy(() => import('./features/booking/TreatmentsStep').then((m) => ({ default: m.TreatmentsStep })));
 
 const ExplorePage = lazy(() => import('./pages/ExplorePage').then((m) => ({ default: m.ExplorePage })));
 const VenueDetailPage = lazy(() => import('./pages/VenueDetailPage').then((m) => ({ default: m.VenueDetailPage })));
