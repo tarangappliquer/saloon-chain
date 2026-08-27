@@ -2,6 +2,7 @@ namespace SaloonApi.Shared.Email;
 
 internal sealed class EmailOptions
 {
+    public bool Enable { get; init; }
     public string SmtpHost { get; init; } = "localhost";
     public int SmtpPort { get; init; } = 1025; // local dev catcher (e.g. MailHog/smtp4dev) default
     public string Username { get; init; } = "";

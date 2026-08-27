@@ -11,6 +11,12 @@ internal sealed class SmtpEmailSender(IOptionsMonitor<EmailOptions> options) : I
 
     public async Task SendAsync(EmailMessage message, CancellationToken ct)
     {
+
+        if (!_options.Enable)
+        {
+            return;
+        }
+
         using var mime = new MimeMessage();
 
         var from = message.From ?? new EmailAddress(_options.FromAddress, _options.FromName);
