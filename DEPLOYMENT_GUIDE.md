@@ -229,5 +229,6 @@ Once set up, **you never need to SSH into your server to deploy updates**:
 | **View Backend Logs** | `docker compose logs -f saloonchains-backend` |
 | **View Watchtower Activity** | `docker compose logs -f saloonchains-watchtower` |
 | **Check Running Containers** | `docker compose ps` |
+| **Health-check API + Frontend Ports** | `./deploy/healthcheck.sh` (add public IP as arg to test externally) |
 | **Restart Stack Manually** | `docker compose restart` |
 | **Stop All Containers** | `docker compose down` |
