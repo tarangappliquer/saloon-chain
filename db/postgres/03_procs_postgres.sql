@@ -39,17 +39,15 @@ END $$;
 --   readers never block behind writers at all under the default READ COMMITTED level, so the
 --   hint has no Postgres equivalent and nothing is lost by omitting it.
 -- * SCOPE_IDENTITY() -> `INSERT ... RETURNING Id INTO v_id` on the insert itself.
--- * @Param OUTPUT -> an `OUT`/`INOUT` parameter on the function; a T-SQL proc whose only output
---   was one `SELECT` result set becomes `RETURNS TABLE(...)`; a proc that returns MULTIPLE T-SQL
---   result sets becomes a PROCEDURE with one named `refcursor` INOUT parameter per result set
---   (each pre-seeded with a fixed cursor name, e.g. 'cur_treatments', so the caller doesn't need
---   to read a server-generated name back before FETCHing) -- call convention:
---       BEGIN;
---       CALL public.sp_Whatever(1, 2, 'cur_a', 'cur_b');
---       FETCH ALL FROM cur_a;
---       FETCH ALL FROM cur_b;
---       COMMIT;
---   refcursors are only valid inside the transaction that opened them, hence the BEGIN/COMMIT.
+-- * @Param OUTPUT -> an `OUT`/`INOUT` parameter on the function; a T-SQL proc whose only output was
+--   one `SELECT` result set becomes `RETURNS TABLE(...)`; a proc that returns MULTIPLE T-SQL result
+--   sets becomes one `RETURNS TABLE(...)` FUNCTION per result set instead of a single multi-cursor
+--   PROCEDURE -- the C# side reads them together in one round trip via Dapper's own
+--   `QueryMultipleAsync("SELECT * FROM fn_a(...); SELECT * FROM fn_b(...);", args)`, no hand-rolled
+--   refcursor/transaction plumbing needed (see `fn_Booking_Availability*` below, or
+--   `BookingDbService.cs` for the C# side). An EARLIER version of this file used a `PROCEDURE` with
+--   one named `refcursor` INOUT parameter per result set instead -- if you find a stray `refcursor`
+--   param anywhere below, it was missed in that conversion and should be split the same way.
 -- * `THROW 5000N, 'message', 1` -> `RAISE EXCEPTION 'message' USING ERRCODE = '5000N'`. Postgres
 --   SQLSTATEs are free-form 5-char codes outside the standard-defined classes, so the original
 --   error number is preserved verbatim as the SQLSTATE -- the C# AppExceptionHandler's existing
@@ -1018,29 +1016,29 @@ $$;
 
 -- Backs the confirmation email -- separate from sp_Booking_Confirm's own return value because the
 -- email needs customer/location names and each treatment's own therapist/time.
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetConfirmationDetails(
-    IN p_BookingId int,
-    INOUT p_cur_Booking refcursor DEFAULT 'cur_confirm_booking',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_confirm_treatments'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Booking FOR
-        SELECT b.Id, c.Name AS CustomerName, c.Email AS CustomerEmail, l.Name AS LocationName
-        FROM public.Bookings b
-            JOIN public.Users c ON c.Id = b.CustomerId
-            JOIN public.Locations l ON l.Id = b.LocationId
-        WHERE b.Id = p_BookingId AND b.IsDelete = FALSE;
+CREATE OR REPLACE FUNCTION public.fn_Booking_ConfirmationHeader(p_BookingId int)
+RETURNS TABLE(Id int, LocationId int, LocationName varchar, CustomerId int, CustomerName varchar, CustomerEmail varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName, c.Email AS CustomerEmail
+    FROM public.Bookings b
+        JOIN public.Users c ON c.Id = b.CustomerId
+        JOIN public.Locations l ON l.Id = b.LocationId
+    WHERE b.Id = p_BookingId AND b.IsDelete = FALSE;
+$$;
 
-    OPEN p_cur_Treatments FOR
-        SELECT bt.TreatmentId, t.Name AS TreatmentName, th.Name AS TherapistName,
-            bt.StartTime, bt.EndTime, bt.SlotCount, bt.Price
-        FROM public.BookingTreatments bt
-            JOIN public.Treatments t ON t.Id = bt.TreatmentId
-            JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
-        WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE
-        ORDER BY bt.SequenceOrder;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Booking_ConfirmationTreatments(p_BookingId int)
+RETURNS TABLE(BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
+              StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+        bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName
+    FROM public.BookingTreatments bt
+        JOIN public.Treatments t ON t.Id = bt.TreatmentId
+        LEFT JOIN public.TreatmentDurations td ON td.Id = bt.TreatmentDurationId
+        LEFT JOIN public.Rooms r ON r.Id = bt.RoomId
+        JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
+    WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE
+    ORDER BY bt.SequenceOrder;
 $$;
 
 CREATE OR REPLACE FUNCTION public.sp_Booking_Cancel(p_BookingId int, p_CustomerId int, p_UpdatedBy int DEFAULT NULL)
@@ -1137,72 +1135,71 @@ $$;
 
 -- Powers refresh-restore: the booking id lives in the URL, so a reload just re-fetches the
 -- current state of the draft from here instead of trusting anything client-persisted.
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetById(
-    IN p_BookingId int, IN p_CustomerId int,
-    INOUT p_cur_Booking refcursor DEFAULT 'cur_getbyid_booking',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_getbyid_treatments'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Booking FOR
-        SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
-        FROM public.Bookings b
-            JOIN public.Locations l ON l.Id = b.LocationId
-        WHERE b.Id = p_BookingId AND b.CustomerId = p_CustomerId AND b.IsDelete = FALSE;
-
-    OPEN p_cur_Treatments FOR
-        SELECT bt.Id, bt.TreatmentId, t.Name AS TreatmentName, bt.RoomId, bt.TherapistId,
-            th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.ExpiresAt, bt.SlotCount, bt.Price
-        FROM public.BookingTreatments bt
-            JOIN public.Treatments t ON t.Id = bt.TreatmentId
-            LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
-        WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE
-        ORDER BY bt.SequenceOrder;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Booking_GetByIdHeader(p_BookingId int, p_CustomerId int)
+RETURNS TABLE(Id int, LocationId int, LocationName varchar, Status varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
+    FROM public.Bookings b
+        JOIN public.Locations l ON l.Id = b.LocationId
+    WHERE b.Id = p_BookingId AND b.CustomerId = p_CustomerId AND b.IsDelete = FALSE;
 $$;
 
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetMine(
-    IN p_CustomerId int, IN p_ChainId int DEFAULT NULL, IN p_LocationId int DEFAULT NULL,
-    INOUT p_cur_Bookings refcursor DEFAULT 'cur_mine_bookings',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_mine_treatments'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Bookings FOR
-        SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status, b.CreatedDate,
-            p.Provider AS PaymentProvider, p.Status AS PaymentStatus,
-            (rv.Id IS NOT NULL) AS HasReview
-        FROM public.Bookings b
-            JOIN public.Locations l ON l.Id = b.LocationId
-            LEFT JOIN LATERAL (
-                SELECT pay.Provider, pay.Status
-                FROM public.Payments pay
-                WHERE pay.BookingId = b.Id
-                ORDER BY pay.Id DESC
-                LIMIT 1
-            ) p ON TRUE
-            LEFT JOIN public.Reviews rv ON rv.BookingId = b.Id AND rv.IsDelete = FALSE
-        WHERE b.CustomerId = p_CustomerId
-            AND (p_ChainId IS NULL OR l.ChainId = p_ChainId)
-            AND (p_LocationId IS NULL OR b.LocationId = p_LocationId)
-            AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > now() - interval '30 minutes'))
-            AND b.IsDelete = FALSE
-        ORDER BY b.Id DESC;
+CREATE OR REPLACE FUNCTION public.fn_Booking_GetByIdTreatments(p_BookingId int)
+RETURNS TABLE(BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
+              StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar, ExpiresAt timestamptz)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+        bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName, bt.ExpiresAt
+    FROM public.BookingTreatments bt
+        JOIN public.Treatments t ON t.Id = bt.TreatmentId
+        LEFT JOIN public.TreatmentDurations td ON td.Id = bt.TreatmentDurationId
+        LEFT JOIN public.Rooms r ON r.Id = bt.RoomId
+        LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
+    WHERE bt.BookingId = p_BookingId AND bt.IsDelete = FALSE
+    ORDER BY bt.SequenceOrder;
+$$;
 
-    OPEN p_cur_Treatments FOR
-        SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, bt.TherapistId,
-            th.Name AS TherapistName, bt.StartTime, bt.EndTime, bt.SequenceOrder, bt.SlotCount, bt.Price
-        FROM public.BookingTreatments bt
-            JOIN public.Treatments t ON t.Id = bt.TreatmentId
-            JOIN public.Bookings b ON b.Id = bt.BookingId
-            JOIN public.Locations l ON l.Id = b.LocationId
-            LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
-        WHERE b.CustomerId = p_CustomerId
-            AND (p_ChainId IS NULL OR l.ChainId = p_ChainId)
-            AND (p_LocationId IS NULL OR b.LocationId = p_LocationId)
-            AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > now() - interval '15 minutes'))
-            AND b.IsDelete = FALSE AND bt.IsDelete = FALSE;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Booking_MineHeaders(p_CustomerId int, p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL)
+RETURNS TABLE(BookingId int, LocationId int, LocationName varchar, Status varchar, CreatedDate timestamptz,
+              AppointmentStatusId int, AppointmentStatusName varchar, AppointmentStatusColorHex varchar,
+              CancelReasonId int, CancelReasonName varchar, PaymentStatus varchar, PaymentProvider varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT b.Id AS BookingId, b.LocationId, l.Name AS LocationName, b.Status, b.CreatedDate,
+        b.AppointmentStatusId, aps.Name AS AppointmentStatusName, aps.ColorHex AS AppointmentStatusColorHex,
+        b.CancelReasonId, cr.Name AS CancelReasonName,
+        p.Status AS PaymentStatus, p.Provider AS PaymentProvider
+    FROM public.Bookings b
+        JOIN public.Locations l ON l.Id = b.LocationId
+        LEFT JOIN public.AppointmentStatuses aps ON aps.Id = b.AppointmentStatusId
+        LEFT JOIN public.CancelReasons cr ON cr.Id = b.CancelReasonId
+        LEFT JOIN LATERAL (
+            SELECT pay.Provider, pay.Status
+            FROM public.Payments pay
+            WHERE pay.BookingId = b.Id
+            ORDER BY pay.Id DESC
+            LIMIT 1
+        ) p ON TRUE
+    WHERE b.CustomerId = p_CustomerId
+        AND (p_ChainId IS NULL OR l.ChainId = p_ChainId)
+        AND (p_LocationId IS NULL OR b.LocationId = p_LocationId)
+        AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > now() - interval '30 minutes'))
+        AND b.IsDelete = FALSE
+    ORDER BY b.Id DESC;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fn_Booking_MineTreatments(p_CustomerId int, p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL)
+RETURNS TABLE(BookingId int, TreatmentName varchar, Price numeric, StartTime timestamptz, EndTime timestamptz)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.BookingId, t.Name AS TreatmentName, bt.Price, bt.StartTime, bt.EndTime
+    FROM public.BookingTreatments bt
+        JOIN public.Treatments t ON t.Id = bt.TreatmentId
+        JOIN public.Bookings b ON b.Id = bt.BookingId
+        JOIN public.Locations l ON l.Id = b.LocationId
+    WHERE b.CustomerId = p_CustomerId
+        AND (p_ChainId IS NULL OR l.ChainId = p_ChainId)
+        AND (p_LocationId IS NULL OR b.LocationId = p_LocationId)
+        AND (b.Status IN ('Confirmed', 'Cancelled') OR (b.Status = 'Draft' AND COALESCE(b.UpdatedDate, b.CreatedDate) > now() - interval '15 minutes'))
+        AND b.IsDelete = FALSE AND bt.IsDelete = FALSE;
 $$;
 
 -------------------------------------------------------------------------------------------------
@@ -2175,54 +2172,55 @@ $$;
 
 -- "For a location on a date" means "has at least one treatment line scheduled that day" --
 -- schedule lives per-treatment (BookingTreatments), not on the booking itself.
-CREATE OR REPLACE PROCEDURE public.sp_Booking_GetForLocation(
-    IN p_LocationId int, IN p_WorkDate date,
-    INOUT p_cur_Bookings refcursor DEFAULT 'cur_forloc_bookings',
-    INOUT p_cur_Treatments refcursor DEFAULT 'cur_forloc_treatments'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Bookings FOR
-        SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName,
-            c.Email AS CustomerEmail, b.Status, b.IsCancelled, b.IsNoShow,
-            b.AppointmentStatusId, aps.Name AS AppointmentStatusName, aps.ColorHex AS AppointmentStatusColorHex,
-            b.CancelReasonId, cr.Name AS CancelReasonName,
-            p.Provider AS PaymentProvider, p.Status AS PaymentStatus
-        FROM public.Bookings b
-            JOIN public.Locations l ON l.Id = b.LocationId
-            JOIN public.Users c ON c.Id = b.CustomerId
-            LEFT JOIN public.AppointmentStatuses aps ON aps.Id = b.AppointmentStatusId
-            LEFT JOIN public.CancelReasons cr ON cr.Id = b.CancelReasonId
-            LEFT JOIN LATERAL (
-                SELECT pay.Provider, pay.Status
-                FROM public.Payments pay
-                WHERE pay.BookingId = b.Id
-                ORDER BY pay.Id DESC
-                LIMIT 1
-            ) p ON TRUE
-        WHERE b.LocationId = p_LocationId AND b.IsDelete = FALSE
-            AND b.Status <> 'Cancelled'
-            AND EXISTS (
-                SELECT 1
-                FROM public.BookingTreatments bt
-                WHERE bt.BookingId = b.Id AND bt.IsDelete = FALSE AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
-            )
-        ORDER BY b.Id;
+CREATE OR REPLACE FUNCTION public.fn_Booking_ForLocationHeaders(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(BookingId int, LocationId int, LocationName varchar, CustomerId int, CustomerName varchar, CustomerEmail varchar, CustomerPhone varchar,
+              Status varchar, CreatedDate timestamptz,
+              AppointmentStatusId int, AppointmentStatusName varchar, AppointmentStatusColorHex varchar,
+              CancelReasonId int, CancelReasonName varchar, PaymentStatus varchar, PaymentProvider varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT b.Id AS BookingId, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName, c.Email AS CustomerEmail, c.Phone AS CustomerPhone,
+        b.Status, b.CreatedDate,
+        b.AppointmentStatusId, aps.Name AS AppointmentStatusName, aps.ColorHex AS AppointmentStatusColorHex,
+        b.CancelReasonId, cr.Name AS CancelReasonName,
+        p.Status AS PaymentStatus, p.Provider AS PaymentProvider
+    FROM public.Bookings b
+        JOIN public.Locations l ON l.Id = b.LocationId
+        JOIN public.Users c ON c.Id = b.CustomerId
+        LEFT JOIN public.AppointmentStatuses aps ON aps.Id = b.AppointmentStatusId
+        LEFT JOIN public.CancelReasons cr ON cr.Id = b.CancelReasonId
+        LEFT JOIN LATERAL (
+            SELECT pay.Provider, pay.Status
+            FROM public.Payments pay
+            WHERE pay.BookingId = b.Id
+            ORDER BY pay.Id DESC
+            LIMIT 1
+        ) p ON TRUE
+    WHERE b.LocationId = p_LocationId AND b.IsDelete = FALSE
+        AND b.Status <> 'Cancelled'
+        AND EXISTS (
+            SELECT 1
+            FROM public.BookingTreatments bt
+            WHERE bt.BookingId = b.Id AND bt.IsDelete = FALSE AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+        )
+    ORDER BY b.Id;
+$$;
 
-    OPEN p_cur_Treatments FOR
-        SELECT bt.BookingId, bt.TreatmentId, t.Name AS TreatmentName, r.Id AS RoomId, r.Name AS RoomName,
-            bt.TherapistId, th.Name AS TherapistName, bt.StartTime, bt.EndTime,
-            bt.SequenceOrder, bt.SlotCount, bt.Price
-        FROM public.BookingTreatments bt
-            JOIN public.Treatments t ON t.Id = bt.TreatmentId
-            JOIN public.Bookings b ON b.Id = bt.BookingId
-            LEFT JOIN public.Rooms r ON r.Id = bt.RoomId
-            LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
-        WHERE b.LocationId = p_LocationId AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
-            AND b.Status <> 'Cancelled'
-            AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
-        ORDER BY bt.StartTime;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Booking_ForLocationTreatments(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(BookingId int, BookingTreatmentId int, TreatmentId int, TreatmentName varchar, DurationSlots smallint, PreTimeMinutes smallint, Price numeric,
+              StartTime timestamptz, EndTime timestamptz, RoomId int, RoomName varchar, TherapistId int, TherapistName varchar, ExpiresAt timestamptz)
+LANGUAGE sql STABLE AS $$
+    SELECT bt.BookingId, bt.Id AS BookingTreatmentId, bt.TreatmentId, t.Name AS TreatmentName, td.DurationSlots, td.PreTimeMinutes, bt.Price,
+        bt.StartTime, bt.EndTime, bt.RoomId, r.Name AS RoomName, bt.TherapistId, th.Name AS TherapistName, bt.ExpiresAt
+    FROM public.BookingTreatments bt
+        JOIN public.Treatments t ON t.Id = bt.TreatmentId
+        JOIN public.Bookings b ON b.Id = bt.BookingId
+        LEFT JOIN public.TreatmentDurations td ON td.Id = bt.TreatmentDurationId
+        LEFT JOIN public.Rooms r ON r.Id = bt.RoomId
+        LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
+    WHERE b.LocationId = p_LocationId AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
+        AND b.Status <> 'Cancelled'
+        AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+    ORDER BY bt.StartTime;
 $$;
 
 -- Pre-check for POST /api/admin/bookings/{id}/cancel -- Manager is location-scoped and must be
@@ -2555,56 +2553,55 @@ $$;
 -- Staff scheduling: therapist shift assignments + room-category openings
 -------------------------------------------------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE public.sp_Scheduling_GetRoster(
-    IN p_LocationId int, IN p_WorkDate date,
-    INOUT p_cur_Shifts refcursor DEFAULT 'cur_roster_shifts',
-    INOUT p_cur_RoomOpenings refcursor DEFAULT 'cur_roster_room_openings',
-    INOUT p_cur_Blocks refcursor DEFAULT 'cur_roster_blocks'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Shifts FOR
-        SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.RoomId, sa.ShiftType, sa.StartTime, sa.EndTime
-        FROM public.ShiftAssignments sa
-            JOIN public.TherapistProfile th ON th.Id = sa.TherapistId
-        WHERE sa.LocationId = p_LocationId AND sa.WorkDate = p_WorkDate AND sa.IsDelete = FALSE
-        ORDER BY sa.ShiftType, th.Name;
+CREATE OR REPLACE FUNCTION public.fn_Scheduling_RosterShifts(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(Id int, TherapistId int, TherapistName varchar, RoomId int, ShiftType varchar, StartTime time, EndTime time)
+LANGUAGE sql STABLE AS $$
+    SELECT sa.Id, sa.TherapistId, th.Name AS TherapistName, sa.RoomId, sa.ShiftType, sa.StartTime, sa.EndTime
+    FROM public.ShiftAssignments sa
+        JOIN public.TherapistProfile th ON th.Id = sa.TherapistId
+    WHERE sa.LocationId = p_LocationId AND sa.WorkDate = p_WorkDate AND sa.IsDelete = FALSE
+    ORDER BY sa.ShiftType, th.Name;
+$$;
 
-    OPEN p_cur_RoomOpenings FOR
-        SELECT rca.Id, rca.RoomId, r.Name AS RoomName, rca.TreatmentCategoryId, tc.Name AS CategoryName, rca.ShiftType
-        FROM public.RoomCategoryAssignments rca
-            JOIN public.Rooms r ON r.Id = rca.RoomId
-            JOIN public.TreatmentCategories tc ON tc.Id = rca.TreatmentCategoryId
-        WHERE r.LocationId = p_LocationId AND rca.WorkDate = p_WorkDate AND rca.IsDelete = FALSE
-        ORDER BY rca.ShiftType, r.Name;
+CREATE OR REPLACE FUNCTION public.fn_Scheduling_RosterRoomOpenings(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(Id int, RoomId int, RoomName varchar, TreatmentCategoryId int, CategoryName varchar, ShiftType varchar)
+LANGUAGE sql STABLE AS $$
+    SELECT rca.Id, rca.RoomId, r.Name AS RoomName, rca.TreatmentCategoryId, tc.Name AS CategoryName, rca.ShiftType
+    FROM public.RoomCategoryAssignments rca
+        JOIN public.Rooms r ON r.Id = rca.RoomId
+        JOIN public.TreatmentCategories tc ON tc.Id = rca.TreatmentCategoryId
+    WHERE r.LocationId = p_LocationId AND rca.WorkDate = p_WorkDate AND rca.IsDelete = FALSE
+    ORDER BY rca.ShiftType, r.Name;
+$$;
 
-    OPEN p_cur_Blocks FOR
-        SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason, FALSE AS IsLocationBreak
-        FROM public.BlockedSlots bs
-            JOIN public.Rooms r ON r.Id = bs.RoomId
-        WHERE r.LocationId = p_LocationId AND bs.WorkDate = p_WorkDate AND bs.IsDelete = FALSE
+CREATE OR REPLACE FUNCTION public.fn_Scheduling_RosterBlocks(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(Id int, RoomId int, RoomName varchar, StartTime time, EndTime time, Reason varchar, IsLocationBreak boolean)
+LANGUAGE sql STABLE AS $$
+    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason, FALSE AS IsLocationBreak
+    FROM public.BlockedSlots bs
+        JOIN public.Rooms r ON r.Id = bs.RoomId
+    WHERE r.LocationId = p_LocationId AND bs.WorkDate = p_WorkDate AND bs.IsDelete = FALSE
 
-        UNION ALL
+    UNION ALL
 
-        SELECT
-            0 AS Id,
-            r.Id AS RoomId,
-            r.Name AS RoomName,
-            COALESCE(l.BreakStartTime, c.BreakStartTime) AS StartTime,
-            COALESCE(l.BreakEndTime, c.BreakEndTime) AS EndTime,
-            'Lunch Break' AS Reason,
-            TRUE AS IsLocationBreak
-        FROM public.Locations l
-            JOIN public.SaloonChains c ON c.Id = l.ChainId
-            CROSS JOIN public.Rooms r
-        WHERE l.Id = p_LocationId
-            AND r.LocationId = l.Id
-            AND r.IsDelete = FALSE AND r.IsActive = TRUE
-            AND COALESCE(l.BreakStartTime, c.BreakStartTime) IS NOT NULL
-            AND COALESCE(l.BreakEndTime, c.BreakEndTime) IS NOT NULL
+    SELECT
+        0 AS Id,
+        r.Id AS RoomId,
+        r.Name AS RoomName,
+        COALESCE(l.BreakStartTime, c.BreakStartTime) AS StartTime,
+        COALESCE(l.BreakEndTime, c.BreakEndTime) AS EndTime,
+        'Lunch Break' AS Reason,
+        TRUE AS IsLocationBreak
+    FROM public.Locations l
+        JOIN public.SaloonChains c ON c.Id = l.ChainId
+        CROSS JOIN public.Rooms r
+    WHERE l.Id = p_LocationId
+        AND r.LocationId = l.Id
+        AND r.IsDelete = FALSE AND r.IsActive = TRUE
+        AND COALESCE(l.BreakStartTime, c.BreakStartTime) IS NOT NULL
+        AND COALESCE(l.BreakEndTime, c.BreakEndTime) IS NOT NULL
 
-        ORDER BY RoomName, StartTime;
-END;
+    ORDER BY RoomName, StartTime;
 $$;
 
 -- Upsert keyed on UQ_ShiftAssignments_Therapist_Shift_Date_Start: re-submitting the same
@@ -3333,62 +3330,61 @@ END;
 $$;
 
 -------------------------------------------------------------------------------------------------
--- Admin dashboard stats (multi-resultset -> refcursor procedure)
+-- Admin dashboard stats (single-purpose functions -- see fn_Admin_DashboardScopedLocations/
+-- fn_Admin_DashboardKpis/fn_Admin_DashboardUpcoming below)
 -------------------------------------------------------------------------------------------------
 
-CREATE OR REPLACE PROCEDURE public.sp_Admin_GetDashboardStats(
-    IN p_Role varchar(50),
-    IN p_ChainId int DEFAULT NULL,
-    IN p_LocationId int DEFAULT NULL,
-    IN p_StartDate date DEFAULT NULL,
-    IN p_EndDate date DEFAULT NULL,
-    INOUT p_cur_Stats refcursor DEFAULT 'cur_dash_stats',
-    INOUT p_cur_Upcoming refcursor DEFAULT 'cur_dash_upcoming'
+-- Shared role/chain/location scoping rule, factored out so both fn_Admin_DashboardKpis and
+-- fn_Admin_DashboardUpcoming below can compute it identically without duplicating the branching --
+-- each calls this into its own local temp table instead of sharing one across two function calls
+-- (which two independent RETURNS TABLE functions can't do the way this proc's two OPEN statements
+-- used to).
+CREATE OR REPLACE FUNCTION public.fn_Admin_DashboardScopedLocations(p_Role varchar(50), p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL)
+RETURNS TABLE(LocationId int)
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF p_Role IN ('RootSuperAdmin', 'root_super_admin') THEN
+        RETURN QUERY SELECT Id FROM public.Locations WHERE IsDelete = FALSE AND IsActive = TRUE;
+    ELSIF p_Role IN ('SuperAdmin', 'Admin', 'superadmin', 'admin') AND p_ChainId IS NOT NULL THEN
+        RETURN QUERY SELECT Id FROM public.Locations WHERE ChainId = p_ChainId AND IsDelete = FALSE AND IsActive = TRUE;
+    ELSIF p_LocationId IS NOT NULL THEN
+        RETURN QUERY SELECT p_LocationId;
+    ELSIF p_ChainId IS NOT NULL THEN
+        RETURN QUERY SELECT Id FROM public.Locations WHERE ChainId = p_ChainId AND IsDelete = FALSE AND IsActive = TRUE;
+    ELSE
+        RETURN QUERY SELECT Id FROM public.Locations WHERE IsDelete = FALSE AND IsActive = TRUE;
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fn_Admin_DashboardKpis(
+    p_Role varchar(50), p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL,
+    p_StartDate date DEFAULT NULL, p_EndDate date DEFAULT NULL
 )
+RETURNS TABLE(TodayRevenue numeric, YesterdayRevenue numeric, AppointmentsToday int, AppointmentsInProgress int, ActiveTherapists int)
 LANGUAGE plpgsql AS $$
 DECLARE
     v_StartDate date := COALESCE(p_StartDate, public.fn_UtcToday());
-    v_EndDate date;
-    v_Yesterday date;
-    v_StartDateTime timestamptz;
-    v_EndDateTimeExcl timestamptz;
-    v_YesterdayDateTime timestamptz;
+    v_EndDate date := COALESCE(p_EndDate, v_StartDate);
+    v_Yesterday date := v_StartDate - 1;
+    -- Half-open [Start, End) instant bounds instead of casting StartTime to DATE -- keeps every
+    -- comparison against BookingTreatments.StartTime/Payments.CreatedDate a plain range predicate.
+    v_StartDateTime timestamptz := (v_StartDate::timestamp AT TIME ZONE 'utc');
+    v_EndDateTimeExcl timestamptz := ((v_EndDate + 1)::timestamp AT TIME ZONE 'utc');
+    v_YesterdayDateTime timestamptz := (v_Yesterday::timestamp AT TIME ZONE 'utc');
     v_TodayRevenue numeric(18,2) := 0;
     v_YesterdayRevenue numeric(18,2) := 0;
     v_AppointmentsToday int := 0;
     v_AppointmentsInProgress int := 0;
     v_ActiveTherapists int := 0;
 BEGIN
-    v_EndDate := COALESCE(p_EndDate, v_StartDate);
-    v_Yesterday := v_StartDate - 1;
-    -- Half-open [Start, End) instant bounds instead of casting StartTime to DATE -- keeps every
-    -- comparison against BookingTreatments.StartTime/Payments.CreatedDate a plain range predicate.
-    v_StartDateTime := (v_StartDate::timestamp AT TIME ZONE 'utc');
-    v_EndDateTimeExcl := ((v_EndDate + 1)::timestamp AT TIME ZONE 'utc');
-    v_YesterdayDateTime := (v_Yesterday::timestamp AT TIME ZONE 'utc');
-
-    CREATE TEMP TABLE scoped_locations (LocationId int PRIMARY KEY) ON COMMIT DROP;
-
-    IF p_Role IN ('RootSuperAdmin', 'root_super_admin') THEN
-        INSERT INTO scoped_locations (LocationId)
-        SELECT Id FROM public.Locations WHERE IsDelete = FALSE AND IsActive = TRUE;
-    ELSIF p_Role IN ('SuperAdmin', 'Admin', 'superadmin', 'admin') AND p_ChainId IS NOT NULL THEN
-        INSERT INTO scoped_locations (LocationId)
-        SELECT Id FROM public.Locations WHERE ChainId = p_ChainId AND IsDelete = FALSE AND IsActive = TRUE;
-    ELSIF p_LocationId IS NOT NULL THEN
-        INSERT INTO scoped_locations (LocationId) VALUES (p_LocationId);
-    ELSIF p_ChainId IS NOT NULL THEN
-        INSERT INTO scoped_locations (LocationId)
-        SELECT Id FROM public.Locations WHERE ChainId = p_ChainId AND IsDelete = FALSE AND IsActive = TRUE;
-    ELSE
-        INSERT INTO scoped_locations (LocationId)
-        SELECT Id FROM public.Locations WHERE IsDelete = FALSE AND IsActive = TRUE;
-    END IF;
+    CREATE TEMP TABLE scoped_locations_kpi (LocationId int PRIMARY KEY) ON COMMIT DROP;
+    INSERT INTO scoped_locations_kpi SELECT * FROM public.fn_Admin_DashboardScopedLocations(p_Role, p_ChainId, p_LocationId);
 
     SELECT COALESCE(SUM(p.Amount), 0) INTO v_TodayRevenue
     FROM public.Payments p
         JOIN public.Bookings b ON b.Id = p.BookingId
-        JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+        JOIN scoped_locations_kpi sl ON sl.LocationId = b.LocationId
     WHERE p.Status = 'Succeeded'
       AND p.IsDelete = FALSE
       AND p.CreatedDate >= v_StartDateTime AND p.CreatedDate < v_EndDateTimeExcl;
@@ -3396,7 +3392,7 @@ BEGIN
     SELECT COALESCE(SUM(p.Amount), 0) INTO v_YesterdayRevenue
     FROM public.Payments p
         JOIN public.Bookings b ON b.Id = p.BookingId
-        JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+        JOIN scoped_locations_kpi sl ON sl.LocationId = b.LocationId
     WHERE p.Status = 'Succeeded'
       AND p.IsDelete = FALSE
       AND p.CreatedDate >= v_YesterdayDateTime AND p.CreatedDate < v_StartDateTime;
@@ -3410,7 +3406,7 @@ BEGIN
             SELECT DISTINCT b.Id, b.Status
             FROM public.Bookings b
                 JOIN public.BookingTreatments bt ON bt.BookingId = b.Id
-                JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+                JOIN scoped_locations_kpi sl ON sl.LocationId = b.LocationId
             WHERE b.Status <> 'Cancelled' AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
               AND bt.StartTime >= v_StartDateTime AND bt.StartTime < v_EndDateTimeExcl
 
@@ -3419,7 +3415,7 @@ BEGIN
             SELECT DISTINCT b.Id, b.Status
             FROM public.Bookings b
                 JOIN public.BookingTreatments bt ON bt.BookingId = b.Id
-                JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+                JOIN scoped_locations_kpi sl ON sl.LocationId = b.LocationId
             WHERE b.Status <> 'Cancelled' AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
               AND bt.StartTime IS NULL
               AND b.CreatedDate >= v_StartDateTime AND b.CreatedDate < v_EndDateTimeExcl
@@ -3432,7 +3428,7 @@ BEGIN
         INTO v_AppointmentsToday, v_AppointmentsInProgress
         FROM public.Bookings b
             JOIN public.BookingTreatments bt ON bt.BookingId = b.Id
-            JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+            JOIN scoped_locations_kpi sl ON sl.LocationId = b.LocationId
         WHERE b.Status <> 'Cancelled' AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
           AND bt.StartTime >= v_StartDateTime AND bt.StartTime < v_EndDateTimeExcl;
     END IF;
@@ -3441,23 +3437,35 @@ BEGIN
     FROM public.TherapistProfile tp
     WHERE tp.IsActive = TRUE AND tp.IsDelete = FALSE
       AND (
-          tp.LocationId IN (SELECT LocationId FROM scoped_locations)
+          tp.LocationId IN (SELECT LocationId FROM scoped_locations_kpi)
           OR tp.LocationId IS NULL
       );
 
-    -- 1st result set: aggregated KPIs
-    OPEN p_cur_Stats FOR
-        SELECT
-            v_TodayRevenue AS TodayRevenue,
-            v_YesterdayRevenue AS YesterdayRevenue,
-            v_AppointmentsToday AS AppointmentsToday,
-            v_AppointmentsInProgress AS AppointmentsInProgress,
-            v_ActiveTherapists AS ActiveTherapists;
+    RETURN QUERY
+    SELECT v_TodayRevenue, v_YesterdayRevenue, v_AppointmentsToday, v_AppointmentsInProgress, v_ActiveTherapists;
+END;
+$$;
 
-    -- 2nd result set: today's / date-range upcoming appointments list. Two independently-seekable
-    -- branches (has a scheduled line in range, or is still unscheduled but was created in range),
-    -- each narrowed to its own top-20 candidates first, before the display columns
-    -- (Locations/Users/TherapistProfile/price subquery) are joined onto just those rows.
+-- Today's / date-range upcoming appointments list. Two independently-seekable branches (has a
+-- scheduled line in range, or is still unscheduled but was created in range), each narrowed to its
+-- own top-20 candidates first, before the display columns (Locations/Users/TherapistProfile/price
+-- subquery) are joined onto just those rows.
+CREATE OR REPLACE FUNCTION public.fn_Admin_DashboardUpcoming(
+    p_Role varchar(50), p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL,
+    p_StartDate date DEFAULT NULL, p_EndDate date DEFAULT NULL
+)
+RETURNS TABLE(BookingId int, AppointmentDate date, StartTimeSlot time, EndTimeSlot time,
+              CustomerName varchar, LocationName varchar, TherapistName varchar, Status varchar, TotalAmount numeric)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_StartDate date := COALESCE(p_StartDate, public.fn_UtcToday());
+    v_EndDate date := COALESCE(p_EndDate, v_StartDate);
+    v_StartDateTime timestamptz := (v_StartDate::timestamp AT TIME ZONE 'utc');
+    v_EndDateTimeExcl timestamptz := ((v_EndDate + 1)::timestamp AT TIME ZONE 'utc');
+BEGIN
+    CREATE TEMP TABLE scoped_locations_upcoming (LocationId int PRIMARY KEY) ON COMMIT DROP;
+    INSERT INTO scoped_locations_upcoming SELECT * FROM public.fn_Admin_DashboardScopedLocations(p_Role, p_ChainId, p_LocationId);
+
     CREATE TEMP TABLE candidates (
         BookingId int, StartTime timestamptz, EndTime timestamptz, TherapistId int,
         CreatedDate timestamptz, LocationId int, CustomerId int, Status varchar(10)
@@ -3467,7 +3475,7 @@ BEGIN
     SELECT b.Id, bt.StartTime, bt.EndTime, bt.TherapistId, b.CreatedDate, b.LocationId, b.CustomerId, b.Status
     FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId
-        JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+        JOIN scoped_locations_upcoming sl ON sl.LocationId = b.LocationId
     WHERE bt.SequenceOrder = 1 AND bt.IsDelete = FALSE
       AND b.IsDelete = FALSE AND b.Status <> 'Cancelled'
       AND bt.StartTime >= v_StartDateTime AND bt.StartTime < v_EndDateTimeExcl
@@ -3478,7 +3486,7 @@ BEGIN
         INSERT INTO candidates (BookingId, StartTime, EndTime, TherapistId, CreatedDate, LocationId, CustomerId, Status)
         SELECT b.Id, NULL, NULL, NULL, b.CreatedDate, b.LocationId, b.CustomerId, b.Status
         FROM public.Bookings b
-            JOIN scoped_locations sl ON sl.LocationId = b.LocationId
+            JOIN scoped_locations_upcoming sl ON sl.LocationId = b.LocationId
         WHERE b.IsDelete = FALSE AND b.Status <> 'Cancelled'
           AND b.CreatedDate >= v_StartDateTime AND b.CreatedDate < v_EndDateTimeExcl
           AND NOT EXISTS (
@@ -3489,23 +3497,27 @@ BEGIN
         LIMIT 20;
     END IF;
 
-    OPEN p_cur_Upcoming FOR
-        SELECT
-            c.BookingId,
-            (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::date AS AppointmentDate,
-            (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::time AS StartTimeSlot,
-            (COALESCE(c.EndTime, c.CreatedDate + interval '30 minutes') AT TIME ZONE 'utc')::time AS EndTimeSlot,
-            u.Name AS CustomerName,
-            l.Name AS LocationName,
-            tp.Name AS TherapistName,
-            c.Status,
-            COALESCE((SELECT SUM(Price) FROM public.BookingTreatments WHERE BookingId = c.BookingId AND IsDelete = FALSE), 0) AS TotalAmount
-        FROM candidates c
-            JOIN public.Locations l ON l.Id = c.LocationId
-            JOIN public.Users u ON u.Id = c.CustomerId
-            LEFT JOIN public.TherapistProfile tp ON tp.Id = c.TherapistId
-        ORDER BY COALESCE(c.StartTime, c.CreatedDate)
-        LIMIT 20;
+    RETURN QUERY
+    SELECT
+        c.BookingId,
+        (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::date AS AppointmentDate,
+        (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::time AS StartTimeSlot,
+        (COALESCE(c.EndTime, c.CreatedDate + interval '30 minutes') AT TIME ZONE 'utc')::time AS EndTimeSlot,
+        u.Name AS CustomerName,
+        l.Name AS LocationName,
+        tp.Name AS TherapistName,
+        c.Status,
+        -- Aliased and qualified (bt.BookingId, not bare BookingId) -- this function's own
+        -- RETURNS TABLE(BookingId int, ...) column makes "BookingId" a PL/pgSQL variable in scope
+        -- here, which an unqualified reference to BookingTreatments.BookingId would collide with
+        -- ("column reference is ambiguous").
+        COALESCE((SELECT SUM(bt.Price) FROM public.BookingTreatments bt WHERE bt.BookingId = c.BookingId AND bt.IsDelete = FALSE), 0) AS TotalAmount
+    FROM candidates c
+        JOIN public.Locations l ON l.Id = c.LocationId
+        JOIN public.Users u ON u.Id = c.CustomerId
+        LEFT JOIN public.TherapistProfile tp ON tp.Id = c.TherapistId
+    ORDER BY COALESCE(c.StartTime, c.CreatedDate)
+    LIMIT 20;
 END;
 $$;
 
@@ -3637,25 +3649,22 @@ LANGUAGE sql STABLE AS $$
     ORDER BY po.CreatedDate DESC;
 $$;
 
-CREATE OR REPLACE PROCEDURE public.sp_Inventory_GetPurchaseOrderDetail(
-    IN p_Id int,
-    INOUT p_cur_Order refcursor DEFAULT 'cur_po_order',
-    INOUT p_cur_Lines refcursor DEFAULT 'cur_po_lines'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_Order FOR
-        SELECT po.Id, po.LocationId, po.SupplierId, s.Name AS SupplierName, po.Status, po.ReceivedDate, po.CreatedDate
-        FROM public.PurchaseOrders po
-            JOIN public.Suppliers s ON s.Id = po.SupplierId
-        WHERE po.Id = p_Id AND po.IsDelete = FALSE;
+CREATE OR REPLACE FUNCTION public.fn_Inventory_PurchaseOrderHeader(p_Id int)
+RETURNS TABLE(Id int, LocationId int, SupplierId int, SupplierName varchar, Status varchar, ReceivedDate timestamptz, CreatedDate timestamptz)
+LANGUAGE sql STABLE AS $$
+    SELECT po.Id, po.LocationId, po.SupplierId, s.Name AS SupplierName, po.Status, po.ReceivedDate, po.CreatedDate
+    FROM public.PurchaseOrders po
+        JOIN public.Suppliers s ON s.Id = po.SupplierId
+    WHERE po.Id = p_Id AND po.IsDelete = FALSE;
+$$;
 
-    OPEN p_cur_Lines FOR
-        SELECT pol.Id, pol.ProductId, p.Name AS ProductName, pol.QuantityOrdered, pol.UnitCost
-        FROM public.PurchaseOrderLines pol
-            JOIN public.Products p ON p.Id = pol.ProductId
-        WHERE pol.PurchaseOrderId = p_Id;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Inventory_PurchaseOrderLines(p_Id int)
+RETURNS TABLE(Id int, ProductId int, ProductName varchar, QuantityOrdered int, UnitCost numeric)
+LANGUAGE sql STABLE AS $$
+    SELECT pol.Id, pol.ProductId, p.Name AS ProductName, pol.QuantityOrdered, pol.UnitCost
+    FROM public.PurchaseOrderLines pol
+        JOIN public.Products p ON p.Id = pol.ProductId
+    WHERE pol.PurchaseOrderId = p_Id;
 $$;
 
 -- Full receive only (no partial-quantity receiving) -- bumps each line's product stock by exactly
@@ -3857,25 +3866,24 @@ LANGUAGE sql STABLE AS $$
     ORDER BY pr.PeriodStart DESC;
 $$;
 
-CREATE OR REPLACE PROCEDURE public.sp_Payroll_GetPayRunDetail(
-    IN p_Id int,
-    INOUT p_cur_PayRun refcursor DEFAULT 'cur_payrun_pay_run',
-    INOUT p_cur_Lines refcursor DEFAULT 'cur_payrun_lines'
-)
-LANGUAGE plpgsql AS $$
-BEGIN
-    OPEN p_cur_PayRun FOR
-        SELECT Id, LocationId, PeriodStart, PeriodEnd, Status, FinalizedDate, CreatedDate FROM public.PayRuns WHERE Id = p_Id;
+CREATE OR REPLACE FUNCTION public.fn_Payroll_PayRunHeader(p_Id int)
+RETURNS TABLE(Id int, LocationId int, PeriodStart date, PeriodEnd date, Status varchar, FinalizedDate timestamptz, CreatedDate timestamptz)
+LANGUAGE sql STABLE AS $$
+    SELECT Id, LocationId, PeriodStart, PeriodEnd, Status, FinalizedDate, CreatedDate FROM public.PayRuns WHERE Id = p_Id;
+$$;
 
-    OPEN p_cur_Lines FOR
-        SELECT prl.Id, prl.TherapistId, tp.Name AS TherapistName, prl.GrossSales, prl.HoursWorked,
-            prl.RegularHours, prl.OvertimeHours, prl.HourlyRate, prl.CommissionRate, prl.CommissionType,
-            prl.CommissionAmount, prl.OvertimePay, prl.TotalPay
-        FROM public.PayRunLines prl
-            JOIN public.TherapistProfile tp ON tp.Id = prl.TherapistId
-        WHERE prl.PayRunId = p_Id
-        ORDER BY prl.TotalPay DESC;
-END;
+CREATE OR REPLACE FUNCTION public.fn_Payroll_PayRunLines(p_Id int)
+RETURNS TABLE(Id int, TherapistId int, TherapistName varchar, GrossSales numeric, HoursWorked numeric,
+              RegularHours numeric, OvertimeHours numeric, HourlyRate numeric, CommissionRate numeric, CommissionType varchar,
+              CommissionAmount numeric, OvertimePay numeric, TotalPay numeric)
+LANGUAGE sql STABLE AS $$
+    SELECT prl.Id, prl.TherapistId, tp.Name AS TherapistName, prl.GrossSales, prl.HoursWorked,
+        prl.RegularHours, prl.OvertimeHours, prl.HourlyRate, prl.CommissionRate, prl.CommissionType,
+        prl.CommissionAmount, prl.OvertimePay, prl.TotalPay
+    FROM public.PayRunLines prl
+        JOIN public.TherapistProfile tp ON tp.Id = prl.TherapistId
+    WHERE prl.PayRunId = p_Id
+    ORDER BY prl.TotalPay DESC;
 $$;
 
 CREATE OR REPLACE FUNCTION public.sp_Payroll_FinalizePayRun(p_Id int, p_UpdatedBy int DEFAULT NULL) RETURNS void

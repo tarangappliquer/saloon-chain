@@ -4,17 +4,43 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Scheduling.Infrastructure;
 
-internal sealed record TherapistShiftDto(
-    int Id, int TherapistId, string TherapistName, int? RoomId, string ShiftType, TimeSpan StartTime, TimeSpan EndTime);
+// Init-property, not positional -- Dapper matches these by column NAME (order/count-independent)
+// instead of requiring the SQL column order to exactly match the constructor parameter order.
+internal sealed record TherapistShiftDto
+{
+    public int Id { get; init; }
+    public int TherapistId { get; init; }
+    public string TherapistName { get; init; } = "";
+    public int? RoomId { get; init; }
+    public string ShiftType { get; init; } = "";
+    public TimeSpan StartTime { get; init; }
+    public TimeSpan EndTime { get; init; }
+}
 
 internal sealed record ShiftDetailsDto(int LocationId, DateTime WorkDate, int? RoomId, int TherapistId, string ShiftType);
 
-internal sealed record RoomOpeningDto(
-    int Id, int RoomId, string RoomName, int TreatmentCategoryId, string CategoryName, string ShiftType);
+internal sealed record RoomOpeningDto
+{
+    public int Id { get; init; }
+    public int RoomId { get; init; }
+    public string RoomName { get; init; } = "";
+    public int TreatmentCategoryId { get; init; }
+    public string CategoryName { get; init; } = "";
+    public string ShiftType { get; init; } = "";
+}
 
 internal sealed record RoomOpeningDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, string ShiftType, int TreatmentCategoryId);
 
-internal sealed record BlockedSlotDto(int Id, int RoomId, string RoomName, TimeSpan StartTime, TimeSpan EndTime, string Reason, bool IsLocationBreak);
+internal sealed record BlockedSlotDto
+{
+    public int Id { get; init; }
+    public int RoomId { get; init; }
+    public string RoomName { get; init; } = "";
+    public TimeSpan StartTime { get; init; }
+    public TimeSpan EndTime { get; init; }
+    public string Reason { get; init; } = "";
+    public bool IsLocationBreak { get; init; }
+}
 
 internal sealed record BlockedSlotDetailsDto(int Id, int LocationId, int RoomId, DateTime WorkDate, TimeSpan StartTime, TimeSpan EndTime, string Reason);
 

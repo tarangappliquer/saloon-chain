@@ -7,8 +7,26 @@ internal sealed record SupplierDto(int Id, int ChainId, string Name, string? Con
 internal sealed record ProductDto(int Id, int LocationId, int? SupplierId, string? SupplierName, string Name, string? SKU, decimal Price, int QuantityOnHand, int ReorderThreshold, bool IsActive);
 internal sealed record LowStockProductDto(int Id, string Name, string? SKU, int QuantityOnHand, int ReorderThreshold);
 internal sealed record PurchaseOrderDto(int Id, int LocationId, int SupplierId, string SupplierName, string Status, DateTime? ReceivedDate, DateTime CreatedDate, decimal TotalCost);
-internal sealed record PurchaseOrderHeaderDto(int Id, int LocationId, int SupplierId, string SupplierName, string Status, DateTime? ReceivedDate, DateTime CreatedDate);
-internal sealed record PurchaseOrderLineDto(int Id, int ProductId, string ProductName, int QuantityOrdered, decimal UnitCost);
+// Init-property, not positional -- Dapper matches these by column NAME (order/count-independent).
+internal sealed record PurchaseOrderHeaderDto
+{
+    public int Id { get; init; }
+    public int LocationId { get; init; }
+    public int SupplierId { get; init; }
+    public string SupplierName { get; init; } = "";
+    public string Status { get; init; } = "";
+    public DateTime? ReceivedDate { get; init; }
+    public DateTime CreatedDate { get; init; }
+}
+
+internal sealed record PurchaseOrderLineDto
+{
+    public int Id { get; init; }
+    public int ProductId { get; init; }
+    public string ProductName { get; init; } = "";
+    public int QuantityOrdered { get; init; }
+    public decimal UnitCost { get; init; }
+}
 internal sealed record PurchaseOrderDetailDto(PurchaseOrderHeaderDto? Header, IReadOnlyList<PurchaseOrderLineDto> Lines);
 internal sealed record BookingProductDto(int Id, int ProductId, string ProductName, int Quantity, decimal UnitPrice, decimal LineTotal);
 

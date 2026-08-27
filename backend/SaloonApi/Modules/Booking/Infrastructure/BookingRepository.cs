@@ -83,9 +83,22 @@ internal sealed record AvailabilityRangeData(
     IReadOnlyList<ExistingBookingRow> ExistingBookings,
     IReadOnlyList<BlockedRangeRangeRow> BlockedRanges);
 
-internal sealed record BookingTreatmentLineDto(
-    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
-    DateTime? StartTime, DateTime? EndTime, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName, DateTime? ExpiresAt);
+internal sealed record BookingTreatmentLineDto
+{
+    public int BookingTreatmentId { get; init; }
+    public int TreatmentId { get; init; }
+    public string TreatmentName { get; init; } = "";
+    public short DurationSlots { get; init; }
+    public short PreTimeMinutes { get; init; }
+    public decimal Price { get; init; }
+    public DateTime? StartTime { get; init; }
+    public DateTime? EndTime { get; init; }
+    public int? RoomId { get; init; }
+    public string? RoomName { get; init; }
+    public int? TherapistId { get; init; }
+    public string? TherapistName { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+}
 
 internal sealed record BookingDetailsDto(int Id, int LocationId, string LocationName, string Status, IReadOnlyList<BookingTreatmentLineDto> Treatments);
 
@@ -95,22 +108,68 @@ internal sealed record MyBookingDto(
     int? AppointmentStatusId = null, string? AppointmentStatusName = null, string? AppointmentStatusColorHex = null,
     int? CancelReasonId = null, string? CancelReasonName = null, bool IsPaid = false, string? PaymentProvider = null);
 
-internal sealed record ConfirmationTreatmentLineDto(
-    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
-    DateTime StartTime, DateTime EndTime, int RoomId, string RoomName, int TherapistId, string TherapistName);
+internal sealed record ConfirmationTreatmentLineDto
+{
+    public int BookingTreatmentId { get; init; }
+    public int TreatmentId { get; init; }
+    public string TreatmentName { get; init; } = "";
+    public short DurationSlots { get; init; }
+    public short PreTimeMinutes { get; init; }
+    public decimal Price { get; init; }
+    public DateTime StartTime { get; init; }
+    public DateTime EndTime { get; init; }
+    public int RoomId { get; init; }
+    public string RoomName { get; init; } = "";
+    public int TherapistId { get; init; }
+    public string TherapistName { get; init; } = "";
+}
 
 internal sealed record ConfirmationDetailsDto(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail,
     IReadOnlyList<ConfirmationTreatmentLineDto> Treatments);
 
-internal sealed record StaffBookingRow(
-    int BookingId, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail, string? CustomerPhone,
-    string Status, DateTime CreatedDate,
-    int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
-    DateTime? StartTime, DateTime? EndTime, int? RoomId, string? RoomName, int? TherapistId, string? TherapistName, DateTime? ExpiresAt,
-    bool IsCancelled, bool IsNoShow,
-    int? AppointmentStatusId, string? AppointmentStatusName, string? AppointmentStatusColorHex,
-    int? CancelReasonId, string? CancelReasonName, string? PaymentStatus, string? PaymentProvider);
+// Split into a header row + a treatment-line row (one fn_Booking_ForLocation* function each) --
+// GetForLocationAsync below joins them client-side by BookingId, same pattern GetMineAsync already
+// uses. The old single flat StaffBookingRow never actually matched either of the two underlying
+// SQL cursors it was read from (neither had all its columns) -- this is what the two queries
+// actually produce.
+internal sealed record StaffBookingHeaderRow
+{
+    public int BookingId { get; init; }
+    public int LocationId { get; init; }
+    public string LocationName { get; init; } = "";
+    public int CustomerId { get; init; }
+    public string CustomerName { get; init; } = "";
+    public string CustomerEmail { get; init; } = "";
+    public string? CustomerPhone { get; init; }
+    public string Status { get; init; } = "";
+    public DateTime CreatedDate { get; init; }
+    public int? AppointmentStatusId { get; init; }
+    public string? AppointmentStatusName { get; init; }
+    public string? AppointmentStatusColorHex { get; init; }
+    public int? CancelReasonId { get; init; }
+    public string? CancelReasonName { get; init; }
+    public string? PaymentStatus { get; init; }
+    public string? PaymentProvider { get; init; }
+}
+
+internal sealed record StaffBookingTreatmentRow
+{
+    public int BookingId { get; init; }
+    public int BookingTreatmentId { get; init; }
+    public int TreatmentId { get; init; }
+    public string TreatmentName { get; init; } = "";
+    public short DurationSlots { get; init; }
+    public short PreTimeMinutes { get; init; }
+    public decimal Price { get; init; }
+    public DateTime? StartTime { get; init; }
+    public DateTime? EndTime { get; init; }
+    public int? RoomId { get; init; }
+    public string? RoomName { get; init; }
+    public int? TherapistId { get; init; }
+    public string? TherapistName { get; init; }
+    public DateTime? ExpiresAt { get; init; }
+}
 
 internal sealed record StaffBookingTreatmentLineDto(
     int BookingTreatmentId, int TreatmentId, string TreatmentName, short DurationSlots, short PreTimeMinutes, decimal Price,
@@ -130,7 +189,13 @@ internal sealed record AdminBookingDto(
 
 internal sealed record BookingLocationRow(int LocationId, int? RoomId, DateOnly WorkDate);
 
-internal sealed record BookingHeaderRow(int Id, int LocationId, string LocationName, string Status);
+internal sealed record BookingHeaderRow
+{
+    public int Id { get; init; }
+    public int LocationId { get; init; }
+    public string LocationName { get; init; } = "";
+    public string Status { get; init; } = "";
+}
 
 internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser, BookingDbService bookingDb)
 {
@@ -263,7 +328,19 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         return header is null ? null : new ConfirmationDetailsDto(header.Id, header.LocationId, header.LocationName, header.CustomerId, header.CustomerName, header.CustomerEmail, lines);
     }
 
-    private sealed record ConfirmationHeaderRow(int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail);
+    // internal, not private: Sonar's dead-code analysis (S1144/S3459) can prove a `private` nested
+    // record's init-only properties are never assigned within this file (it can't see Dapper's
+    // reflection-based materialization) and flags them as build errors -- `internal` sidesteps that
+    // false positive the same way every other Dapper row-record in this file already does.
+    internal sealed record ConfirmationHeaderRow
+    {
+        public int Id { get; init; }
+        public int LocationId { get; init; }
+        public string LocationName { get; init; } = "";
+        public int CustomerId { get; init; }
+        public string CustomerName { get; init; } = "";
+        public string CustomerEmail { get; init; } = "";
+    }
 
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsync(int bookingId, int customerId)
     {
@@ -304,38 +381,55 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         }).ToList();
     }
 
-    private sealed record BookingMineHeaderRow(
-        int BookingId, int LocationId, string LocationName, string Status, DateTime CreatedDate,
-        int? AppointmentStatusId, string? AppointmentStatusName, string? AppointmentStatusColorHex,
-        int? CancelReasonId, string? CancelReasonName, string? PaymentStatus, string? PaymentProvider);
+    internal sealed record BookingMineHeaderRow
+    {
+        public int BookingId { get; init; }
+        public int LocationId { get; init; }
+        public string LocationName { get; init; } = "";
+        public string Status { get; init; } = "";
+        public DateTime CreatedDate { get; init; }
+        public int? AppointmentStatusId { get; init; }
+        public string? AppointmentStatusName { get; init; }
+        public string? AppointmentStatusColorHex { get; init; }
+        public int? CancelReasonId { get; init; }
+        public string? CancelReasonName { get; init; }
+        public string? PaymentStatus { get; init; }
+        public string? PaymentProvider { get; init; }
+    }
 
-    private sealed record BookingMineTreatmentRow(int BookingId, string TreatmentName, decimal Price, DateTime? StartTime, DateTime? EndTime);
+    internal sealed record BookingMineTreatmentRow
+    {
+        public int BookingId { get; init; }
+        public string TreatmentName { get; init; } = "";
+        public decimal Price { get; init; }
+        public DateTime? StartTime { get; init; }
+        public DateTime? EndTime { get; init; }
+    }
 
     public async Task<IReadOnlyList<StaffBookingSummaryDto>> GetForLocationAsync(int locationId, DateOnly date)
     {
         using var db = factory.Create();
         using var multi = await bookingDb.sp_Booking_GetForLocationAsync(db, locationId, date);
 
-        var rawLines = (await multi.ReadAsync<StaffBookingRow>()).ToList();
+        var headers = (await multi.ReadAsync<StaffBookingHeaderRow>()).ToList();
+        var lines = (await multi.ReadAsync<StaffBookingTreatmentRow>()).ToList();
+        var linesByBooking = lines.GroupBy(l => l.BookingId).ToDictionary(g => g.Key, g => g.ToList());
 
-        return rawLines
-            .GroupBy(b => b.BookingId)
-            .Select(g =>
-            {
-                var first = g.First();
-                var treatments = g.Select(b => new StaffBookingTreatmentLineDto(
-                    b.BookingTreatmentId, b.TreatmentId, b.TreatmentName, b.DurationSlots, b.PreTimeMinutes, b.Price,
-                    b.StartTime, b.EndTime, b.RoomId, b.RoomName, b.TherapistId, b.TherapistName,
-                    b.ExpiresAt is null ? null : DateTime.SpecifyKind(b.ExpiresAt.Value, DateTimeKind.Utc)
-                )).ToList();
+        return headers.Select(h =>
+        {
+            var treatments = linesByBooking.GetValueOrDefault(h.BookingId, []).Select(l => new StaffBookingTreatmentLineDto(
+                l.BookingTreatmentId, l.TreatmentId, l.TreatmentName, l.DurationSlots, l.PreTimeMinutes, l.Price,
+                l.StartTime, l.EndTime, l.RoomId, l.RoomName, l.TherapistId, l.TherapistName,
+                l.ExpiresAt is null ? null : DateTime.SpecifyKind(l.ExpiresAt.Value, DateTimeKind.Utc)
+            )).ToList();
 
-                return new StaffBookingSummaryDto(
-                    first.BookingId, first.LocationId, first.LocationName, first.CustomerId, first.CustomerName, first.CustomerEmail, first.CustomerPhone,
-                    first.Status, first.CreatedDate, treatments,
-                    first.AppointmentStatusId, first.AppointmentStatusName, first.AppointmentStatusColorHex,
-                    first.CancelReasonId, first.CancelReasonName,
-                    string.Equals(first.PaymentStatus, "Succeeded", StringComparison.OrdinalIgnoreCase), first.PaymentProvider);
-            }).ToList();
+            return new StaffBookingSummaryDto(
+                h.BookingId, h.LocationId, h.LocationName, h.CustomerId, h.CustomerName, h.CustomerEmail, h.CustomerPhone,
+                h.Status, h.CreatedDate, treatments,
+                h.AppointmentStatusId, h.AppointmentStatusName, h.AppointmentStatusColorHex,
+                h.CancelReasonId, h.CancelReasonName,
+                string.Equals(h.PaymentStatus, "Succeeded", StringComparison.OrdinalIgnoreCase), h.PaymentProvider);
+        }).ToList();
     }
 
     public async Task<int?> GetLocationIdAsync(int bookingId)

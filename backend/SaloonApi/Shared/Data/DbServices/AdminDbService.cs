@@ -11,7 +11,7 @@ namespace SaloonApi.Shared.Data.DbServices;
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class AdminDbService
 {
-    public Task<RefCursorGridReader> sp_Admin_GetDashboardStatsAsync(
+    public Task<SqlMapper.GridReader> sp_Admin_GetDashboardStatsAsync(
         IDbConnection db, string role, int? chainId, int? locationId, object? startDate, object? endDate)
     {
         var args = new DynamicParameters();
@@ -20,7 +20,11 @@ internal sealed class AdminDbService
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("StartDate", startDate);
         args.Add("EndDate", endDate);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Admin_GetDashboardStats", args);
+        const string sql = """
+            SELECT * FROM public.fn_Admin_DashboardKpis(@Role, @ChainId, @LocationId, @StartDate, @EndDate);
+            SELECT * FROM public.fn_Admin_DashboardUpcoming(@Role, @ChainId, @LocationId, @StartDate, @EndDate);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<CancelReasonDto>> sp_Admin_GetCancelReasonsAsync(IDbConnection db)

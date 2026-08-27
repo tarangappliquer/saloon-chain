@@ -4,23 +4,28 @@ using SaloonApi.Shared.Data.DbServices;
 
 namespace SaloonApi.Modules.Admin.Endpoints;
 
-internal sealed record DashboardKpiDto(
-    decimal TodayRevenue,
-    decimal YesterdayRevenue,
-    int AppointmentsToday,
-    int AppointmentsInProgress,
-    int ActiveTherapists);
+// Init-property, not positional -- Dapper matches these by column NAME (order/count-independent).
+internal sealed record DashboardKpiDto
+{
+    public decimal TodayRevenue { get; init; }
+    public decimal YesterdayRevenue { get; init; }
+    public int AppointmentsToday { get; init; }
+    public int AppointmentsInProgress { get; init; }
+    public int ActiveTherapists { get; init; }
+}
 
-internal sealed record DashboardUpcomingAppointmentDto(
-    int BookingId,
-    DateTime AppointmentDate,
-    TimeSpan StartTimeSlot,
-    TimeSpan EndTimeSlot,
-    string CustomerName,
-    string LocationName,
-    string? TherapistName,
-    string Status,
-    decimal TotalAmount);
+internal sealed record DashboardUpcomingAppointmentDto
+{
+    public int BookingId { get; init; }
+    public DateTime AppointmentDate { get; init; }
+    public TimeSpan StartTimeSlot { get; init; }
+    public TimeSpan EndTimeSlot { get; init; }
+    public string CustomerName { get; init; } = "";
+    public string LocationName { get; init; } = "";
+    public string? TherapistName { get; init; }
+    public string Status { get; init; } = "";
+    public decimal TotalAmount { get; init; }
+}
 
 internal sealed record DashboardResponseDto(
     DashboardKpiDto Kpis,

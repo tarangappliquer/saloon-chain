@@ -57,11 +57,15 @@ internal sealed class PayrollDbService
         return db.QueryAsync<PayRunDto>("SELECT * FROM public.sp_Payroll_GetPayRuns(@LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Payroll_GetPayRunDetailAsync(IDbConnection db, int id)
+    public Task<SqlMapper.GridReader> sp_Payroll_GetPayRunDetailAsync(IDbConnection db, int id)
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Payroll_GetPayRunDetail", args);
+        const string sql = """
+            SELECT * FROM public.fn_Payroll_PayRunHeader(@Id);
+            SELECT * FROM public.fn_Payroll_PayRunLines(@Id);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public async Task sp_Payroll_FinalizePayRunAsync(IDbConnection db, int id, int? updatedBy)

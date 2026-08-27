@@ -5,8 +5,34 @@ namespace SaloonApi.Modules.Payroll.Infrastructure;
 
 internal sealed record CommissionRuleDto(int Id, int LocationId, int? TherapistId, string? TherapistName, string Type, decimal Rate, decimal HourlyRate, decimal OvertimeThresholdHours, decimal OvertimeRateMultiplier);
 internal sealed record PayRunDto(int Id, int LocationId, DateOnly PeriodStart, DateOnly PeriodEnd, string Status, DateTime? FinalizedDate, DateTime CreatedDate, decimal TotalCommission);
-internal sealed record PayRunHeaderDto(int Id, int LocationId, DateOnly PeriodStart, DateOnly PeriodEnd, string Status, DateTime? FinalizedDate, DateTime CreatedDate);
-internal sealed record PayRunLineDto(int Id, int TherapistId, string TherapistName, decimal GrossSales, decimal HoursWorked, decimal RegularHours, decimal OvertimeHours, decimal HourlyRate, decimal CommissionRate, string CommissionType, decimal CommissionAmount, decimal OvertimePay, decimal TotalPay);
+// Init-property, not positional -- Dapper matches these by column NAME (order/count-independent).
+internal sealed record PayRunHeaderDto
+{
+    public int Id { get; init; }
+    public int LocationId { get; init; }
+    public DateOnly PeriodStart { get; init; }
+    public DateOnly PeriodEnd { get; init; }
+    public string Status { get; init; } = "";
+    public DateTime? FinalizedDate { get; init; }
+    public DateTime CreatedDate { get; init; }
+}
+
+internal sealed record PayRunLineDto
+{
+    public int Id { get; init; }
+    public int TherapistId { get; init; }
+    public string TherapistName { get; init; } = "";
+    public decimal GrossSales { get; init; }
+    public decimal HoursWorked { get; init; }
+    public decimal RegularHours { get; init; }
+    public decimal OvertimeHours { get; init; }
+    public decimal HourlyRate { get; init; }
+    public decimal CommissionRate { get; init; }
+    public string CommissionType { get; init; } = "";
+    public decimal CommissionAmount { get; init; }
+    public decimal OvertimePay { get; init; }
+    public decimal TotalPay { get; init; }
+}
 internal sealed record PayRunDetailDto(PayRunHeaderDto? Header, IReadOnlyList<PayRunLineDto> Lines);
 
 internal sealed class PayrollRepository(SqlConnectionFactory factory, PayrollDbService payrollDb)

@@ -143,12 +143,16 @@ internal sealed class BookingDbService
             "SELECT * FROM public.sp_Booking_ReassignTherapist(@BookingId, @TreatmentId, @NewTherapistId, @Reason, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Booking_GetByIdAsync(IDbConnection db, int bookingId, int customerId)
+    public Task<SqlMapper.GridReader> sp_Booking_GetByIdAsync(IDbConnection db, int bookingId, int customerId)
     {
         var args = new DynamicParameters();
         args.Add("BookingId", bookingId, DbType.Int32);
         args.Add("CustomerId", customerId, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetById", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_GetByIdHeader(@BookingId, @CustomerId);
+            SELECT * FROM public.fn_Booking_GetByIdTreatments(@BookingId);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<int?> sp_Booking_GetCustomerIdAsync(IDbConnection db, int bookingId)
@@ -167,11 +171,15 @@ internal sealed class BookingDbService
         return db.QueryAsync<BookingLocationRow>("SELECT * FROM public.sp_Booking_Confirm(@BookingId, @CustomerId, @UpdatedBy)", args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Booking_GetConfirmationDetailsAsync(IDbConnection db, int bookingId)
+    public Task<SqlMapper.GridReader> sp_Booking_GetConfirmationDetailsAsync(IDbConnection db, int bookingId)
     {
         var args = new DynamicParameters();
         args.Add("BookingId", bookingId, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetConfirmationDetails", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_ConfirmationHeader(@BookingId);
+            SELECT * FROM public.fn_Booking_ConfirmationTreatments(@BookingId);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<BookingLocationRow>> sp_Booking_CancelAsync(IDbConnection db, int bookingId, int customerId, int? updatedBy)
@@ -188,21 +196,29 @@ internal sealed class BookingDbService
         return db.QueryAsync<BookingLocationRow>("SELECT * FROM public.sp_Booking_ExpireStaleHolds()", commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Booking_GetMineAsync(IDbConnection db, int customerId, int? chainId, int? locationId)
+    public Task<SqlMapper.GridReader> sp_Booking_GetMineAsync(IDbConnection db, int customerId, int? chainId, int? locationId)
     {
         var args = new DynamicParameters();
         args.Add("CustomerId", customerId, DbType.Int32);
         args.Add("ChainId", chainId, DbType.Int32);
         args.Add("LocationId", locationId, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetMine", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_MineHeaders(@CustomerId, @ChainId, @LocationId);
+            SELECT * FROM public.fn_Booking_MineTreatments(@CustomerId, @ChainId, @LocationId);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Booking_GetForLocationAsync(IDbConnection db, int locationId, DateOnly date)
+    public Task<SqlMapper.GridReader> sp_Booking_GetForLocationAsync(IDbConnection db, int locationId, DateOnly date)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("WorkDate", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Booking_GetForLocation", args);
+        const string sql = """
+            SELECT * FROM public.fn_Booking_ForLocationHeaders(@LocationId, @WorkDate);
+            SELECT * FROM public.fn_Booking_ForLocationTreatments(@LocationId, @WorkDate);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Booking_AddProductAsync(IDbConnection db, int bookingId, int productId, int quantity, int? createdBy)

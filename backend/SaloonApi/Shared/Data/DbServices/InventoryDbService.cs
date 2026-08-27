@@ -114,11 +114,15 @@ internal sealed class InventoryDbService
         return db.QueryAsync<PurchaseOrderDto>("SELECT * FROM public.sp_Inventory_GetPurchaseOrders(@LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<RefCursorGridReader> sp_Inventory_GetPurchaseOrderDetailAsync(IDbConnection db, int id)
+    public Task<SqlMapper.GridReader> sp_Inventory_GetPurchaseOrderDetailAsync(IDbConnection db, int id)
     {
         var args = new DynamicParameters();
         args.Add("Id", id, DbType.Int32);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Inventory_GetPurchaseOrderDetail", args);
+        const string sql = """
+            SELECT * FROM public.fn_Inventory_PurchaseOrderHeader(@Id);
+            SELECT * FROM public.fn_Inventory_PurchaseOrderLines(@Id);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public async Task sp_Inventory_ReceivePurchaseOrderAsync(IDbConnection db, int id, int? updatedBy)

@@ -9,12 +9,17 @@ namespace SaloonApi.Shared.Data.DbServices;
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class SchedulingDbService
 {
-    public Task<RefCursorGridReader> sp_Scheduling_GetRosterAsync(IDbConnection db, int locationId, DateOnly date)
+    public Task<SqlMapper.GridReader> sp_Scheduling_GetRosterAsync(IDbConnection db, int locationId, DateOnly date)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("WorkDate", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
-        return RefCursorGridReader.ExecuteAsync(db, "public.sp_Scheduling_GetRoster", args);
+        const string sql = """
+            SELECT * FROM public.fn_Scheduling_RosterShifts(@LocationId, @WorkDate);
+            SELECT * FROM public.fn_Scheduling_RosterRoomOpenings(@LocationId, @WorkDate);
+            SELECT * FROM public.fn_Scheduling_RosterBlocks(@LocationId, @WorkDate);
+            """;
+        return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
     public Task<int> sp_Scheduling_AssignTherapistShiftAsync(
