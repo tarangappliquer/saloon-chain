@@ -2,11 +2,29 @@ import { useEffect, useState, type SyntheticEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { X } from 'lucide-react';
-import type { MyBookingDto } from '@saloon/api-client';
 import { adminCatalogApi, adminCustomersApi, ApiError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import { routes } from '../../routes';
 import type { Chain, Location } from '../../api/types';
+
+interface MyBookingTreatment {
+  bookingId?: number;
+  treatmentName?: string;
+  price?: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  therapistName?: string | null;
+}
+
+interface MyBookingDto {
+  id?: number;
+  bookingId: number;
+  locationId: number;
+  locationName: string;
+  status: string;
+  createdDate: string;
+  treatments: MyBookingTreatment[];
+}
 
 interface CustomerProfile {
   id: number;
@@ -48,26 +66,26 @@ function formatDate(d: string) {
 // Same "past" definition MyBookingsPage.tsx uses client-side (and sp_Review_Create re-derives
 // server-side): every treatment's EndTime has already passed.
 function isPast(b: MyBookingDto, now: number): boolean {
-  const ends = b.treatments
-    .map((t) => t.endTime)
-    .filter((s): s is string => !!s)
-    .map((s) => new Date(s).getTime());
+  const ends = (b.treatments ?? [])
+    .map((t: MyBookingTreatment) => t.endTime)
+    .filter((s: string | null | undefined): s is string => !!s)
+    .map((s: string) => new Date(s).getTime());
   return ends.length > 0 && now > Math.max(...ends);
 }
 
 function earliestStart(b: MyBookingDto): number {
-  const starts = b.treatments
-    .map((t) => t.startTime)
-    .filter((s): s is string => !!s)
-    .map((s) => new Date(s).getTime());
+  const starts = (b.treatments ?? [])
+    .map((t: MyBookingTreatment) => t.startTime)
+    .filter((s: string | null | undefined): s is string => !!s)
+    .map((s: string) => new Date(s).getTime());
   return starts.length > 0 ? Math.min(...starts) : Infinity;
 }
 
 function latestEnd(b: MyBookingDto): number {
-  const ends = b.treatments
-    .map((t) => t.endTime)
-    .filter((s): s is string => !!s)
-    .map((s) => new Date(s).getTime());
+  const ends = (b.treatments ?? [])
+    .map((t: MyBookingTreatment) => t.endTime)
+    .filter((s: string | null | undefined): s is string => !!s)
+    .map((s: string) => new Date(s).getTime());
   return ends.length > 0 ? Math.max(...ends) : 0;
 }
 
@@ -79,7 +97,7 @@ function BookingRow({ b }: { b: MyBookingDto }) {
         <Badge status={b.status} />
       </div>
       <ul className="text-xs text-muted-foreground space-y-0.5">
-        {b.treatments.map((t, idx) => (
+        {(b.treatments ?? []).map((t: MyBookingTreatment, idx: number) => (
           <li key={idx}>
             {t.treatmentName} {t.therapistName ? `with ${t.therapistName}` : ''} — {t.startTime ? formatDate(t.startTime) : 'unscheduled'}
           </li>
@@ -405,7 +423,7 @@ export function ClientProfilePage() {
           ) : (
             <div className="divide-y divide-border/50">
               {upcoming.map((b) => (
-                <BookingRow key={b.id as unknown as number} b={b} />
+                <BookingRow key={b.bookingId ?? b.id} b={b} />
               ))}
             </div>
           )}
@@ -422,7 +440,7 @@ export function ClientProfilePage() {
           ) : (
             <div className="divide-y divide-border/50">
               {past.map((b) => (
-                <BookingRow key={b.id as unknown as number} b={b} />
+                <BookingRow key={b.bookingId ?? b.id} b={b} />
               ))}
             </div>
           )}
