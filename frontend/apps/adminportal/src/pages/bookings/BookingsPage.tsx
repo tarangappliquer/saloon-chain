@@ -564,7 +564,10 @@ export function BookingsPage() {
     setError(null);
     try {
       const { data } = await adminBookingsApi.apiAdminBookingsGet(locationId, date);
-      setBookings(data as unknown as AdminBooking[]);
+      // API returns `bookingId`; the rest of the app reads `booking.id`.
+      setBookings(
+        (data as unknown as Array<AdminBooking & { bookingId?: number }>).map((b) => ({ ...b, id: b.id ?? b.bookingId! })),
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load bookings');
     } finally {

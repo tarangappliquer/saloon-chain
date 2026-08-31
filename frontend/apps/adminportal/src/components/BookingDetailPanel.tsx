@@ -34,6 +34,12 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
   const [showCancelPicker, setShowCancelPicker] = useState(false);
   const [cancelReasonId, setCancelReasonId] = useState<number | ''>('');
 
+  // Sentinel used when the location has no cancel reasons configured -- the picker still offers
+  // "No Reason Provided" and the cancel call sends null (CancelReasonId is nullable server-side).
+  const NO_REASON_ID = 0;
+  const NO_REASON_FALLBACK: CancelReasonDto = { id: NO_REASON_ID, name: 'No Reason Provided', sortOrder: 0 };
+  const reasonOptions = cancelReasons.length > 0 ? cancelReasons : [NO_REASON_FALLBACK];
+
   // Payment collection -- only relevant once Confirmed and not already paid.
   const [paymentProvider, setPaymentProvider] = useState<PaymentProviderType>('Cash');
   const [tip, setTip] = useState('0');
@@ -49,9 +55,13 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
       .apiAdminCancelReasonsGet()
       .then(({ data }) => {
         setCancelReasons(data);
-        if (data.length > 0) setCancelReasonId(Number(data[0].id));
+        setCancelReasonId(data.length > 0 ? Number(data[0].id) : NO_REASON_ID);
       })
-      .catch(() => setCancelReasons([]));
+      .catch((err) => {
+        setCancelReasons([]);
+        setCancelReasonId(NO_REASON_ID); // fall back to "No Reason Provided" so cancel still works
+        setError(err instanceof ApiError ? err.message : 'Failed to load cancellation reasons');
+      });
   }, [chainId, locationId]);
 
   const totalAmount = booking.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
@@ -83,11 +93,14 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setCancelling(true);
     setError(null);
     try {
-      await adminBookingsApi.apiAdminBookingsIdCancelPost(booking.id, { cancelReasonId: cancelReasonId });
+      // NO_REASON_ID is the local "No Reason Provided" fallback -> send null (server default).
+      const reasonId = cancelReasonId === NO_REASON_ID ? null : cancelReasonId;
+      await adminBookingsApi.apiAdminBookingsIdCancelPost(booking.id, { cancelReasonId: reasonId });
       setShowCancelPicker(false);
       onChanged();
       onClose();
     } catch (err) {
+      console.error(err)
       setError(err instanceof ApiError ? err.message : 'Failed to cancel booking');
     } finally {
       setCancelling(false);
@@ -228,10 +241,10 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
                 <label className="text-[11px] font-bold text-foreground">Reason for cancellation</label>
                 <select
                   value={cancelReasonId}
-                  onChange={(e) => setCancelReasonId(e.target.value ? Number(e.target.value) : '')}
+                  onChange={(e) => setCancelReasonId(e.target.value !== '' ? Number(e.target.value) : '')}
                   className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs"
                 >
-                  {cancelReasons.map((r) => (
+                  {reasonOptions.map((r) => (
                     <option key={String(r.id)} value={String(r.id)}>
                       {r.name}
                     </option>
