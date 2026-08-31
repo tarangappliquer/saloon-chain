@@ -39,6 +39,7 @@ using SaloonApi.Shared.Data.DbServices;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
 using SaloonApi.Shared.Http;
+using SaloonApi.Shared.Json;
 using SaloonApi.Shared.Logging;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.OpenApi;
@@ -86,6 +87,8 @@ try
     builder.Services.ConfigureHttpJsonOptions(options =>
     {
         options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        options.SerializerOptions.Converters.Add(new LongToStringJsonConverter());
+        options.SerializerOptions.Converters.Add(new NullableLongToStringJsonConverter());
     });
 
     builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);
