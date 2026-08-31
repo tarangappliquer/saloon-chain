@@ -26,7 +26,7 @@ services:
       ASPNETCORE_URLS: "http://+:5127"
       ConnectionStrings__SaloonDb: "${SALOON_DB_CONN_STRING:-Host=${POSTGRES_HOST:-host.docker.internal};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-SaloonChainDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-SaloonChains_Dev123!;};Ssl Mode=${POSTGRES_SSL_MODE:-Prefer};Trust Server Certificate=true;}"
       Redis__ConnectionString: "saloonchains-redis:6379"
-      Redis__Enabled: "true"
+      Redis__Enabled: "${BACKEND_REDIS_ENABLED:-true}"
       Jwt__SigningKey: "${JWT_SIGNING_KEY:-SaloonChains_Production_Or_Dev_Secret_Signing_Key_32_Bytes_Min}"
       Jwt__Issuer: "SaloonApi"
       Jwt__Audience: "SaloonClients"
