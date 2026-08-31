@@ -81,14 +81,14 @@ try
         options.AddOperationTransformer<DefaultResponsesOperationTransformer>();
 
         options.AddFluentValidationRules();
+        options.AddSchemaTransformer<LongAsStringSchemaTransformer>();
         options.AddDocumentTransformer<OpenApi30NormalizeTransformer>();
     });
 
     builder.Services.ConfigureHttpJsonOptions(options =>
     {
         options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-        options.SerializerOptions.Converters.Add(new LongToStringJsonConverter());
-        options.SerializerOptions.Converters.Add(new NullableLongToStringJsonConverter());
+        options.SerializerOptions.Converters.Add(new LongToStringJsonConverterFactory());
     });
 
     builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);

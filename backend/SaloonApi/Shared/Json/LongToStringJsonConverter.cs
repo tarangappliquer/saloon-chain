@@ -4,6 +4,29 @@ using System.Text.Json.Serialization;
 
 namespace SaloonApi.Shared.Json;
 
+internal sealed class LongToStringJsonConverterFactory : JsonConverterFactory
+{
+    public override bool CanConvert(Type typeToConvert)
+    {
+        return typeToConvert == typeof(long) || typeToConvert == typeof(long?);
+    }
+
+    public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (typeToConvert == typeof(long))
+        {
+            return new LongToStringJsonConverter();
+        }
+
+        if (typeToConvert == typeof(long?))
+        {
+            return new NullableLongToStringJsonConverter();
+        }
+
+        return null;
+    }
+}
+
 internal sealed class LongToStringJsonConverter : JsonConverter<long>
 {
     public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
