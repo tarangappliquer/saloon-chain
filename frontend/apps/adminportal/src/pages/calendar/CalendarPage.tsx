@@ -377,11 +377,11 @@ export function CalendarPage() {
     adminCatalogApi
       .apiAdminCatalogRoomsGet(locationId)
       .then(({ data }) => setRooms(data as unknown as Room[]))
-      .catch(() => { });
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load rooms'));
     adminCatalogApi
       .apiAdminCatalogTreatmentCategoriesGet(locationId)
       .then(({ data }) => setCategories(data as unknown as TreatmentCategory[]))
-      .catch(() => { });
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load treatment categories'));
   }, [locationId]);
 
   const loadRosterAndBookings = useCallback(async (isSilent = false) => {
@@ -638,6 +638,7 @@ export function CalendarPage() {
           locationId={locationId}
           loadRosterAndBookings={loadRosterAndBookings}
           workClose={workClose}
+          canAddAppointment={!!currentUser?.canEmulate}
         />
       )}
 
@@ -787,6 +788,8 @@ interface ScheduleGridViewProps {
   locationId: number | null;
   loadRosterAndBookings: (force?: boolean) => void;
   workClose: string | undefined;
+  // "Add appointment" from the slot popover books via customer emulation -- gated on canEmulate.
+  canAddAppointment: boolean;
 }
 
 function ScheduleGridView({
@@ -811,6 +814,7 @@ function ScheduleGridView({
   locationId,
   loadRosterAndBookings,
   workClose,
+  canAddAppointment,
 }: ScheduleGridViewProps) {
   const blockSpans = useMemo(
     () => computeBlockSpans(rooms, roster.blockedSlots || [], timeSlots),
@@ -1029,6 +1033,11 @@ function ScheduleGridView({
                             </option>
                           ))}
                         </select>
+                        {categories.length === 0 && (
+                          <p className="text-[10px] font-medium text-muted-foreground">
+                            No treatment categories for this location &mdash; add one in Catalog to open rooms.
+                          </p>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => openStaffPopover(e, room)}
@@ -1316,6 +1325,7 @@ function ScheduleGridView({
       onClose={() => setPopover(null)}
       position={popover?.position ?? null}
       timeDisplay={popover?.startTime ?? ''}
+      showAddAppointment={canAddAppointment}
       onAddAppointment={() => {
         if (popover) {
           const room = rooms.find((r) => r.id === popover.roomId);

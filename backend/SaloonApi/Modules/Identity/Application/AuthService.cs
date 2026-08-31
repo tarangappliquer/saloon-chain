@@ -35,7 +35,7 @@ internal sealed class AuthService(
 
         var (accessToken, refreshToken) = await IssueTokensAsync(
             user.Id, user.Email, user.Role, user.ChainId, user.LocationId, user.TherapistId);
-        bool canEmulate = user.Role == UserRole.RootSuperAdmin || user.IsEmulator;
+        bool canEmulate = user.Role.CanAlwaysEmulate() || user.IsEmulator;
         bool isEmailVerified = !authOptions.CurrentValue.RequireEmailVerification || user.IsEmailVerified;
         return (user.Id, user.Name, user.Role, canEmulate, accessToken, refreshToken, user.PhotoPath, isEmailVerified);
     }
@@ -50,7 +50,7 @@ internal sealed class AuthService(
         await refreshTokens.RevokeAsync(stored.Id);
         var (accessToken, newRefreshToken) = await IssueTokensAsync(
             stored.UserId, stored.Email, stored.Role, stored.ChainId, stored.LocationId, stored.TherapistId);
-        bool canEmulate = stored.Role == UserRole.RootSuperAdmin || stored.IsEmulator;
+        bool canEmulate = stored.Role.CanAlwaysEmulate() || stored.IsEmulator;
         bool isEmailVerified = !authOptions.CurrentValue.RequireEmailVerification || stored.IsEmailVerified;
         return (stored.UserId, stored.Name, stored.Email, stored.Role, canEmulate, accessToken, newRefreshToken, isEmailVerified);
     }
@@ -204,7 +204,7 @@ internal sealed class AuthService(
     public async Task<(int Id, string Name, string Email, string Token)?> EmulateCustomerAsync(int actingStaffId, int targetCustomerId)
     {
         var staff = await repo.GetByIdAsync(actingStaffId);
-        if (staff is null || !staff.IsEmulator && staff.Role != UserRole.RootSuperAdmin)
+        if (staff is null || (!staff.IsEmulator && !staff.Role.CanAlwaysEmulate()))
             return null;
 
         var customer = await repo.GetByIdAsync(targetCustomerId);

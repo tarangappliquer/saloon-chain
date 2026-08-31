@@ -508,24 +508,78 @@ LANGUAGE sql STABLE AS $$
     );
 $$;
 
+-- Dates in [p_FromDate, p_ToDate] that have bookable staff+room capacity. Mirrors
+-- fn_Booking_AvailabilityRangeEligiblePairs' room + shift eligibility (minus the treatment-category
+-- filter, which the client date picker doesn't know yet) so BookingService.GetAvailableDatesAsync
+-- never hard-gates out a date that would actually yield slots. Weekly-mask / holiday / IsClosed
+-- filtering stays in the C# caller, same as before.
 CREATE OR REPLACE FUNCTION public.sp_Booking_GetLocationOpenDates(p_LocationId int, p_FromDate date, p_ToDate date)
 RETURNS TABLE(WorkDate date)
 LANGUAGE sql STABLE AS $$
-    SELECT DISTINCT rca.WorkDate
-    FROM public.RoomCategoryAssignments rca
-        JOIN public.Rooms r ON r.Id = rca.RoomId
-        JOIN public.ShiftAssignments sa ON sa.LocationId = p_LocationId
-            AND sa.WorkDate = rca.WorkDate
-            AND (sa.ShiftType = rca.ShiftType OR sa.ShiftType = 'FullDay' OR rca.ShiftType = 'FullDay')
-            AND (sa.RoomId IS NULL OR sa.RoomId = r.Id)
+    WITH dates AS (
+        SELECT generate_series(p_FromDate, p_ToDate, interval '1 day')::date AS WorkDate
+    ),
+    active_rooms AS (
+        SELECT r.Id AS RoomId
+        FROM public.Rooms r
+        WHERE r.LocationId = p_LocationId AND r.IsDelete = FALSE AND r.IsActive = TRUE
+    ),
+    location_has_rca AS (
+        SELECT EXISTS (
+            SELECT 1
+            FROM public.RoomCategoryAssignments rca
+                JOIN public.Rooms r ON r.Id = rca.RoomId
+            WHERE r.LocationId = p_LocationId AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
+        ) AS has_rca
+    ),
+    eligible_rooms AS (
+        -- rooms explicitly opened for the date
+        SELECT d.WorkDate, r.RoomId, rca.ShiftType
+        FROM dates d
+            CROSS JOIN active_rooms r
+            JOIN public.RoomCategoryAssignments rca
+                ON rca.RoomId = r.RoomId AND rca.WorkDate = d.WorkDate
+                AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
+
+        UNION ALL
+
+        -- location that hasn't adopted RCA scheduling at all: every active room works any category
+        SELECT d.WorkDate, r.RoomId, 'FullDay'::varchar AS ShiftType
+        FROM dates d
+            CROSS JOIN active_rooms r
+            CROSS JOIN location_has_rca lhr
+        WHERE lhr.has_rca = FALSE
+    ),
+    eligible_shifts AS (
+        -- explicit shift assignments on the date (assigned to an active therapist)
+        SELECT sa.WorkDate, sa.RoomId, sa.ShiftType
+        FROM public.ShiftAssignments sa
+            JOIN public.TherapistProfile tp ON tp.Id = sa.TherapistId
+                AND tp.IsDelete = FALSE AND tp.IsActive = TRUE
+        WHERE sa.LocationId = p_LocationId
+            AND sa.WorkDate BETWEEN p_FromDate AND p_ToDate
             AND sa.IsDelete = FALSE AND sa.IsActive = TRUE
-        JOIN public.TherapistProfile tp ON tp.Id = sa.TherapistId
-            AND tp.IsDelete = FALSE AND tp.IsActive = TRUE
-    WHERE r.LocationId = p_LocationId
-      AND r.IsDelete = FALSE AND r.IsActive = TRUE
-      AND rca.IsDelete = FALSE AND rca.IsActive = TRUE
-      AND rca.WorkDate BETWEEN p_FromDate AND p_ToDate
-    ORDER BY rca.WorkDate;
+
+        UNION ALL
+
+        -- "floating" therapists: no shift assignments anywhere -> available every date, any room
+        SELECT d.WorkDate, NULL::int AS RoomId, 'FullDay'::varchar AS ShiftType
+        FROM dates d
+            CROSS JOIN public.TherapistProfile tp
+        WHERE tp.IsDelete = FALSE AND tp.IsActive = TRUE
+            AND (tp.LocationId = p_LocationId OR tp.LocationId IS NULL)
+            AND NOT EXISTS (
+                SELECT 1 FROM public.ShiftAssignments sa2
+                WHERE sa2.TherapistId = tp.Id AND sa2.IsDelete = FALSE AND sa2.IsActive = TRUE
+            )
+    )
+    SELECT DISTINCT er.WorkDate
+    FROM eligible_rooms er
+        JOIN eligible_shifts es
+            ON es.WorkDate = er.WorkDate
+            AND (es.ShiftType = er.ShiftType OR er.ShiftType = 'FullDay' OR es.ShiftType = 'FullDay')
+            AND (es.RoomId IS NULL OR es.RoomId = er.RoomId)
+    ORDER BY er.WorkDate;
 $$;
 
 CREATE OR REPLACE FUNCTION public.sp_Booking_CreateDraft(

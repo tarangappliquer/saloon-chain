@@ -23,6 +23,9 @@ export function CustomersPage() {
   // only has StaffAccess/CustomerManagement -- they get a lean search-and-checkout view instead of
   // a table full of buttons the backend would 403 on anyway.
   const canManage = currentUser ? ADMIN_ACCESS.includes(currentUser.role) : false;
+  // RootSuperAdmin and SuperAdmin can always emulate any customer -- they aren't limited to
+  // customers who have booked in their own chain (the backend enforces no chain scope on emulate).
+  const canEmulateAnyCustomer = currentUser?.role === 'RootSuperAdmin' || currentUser?.role === 'SuperAdmin';
 
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [optimisticCustomers, setOptimisticCustomers] = useOptimistic(
@@ -415,16 +418,16 @@ export function CustomersPage() {
                           <Button variant="outline" size="sm" onClick={() => navigate(routes.customerProfile(c.id))}>
                             View
                           </Button>
-                          {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
+                          {(canEmulateAnyCustomer || currentUser?.canEmulate) && (
                             // Wrapped in a span, not tooltipped directly on the Button -- a disabled
                             // button doesn't reliably fire hover events, so the span (never disabled
                             // itself) is what actually triggers the tooltip explaining why.
-                            <Tooltip content={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
+                            <Tooltip content={!canEmulateAnyCustomer && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
                               <span className="inline-flex">
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
+                                  disabled={emulatingId === c.id || (!canEmulateAnyCustomer && c.canEmulate === false)}
                                   onClick={() => emulate(c)}
                                 >
                                   {emulatingId === c.id ? 'Opening...' : '⚡ Emulate & Book'}
@@ -466,12 +469,12 @@ export function CustomersPage() {
                   <Button variant="outline" size="sm" onClick={() => navigate(routes.customerProfile(c.id))}>
                     View
                   </Button>
-                  {(currentUser?.role === 'RootSuperAdmin' || currentUser?.canEmulate) && (
-                    <Tooltip content={currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
+                  {(canEmulateAnyCustomer || currentUser?.canEmulate) && (
+                    <Tooltip content={!canEmulateAnyCustomer && c.canEmulate === false ? 'This customer has no bookings in your saloon chain.' : null}>
                       <span className="inline-flex">
                         <Button
                           size="sm"
-                          disabled={emulatingId === c.id || (currentUser?.role !== 'RootSuperAdmin' && c.canEmulate === false)}
+                          disabled={emulatingId === c.id || (!canEmulateAnyCustomer && c.canEmulate === false)}
                           onClick={() => emulate(c)}
                         >
                           {emulatingId === c.id ? 'Opening...' : 'Start Booking'}

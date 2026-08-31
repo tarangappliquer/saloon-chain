@@ -165,7 +165,7 @@ internal static class AuthEndpoints
             }
 
             bool isEmulated = currentUser.EmulatedByUserId is not null;
-            bool canEmulate = me.Role == UserRole.RootSuperAdmin || me.IsEmulator;
+            bool canEmulate = me.Role.CanAlwaysEmulate() || me.IsEmulator;
             return Results.Ok(new AuthResponse(
                 me.Id, me.Name, me.Email, me.Role.ToString(), Token: "",
                 CanEmulate: canEmulate, IsEmulated: isEmulated, EmulatedByName: emulatedByName,

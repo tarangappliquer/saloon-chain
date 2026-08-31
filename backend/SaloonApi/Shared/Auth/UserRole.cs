@@ -13,3 +13,12 @@ internal enum UserRole
     Other,
     Customer
 }
+
+internal static class UserRoleExtensions
+{
+    // RootSuperAdmin and SuperAdmin can always emulate a customer, regardless of the per-user
+    // Users.IsEmulator flag. Every other role needs IsEmulator set. Single source of truth --
+    // used by login, refresh, /me and the /api/auth/emulate authorization check.
+    public static bool CanAlwaysEmulate(this UserRole role) =>
+        role is UserRole.RootSuperAdmin or UserRole.SuperAdmin;
+}

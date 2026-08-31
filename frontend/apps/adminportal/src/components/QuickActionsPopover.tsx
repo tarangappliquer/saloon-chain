@@ -6,6 +6,8 @@ interface QuickActionsPopoverProps {
   onAddAppointment: () => void;
   onAddGroupAppointment: () => void;
   onAddBlockedTime: () => void;
+  // "Add appointment" books via customer emulation -- hide it for users who can't emulate.
+  showAddAppointment?: boolean;
 }
 
 export function QuickActionsPopover({
@@ -16,6 +18,7 @@ export function QuickActionsPopover({
   onAddAppointment,
   onAddGroupAppointment: _onAddGroupAppointment,
   onAddBlockedTime,
+  showAddAppointment = true,
 }: QuickActionsPopoverProps) {
   if (!isOpen || !position) return null;
 
@@ -42,17 +45,19 @@ export function QuickActionsPopover({
       </div>
 
       <div className="space-y-1.5 pt-1">
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onAddAppointment();
-          }}
-          className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold text-foreground hover:bg-accent transition cursor-pointer"
-        >
-          <span className="text-lg">📅</span>
-          <span>Add appointment</span>
-        </button>
+        {showAddAppointment && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onAddAppointment();
+            }}
+            className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold text-foreground hover:bg-accent transition cursor-pointer"
+          >
+            <span className="text-lg">📅</span>
+            <span>Add appointment</span>
+          </button>
+        )}
 
         <button
           type="button"

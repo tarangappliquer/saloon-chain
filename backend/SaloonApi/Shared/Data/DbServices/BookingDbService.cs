@@ -11,6 +11,15 @@ internal sealed record ScheduleTreatmentRow
     public int LocationId { get; init; }
 }
 
+// Wrapper for sp_Booking_GetLocationOpenDates' single `date` column. Dapper cannot materialize a
+// bare column into a scalar `DateOnly` via QueryAsync<DateOnly> -- even with DateOnlyTypeHandler
+// registered it silently yields DateOnly.MinValue for every row -- but it maps the column onto a
+// DateOnly *property* correctly (same path every other WorkDate column uses).
+internal sealed record OpenDateRow
+{
+    public DateOnly WorkDate { get; init; }
+}
+
 [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Registered as Singleton service in DI container")]
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class BookingDbService
@@ -64,13 +73,15 @@ internal sealed class BookingDbService
         return db.ExecuteScalarAsync<bool>("SELECT * FROM public.sp_Booking_HasLocationRoomOpenings(@LocationId)", args, commandType: CommandType.Text);
     }
 
-    public Task<IEnumerable<DateOnly>> sp_Booking_GetLocationOpenDatesAsync(IDbConnection db, int locationId, DateOnly from, DateOnly to)
+    public async Task<IEnumerable<DateOnly>> sp_Booking_GetLocationOpenDatesAsync(IDbConnection db, int locationId, DateOnly from, DateOnly to)
     {
         var args = new DynamicParameters();
         args.Add("LocationId", locationId, DbType.Int32);
         args.Add("FromDate", from.ToDateTime(TimeOnly.MinValue), DbType.Date);
         args.Add("ToDate", to.ToDateTime(TimeOnly.MinValue), DbType.Date);
-        return db.QueryAsync<DateOnly>("SELECT * FROM public.sp_Booking_GetLocationOpenDates(@LocationId, @FromDate, @ToDate)", args, commandType: CommandType.Text);
+        var rows = await db.QueryAsync<OpenDateRow>(
+            "SELECT * FROM public.sp_Booking_GetLocationOpenDates(@LocationId, @FromDate, @ToDate)", args, commandType: CommandType.Text);
+        return rows.Select(r => r.WorkDate).ToList();
     }
 
     public Task<int> sp_Booking_CreateDraftAsync(IDbConnection db, int locationId, int customerId, int[] treatments, int? createdBy)
