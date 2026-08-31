@@ -38,6 +38,7 @@ using SaloonApi.Shared.Data;
 using SaloonApi.Shared.Data.DbServices;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.ErrorHandling;
+using SaloonApi.Shared.Http;
 using SaloonApi.Shared.Logging;
 using SaloonApi.Shared.Observability;
 using SaloonApi.Shared.OpenApi;
@@ -169,8 +170,11 @@ try
     builder.Services.AddTransient<CorrelationIdMiddleware>();
     builder.Services.AddTransient<CurrentUserMiddleware>();
     builder.Services.AddTransient<SecurityHeadersMiddleware>();
+    builder.Services.AddTransient<RequestContextMiddleware>();
     builder.Services.AddScoped<CurrentUser>();
     builder.Services.AddScoped<ICurrentUser>(sp => sp.GetRequiredService<CurrentUser>());
+    builder.Services.AddScoped<RequestContext>();
+    builder.Services.AddScoped<IRequestContext>(sp => sp.GetRequiredService<RequestContext>());
 
     builder.Services.AddSingleton<StaffDbService>();
     builder.Services.AddSingleton<CatalogDbService>();
@@ -271,6 +275,7 @@ try
     });
 
     app.UseMiddleware<CorrelationIdMiddleware>();
+    app.UseMiddleware<RequestContextMiddleware>(); // reads X-Timezone into the scoped RequestContext
 
     if (app.Environment.IsDevelopment())
     {

@@ -1,234 +1,142 @@
-# Handoff: prior session's React 19 hook sweep (in progress)
+# Handoff — 2026-08-31 session
 
-Status: **in progress, safe to resume**. Everything below "Done" typechecks clean as of this write. Not manually smoke-tested in a browser. Delete this file once the hook sweep is finished and smoke-tested — it's a handoff note, not permanent docs.
+Status: **all changes build clean, 36/36 tests pass, key paths live-verified against the
+remote dev DB (`Host=server` / `saloon_db`).** Deploy checklist at the bottom. Delete this
+file once deployed and smoke-tested in the real app.
 
-## Future work — numbered task list (do in this order)
-
-Session ended here with everything below "Write-path sweep" fixed, verified, and cleaned up (test server stopped, Docker container removed, isolated build dir deleted, `dotnet build`/`dotnet test` clean 34/34 on the repo's own `bin/`). Next session should pick up at task 1.
-
-1. **Set up a fresh test environment** — no throwaway Postgres survives between sessions by design (see Port Cleanup Rule in `CLAUDE.md`). Recipe: `docker run --name saloon_write_test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=validate -p 5433:5432 -d postgres:18`, load `db/postgres/01_table_postgres.sql` → `02_types_postgres.sql` → `03_procs_postgres.sql` → `db/postgres/seed/04_seed_postgres.sql` in that order, `dotnet build -o <scratchpad>/api_test_build`, launch with `ConnectionStrings__SaloonDb="Host=localhost;Port=5433;Database=validate;Username=postgres;Password=test;Timeout=30;"` explicitly set (do **not** omit this — see the "SAFETY ISSUE" note below, `appsettings.json`'s default `SaloonDb` value is a live reachable LAN server, not a dummy).
-2. **Re-apply the PBKDF2 password overrides** for test logins (RootSuperAdmin + at least one Customer) — the trick and exact recipe are documented in the "Full live API sweep" section below. Fresh container = fresh random hashes, so this has to be redone every session.
-3. **Booking module full write lifecycle** — not yet tested at all this session: create draft → schedule treatment → confirm → cancel, using a customer-role login (proven working in step above via `bulkcustomer500000@saloonchains.dev`). Watch especially for the same 3 bug classes already found repeatedly this session: SQL positional-arg-order mismatches, PL/pgSQL `RETURNS TABLE` column-shadowing, and `DbType` narrower-than-Postgres-type mismatches (`smallint`/`Int16` was the culprit twice already).
-4. **Re-run the static audit script** (recreate `/tmp/audit2.py`'s approach — paren-depth-balancing signature parser cross-referencing every `db.ExecuteAsync`/`QuerySingleAsync`/`QueryAsync` SQL string in `backend/SaloonApi/Shared/Data/DbServices/*.cs` against the actual Postgres function signatures in `db/postgres/03_procs_postgres.sql`) to confirm zero remaining positional-order or type-width mismatches across the whole codebase, not just the paths manually exercised so far.
-5. **Payment endpoints** — Stripe test key is blank in this dev environment, so `create-intent` etc. are expected to fail for an unrelated reason (no Stripe test account configured, not an app bug) — confirm that's the only failure mode, don't chase it further if so.
-6. **Decide on the email-send-blocks-request design gap** (flagged, not fixed, in "Write-path sweep" below): should a welcome/notification email failure during a create request be caught-and-logged (like `EmailQueueBackgroundService` already does for its own queue) instead of 500ing the whole request? This is a judgment call for the user, not a pure bug — surface it and get a decision before changing it.
-7. **Final cleanup** every time a test session ends: stop the test server process, `docker rm -f saloon_write_test`, delete the isolated build dir — never leave any of these running, per the Port Cleanup Rule.
-8. Once the whole write-path sweep is confirmed clean end-to-end, this "Write-path sweep" + "RIGHT NOW" + "Future work" sections of this file can be collapsed into a short "DONE" summary the way the "Full live API sweep" section above already was, or deleted if nothing else in this file is still relevant.
-
-## RIGHT NOW — current status (read this first)
-
-**What I was doing**: the write-path (POST/PUT/DELETE/PATCH) API test sweep, user's request. Found 3 bugs blocking `POST /api/admin/staff`, `POST /api/admin/customers`, `POST /api/admin/scheduling/blocked-slots` on the last test run (server log grepped for exceptions) — see full list under "Investigated" below.
-
-**What was already done, this turn**: all 3 fixed —
-1. 4 email templates (`SetPassword`, `EmailChangeVerification`, `BookingCancellation`, `BookingConfirmation` `.cshtml`) — `@DateTime.UtcNow.Year` → `@System.DateTime.UtcNow.Year` (RazorEngineCore has no `System` in scope by default).
-2. `BlockedSlotDetailsDto` (`SchedulingRepository.cs`) — converted from a 7-param positional record to init-property, since `sp_Scheduling_GetBlockedSlotDetails` actually returns 11 columns.
-3. Confirmed the `staff/attendance` "failed to read JSON" error was a test-script cascade (chained a `?` placeholder id from the failed staff-creation call), not a real bug — no code change needed there.
-4. Old test server (PID 16628, port 5199) killed, rebuilt clean to the isolated scratchpad build dir (`dotnet build` succeeded, 0 errors/0 warnings).
-
-**Plan / what's remaining**:
-- Restart the test server on port 5199 against the still-running seeded Docker Postgres container, re-run `/tmp/wtest4.sh` (Staff/Customers/Scheduling blocked-slots writes) to confirm all 3 fixes actually work live, not just compile.
-- If clean: move to what's **not yet tested at all** in the write-path pass — Booking module's full write lifecycle (draft→schedule→confirm→cancel, needs a customer-role login via the same PBKDF2-password-override trick used for RootSuperAdmin), Review creation, Payment endpoints (Stripe key is blank in this env, expected to fail — not a bug to chase).
-- Re-run the static audit script (`/tmp/audit2.py`) once more after all fixes to confirm zero remaining positional-arg-order mismatches across every DbService.
-- Final cleanup when done: stop the test server, `docker rm -f` the seeded Postgres container, delete the isolated build dir — nothing should be left running.
-- One thing flagged but deliberately **not** fixed yet (needs a judgment call, not a pure bug): `AuthService` sends the set-password welcome email synchronously and uncaught during staff/customer creation — a template or SMTP failure 500s the whole create request even though the DB insert already committed. Should probably be try/caught (log + continue) like `EmailQueueBackgroundService` already does for its own sends. Left as a note, not changed.
-
-**Update (latest) — ⚠️ SAFETY ISSUE FOUND AND HANDLED, read before restarting the test server again**:
-
-Restarted the isolated test server on port 5199 with a plain `dotnet SaloonApi.dll --urls http://localhost:5199` — **no `ConnectionStrings__SaloonDb` env var override**, unlike the original launch earlier this session. Server started clean (no crash — the refcursor-split fix still holds, all location pre-syncs completed). Login then returned `401` where it previously worked. Root-caused: **`appsettings.json`'s baked-in `"SaloonDb"` connection string is not a harmless placeholder — `Host=server` genuinely resolves on this machine's LAN (`192.168.1.72`, confirmed via `Resolve-DnsName`/`Test-NetConnection`, port 5432 open) to what is almost certainly the user's real shared dev Postgres (`Database=saloon_db`, `Username=dev`)**. Without the env var override, the just-restarted server silently connected to that real server instead of the throwaway `saloon_write_test` Docker container (port 5433, `POSTGRES_DB=validate`) used for testing all session. Login 401'd only because the real dev DB doesn't have the locally-known PBKDF2-overwritten test password — otherwise this would have silently run write tests against a real environment with no indication anything was wrong.
-
-**Handled**: server process killed immediately (PID 28656) the moment this was suspected, before any authenticated write request could reach it (login failed before any write endpoint was hit — the presync startup job only reads). Nothing was written to the real DB as far as can be confirmed; only read-only `Locations` queries ran against it during the few seconds it was up.
-
-**Before restarting the test server again**: always launch with the connection string explicitly overridden to the Docker container, e.g. (adjust for the shell in use):
-```
-ConnectionStrings__SaloonDb="Host=localhost;Port=5433;Database=validate;Username=postgres;Password=test;Timeout=30;" dotnet SaloonApi.dll --urls "http://localhost:5199"
-```
-Never rely on `appsettings.json`'s default `SaloonDb` value being safe to fall back to — it is a live, reachable connection string, not a dummy.
-
-**Update 2 — retest completed with the corrected launch command, all 3 earlier fixes confirmed live**:
-- Staff creation: `200`, real row created (was 500 on the Razor bug).
-- Customer creation: `200`, real row created (was 500).
-- Scheduling therapist-shifts and room-openings: full create/update/delete lifecycle all clean (`200`/`204`).
-- Scheduling blocked-slots create hit a `400 "overlaps an existing blocked slot"` — this is a **leftover-test-data artifact** (an earlier partial run's block wasn't cleaned up in the persistent container), not a bug; `BlockedSlotDetailsDto`'s materialization fix is confirmed separately by the fact this 400 came back at all instead of the old 500 crash (a 400 means it got past the details lookup into the actual overlap-check logic).
-- Staff/Customer 409 "Email already registered" on the *first* wtest4.sh pass — same leftover-test-data cause (same emails reused from an earlier partial run); re-ran with fresh timestamped emails and both created cleanly.
-
-**Found + fixed one more real bug surfaced by the retest**: `sp_Staff_LogAttendance` (`db/postgres/03_procs_postgres.sql`) — `POST /api/admin/staff/attendance` 500'd with `Npgsql.PostgresException 42702: column reference "locationid" is ambiguous`. Same bug class as `fn_Admin_DashboardUpcoming` fixed earlier this session: the function's own `RETURNS TABLE(..., LocationId int, UserId int, WorkDate date, ArrivalTime time, LeftTime time)` makes those names PL/pgSQL variables in scope for the whole body — two unaliased references (the `IF EXISTS (...)` guard and the `UPDATE ... SET ... WHERE ...`) collided with `StaffAttendance`'s own same-named columns. Fixed by aliasing (`StaffAttendance sa`) and qualifying every reference in both statements. Applied to `db/postgres/03_procs_postgres.sql` and live-verified against the test container (`CREATE OR REPLACE FUNCTION` re-run, then a real `POST /api/admin/staff/attendance` returned `200 {"message":"Attendance logged successfully."}` instead of 500). **Any future `LANGUAGE plpgsql RETURNS TABLE(...)` function should keep watching for this pattern** — same warning already noted in the refcursor-split section below.
-
-**Found + fixed a second real bug, testing Review creation**: logged in as a seeded customer (same PBKDF2-password-override trick, applied to `bulkcustomer500000@saloonchains.dev`) against a real Confirmed/past/unreviewed booking. `POST /api/reviews` 500'd: `Npgsql.PostgresException 42883: function public.sp_review_create(p_bookingid => integer, p_customerid => integer, p_rating => integer, p_comment => text) does not exist`. Cause: `sp_Review_Create`'s `p_Rating` is `smallint`, but `ReviewDbService.sp_Review_CreateAsync` (`backend/SaloonApi/Shared/Data/DbServices/ReviewDbService.cs`) bound it with `DbType.Int32` — Postgres only offers an *assignment* cast from `int4`→`int2`, not an implicit one usable for function-overload resolution, so a named-argument call with an `integer` arg can't match a `smallint`-typed parameter at all ("function does not exist", not a value-range error). Fixed: `DbType.Int32` → `DbType.Int16` for the `Rating` arg. Rebuilt, restarted the test server, re-logged in as the customer, re-posted the same review — now `200 {"id":2}`, a real row. **Worth a quick grep across the other DbServices for the same `smallint`-param-bound-as-`DbType.Int32` shape** if continuing this sweep — `AppointmentStatuses.SortOrder` was already caught and fixed earlier this session, this is the second instance of the same root cause, there may be more.
-
-**Next steps**: Booking module's full write lifecycle (customer-role login now already proven working via the review test above — reuse `bulkcustomer500000@saloonchains.dev` / `ChangeMe123!`), static audit script re-run (should now also check for `smallint`-vs-`Int32` `DbType` mismatches, not just positional-order), final cleanup (stop test server + `docker rm -f saloon_write_test` + delete isolated build dir) once everything is confirmed. Current test server PID: check `netstat -ano | grep 5199` (was restarted after the review fix, log at `/tmp/api_write9.log`).
-
-See "Write-path sweep" section below for the full list of everything fixed in this pass with file:line-level detail.
-
-## Full live API sweep — DONE, this session (16 real bugs found + fixed)
-
-After the refcursor split below, the user asked to test every API and fix what's broken. No live Postgres was reachable normally, so this session stood up a real environment to test against instead of guessing: a throwaway `postgres:18` Docker container, the repo's own `db/postgres/seed/04_seed_postgres.sql` (500k+ customers, 150 bookings, full catalog — a real fixture, not hand-rolled), the API built to an **isolated output directory** (`dotnet build -o <scratchpad>/api_test_build`, never the repo's own `bin/`/`obj/`) so it wouldn't collide with the user's own already-running dev server on port 5127, run on port 5199 against the seeded DB, one seeded RootSuperAdmin's password overwritten with a locally-computed PBKDF2 hash (`rootsuperadmin1@saloonchains.dev` / `ChangeMe123!`, Python `hashlib.pbkdf2_hmac` matching `PasswordHasher.cs`'s SHA256/100k-iterations/32-byte-key exactly) so login worked without touching `AdminSeeder`. Every GET endpoint (~45) was hit for real over HTTP with a valid JWT and real seeded ids, not just unit-tested in isolation — **this is what caught every bug below**: an empty dev DB or a SQL-only test never exercises Dapper's actual row materialization, only a populated `QueryAsync<T>` call does. Container, test server, and isolated build dir were all torn down afterward — nothing left running, the user's own dev server (auto-restarted itself via its own file watcher partway through, on a new PID, still healthy on 5127) was never touched directly.
-
-**Root pattern behind nearly all of it**: this whole backend (5 commits old per git log) had apparently never been exercised against non-empty data before. Npgsql/the registered `DateOnlyTypeHandler`/`TimeOnlyTypeHandler` (`DapperSp.cs`) return `DateOnly`/`TimeOnly` for Postgres `date`/`time` columns, not `DateTime`/`TimeSpan` — a positional (or even init-property) Dapper record needs the *exact* CLR type or materialization throws "no matching constructor" the instant a real row comes back; an empty result set never triggers it. Several other DTOs were also just missing columns entirely (declared fewer/differently-typed params than their SQL's actual output), or used `int` where Postgres `COUNT(*)`/`bigint` needs `long`. Same root cause, multiple flavors, found by grep + live-testing every hit.
-
-Fixed (all in `backend/SaloonApi`, one `db/postgres/03_procs_postgres.sql` proc, verified via re-running the live sweep after each round):
-- **`ChainDto`, `LocationDto`** (`CatalogRepository.cs`): `TimeSpan`/`TimeSpan?` → `TimeOnly`/`TimeOnly?`; `LocationDto.WorkingDaysMask` `byte` → `short`.
-- **`AdminChainDto`**: was missing `BreakStartTime`/`BreakEndTime` entirely (3 params vs the SQL's 5 columns).
-- **`AdminLocationDto`**: was missing 7 columns (`Latitude`, `Longitude`, `OpenTime`, `CloseTime`, `BreakStartTime`, `BreakEndTime`, `WorkingDaysMask`) — admin location edit forms can now actually see/prefill these fields, previously impossible.
-- **`AdminTreatmentRow`**: `DateTime EffectiveFrom` → `DateOnly` (the manual `DateOnly.FromDateTime(...)` conversion downstream in `GetTreatmentsForAdminAsync` was itself only a workaround for this).
-- **`TreatmentCategoryDto`**: was missing `LocationId`/`IsActive` (2 params vs the SQL's 4 columns).
-- **`LocationClosureRow`, `LocationDayScheduleRow`/`Dto`, `TreatmentPriceRow`, `TreatmentDurationRow`**: same `DateTime`→`DateOnly` fix, each with its own now-redundant `DateOnly.FromDateTime(...)` call site simplified to a direct pass-through. `LocationDayScheduleRow/Dto.DayBit` also `byte`→`short`, and their `OpenTime`/`CloseTime` `TimeSpan?`→`TimeOnly?`.
-- **`SalesByServiceDto`, `SalesByStaffDto`, `SalesByLocationDto`, `RetentionDto`, `NoShowRateDto`** (`ReportsRepository.cs`): `int` count fields → `long` (Postgres `COUNT(*)` is `bigint`).
-- **`AdminDbService.sp_Admin_GetDashboardStatsAsync`**: `args.Add("StartDate"/"EndDate", value)` with no `DbType` — the caller passes a bare `DBNull.Value` when no date filter is given, which Dapper can't infer a type for on its own ("member StartDate of type System.DBNull cannot be used as a parameter value"). Added explicit `DbType.Date`.
-- **`fn_Admin_DashboardUpcoming`** (SQL, already covered by the refcursor-split section below but worth repeating): its own `RETURNS TABLE(BookingId int, ...)` shadowed an unqualified `BookingId` reference in a nested subquery — a PL/pgSQL-specific gotcha, fixed by aliasing/qualifying.
-- **`fn_Booking_ConfirmationTreatments`/`GetByIdTreatments`/`ForLocationTreatments`** (SQL): `DurationSlots`/`PreTimeMinutes` came back NULL for any booking whose `TreatmentDurationId` was never backfilled (this seed's bulk-inserted bookings, and plausibly real legacy data) — the two properties are non-nullable `short` in the C# records, so a null crashed materialization. Fixed with `COALESCE(td.DurationSlots, bt.SlotCount)` (the same value already denormalized onto `BookingTreatments` at booking time, per `sp_Booking_CreateDraft`) and `COALESCE(td.PreTimeMinutes, 0)`.
-- **`StaffAttendanceRow`** (`UserRepository.cs`): `DateTime WorkDate` → `DateOnly`; `TimeSpan? ArrivalTime/LeftTime` → `TimeOnly?`; the downstream `.ToString(@"hh\:mm", ...)` display-format call also fixed to `"HH\:mm"` — `TimeOnly`'s custom-format `"hh"` means 12-hour (needs `"tt"` to disambiguate), not 24-hour like `TimeSpan`'s `"hh"` did; using the old format string on the new type would've silently mis-displayed afternoon arrival times as AM hours.
-- **`StaffDbService.sp_Staff_GetAttendanceAsync`/`sp_Staff_LogAttendanceAsync`**: `workDate` was passed as a plain string with `DbType.String` — Postgres has no implicit `text`→`date` cast for function-overload resolution, so the call failed with "function public.sp_staff_getattendance(integer, text) does not exist". Both methods now take `DateOnly workDate` with `DbType.Date`; `UserRepository.cs`'s two call sites updated (the `workDateStr` local is now only used for the API response's string field, or dropped entirely where it had no other use).
-- **`SchedulingRepository.cs`**: `TherapistShiftDto`/`BlockedSlotDto` (`TimeSpan`→`TimeOnly`, both already init-property from the refcursor split below); `ShiftDetailsDto`/`RoomOpeningDetailsDto`/`BlockedSlotDetailsDto` (`DateTime WorkDate`→`DateOnly`, `BlockedSlotDetailsDto`'s `TimeSpan StartTime/EndTime`→`TimeOnly`) — `SchedulingEndpoints.cs`'s six `DateOnly.FromDateTime(shift/opening/blocked.WorkDate)` call sites simplified to direct pass-throughs.
-- **`DashboardUpcomingAppointmentDto`** (`AdminDashboardEndpoints.cs`, from the refcursor split below): `DateTime AppointmentDate`→`DateOnly`, `TimeSpan StartTimeSlot/EndTimeSlot`→`TimeOnly`.
-- **`sp_Admin_GetCustomerProfile`** (SQL): was missing `IsWalkIn` entirely (6 columns vs `CustomerProfileDto`'s 7 params, the trailing `= false` default doesn't exempt it from Dapper's positional column-count match) — added `u.IsWalkIn` to the SELECT and `RETURNS TABLE`.
-
-**Verification**: every GET endpoint across Catalog, Booking, Admin (dashboard/bookings/scheduling/staff/customers/catalog/inventory/payroll/reports/appointment-statuses/block-types/cancel-reasons), Profile, and Config returned 200 (or an *expected* non-200 — a handful of 403/400/404/405 confirmed as correct authorization/validation/routing, not bugs) on the final sweep; 0 unhandled exceptions in the server log; `dotnet build`/`dotnet test` both clean (34/34 tests). **Not verified**: POST/PUT/DELETE write paths (out of scope for this pass — read paths were the entire "does the data even come back" question), and none of this has been run against the user's real dev database yet, only the seeded throwaway one.
-
-## Write-path sweep (POST/PUT/DELETE/PATCH) — IN PROGRESS, this session
-
-After the GET-only sweep above, user asked to also test writes and fix what's broken. Same
-methodology (Docker `postgres:18`, seeded DB, isolated build dir, port 5199, PBKDF2-overwritten
-RootSuperAdmin password) — see the GET-sweep section above for the full setup recipe, not repeated
-here. Test scripts live in `/tmp/wtest*.sh` (this machine only, not committed).
-
-**Fixed so far** (verified via live re-test after each):
-- **Systemic `CALL` vs `SELECT` bug** (~50 call sites across all 10 `backend/SaloonApi/Shared/Data/DbServices/*.cs` files): Postgres rejects `CALL` against a `FUNCTION` (`CALL` only works on an actual `PROCEDURE`, and every proc became a function in the refcursor split above). Fixed mechanically: `"CALL public.sp_X(...)"` → `"SELECT public.sp_X(...)"`.
-- **`SqlExceptionExtensions.IsApplicationError()`** — the single highest-impact bug this session. Was checking `SqlState == "P5000" || == "P0001" || StartsWith("P5")`; this app's ~64 custom business-rule errors (`RAISE EXCEPTION ... USING ERRCODE = '50xxx'`) use plain `50xxx` SQLSTATEs, never `P5xxx`. Every single business-rule validation failure across the entire app (duration-already-in-effect, slot-no-longer-available, etc) was surfacing as an unhandled 500 instead of the intended 409 with the real message. Fixed to `ex.SqlState == "P0001" || (ex.SqlState.Length == 5 && ex.SqlState.StartsWith("50"))`. Verified: duration-delete-in-effect now correctly returns `409 {"title":"Cannot delete a duration that is already in effect."}`.
-- **~11 positional-argument-order / missing-param SQL call bugs**, found via live testing + a static Python audit script cross-referencing every C# `db.ExecuteAsync`/`QuerySingleAsync` SQL string against the actual Postgres function signature (`/tmp/audit2.py`, not committed — paren-depth-balancing signature parser, first version had false positives from nested parens like `varchar(200)`/`numeric(10,2)`, rewritten): `sp_Catalog_AddLocationDaySchedule`, `sp_Catalog_UpdateLocationDaySchedule`, `sp_Catalog_AddTreatmentPrice`, `sp_Catalog_AddTreatmentDuration`, `sp_Admin_CreateBlockType`/`UpdateBlockType` (also wired up previously-dropped `defaultDurationMinutes`/`colorHex` params in `AdminBlockTypesEndpoints.cs`), `sp_Admin_CreateAppointmentStatus`/`UpdateAppointmentStatus` (also fixed `SortOrder` `DbType.Int32`→`DbType.Int16`, SQL column is `smallint`), `sp_Auth_CreateUser` (affects staff+customer creation), `sp_Scheduling_BlockSlot`, `sp_Review_Create` (misleading `createdBy` param renamed to `customerId` — the function has no `CreatedBy` at all, uses `p_CustomerId` for ownership). All fixed via Postgres named-argument calls (`p_X => @X`) instead of positional, so a future signature reorder can't silently break them again.
-- **`sp_Inventory_CreatePurchaseOrder`**: took `public.PurchaseOrderLineType[]` (a composite array type) but the C# side (`AsPurchaseOrderLineList` in `DapperSp.cs`) only ever sends a JSON string — Npgsql composite-array params need a one-time `NpgsqlDataSource.MapComposite<T>()` this codebase never did, so every purchase order failed with "function does not exist". Function rewritten to take `jsonb`, parsed via `jsonb_array_elements`; `InventoryDbService.sp_Inventory_CreatePurchaseOrderAsync` param type changed `object`→`string`/`DbType.String`, SQL call casts `@Lines::jsonb`.
-- **Email templates — `RazorEngineCore` compile error**, blocking `POST /api/admin/staff` and `POST /api/admin/customers` (both send a set-password email synchronously as part of the create flow, uncaught): `RazorEngine` is constructed with no explicit usings (`RazorTemplateEngine.cs`), so a bare `@DateTime.UtcNow.Year` in a template fails with `CS0103: The name 'DateTime' does not exist in the current context`. Hit in 4 templates (`SetPassword.cshtml`, `EmailChangeVerification.cshtml`, `BookingCancellation.cshtml`, `BookingConfirmation.cshtml`) — all fixed by fully-qualifying to `@System.DateTime.UtcNow.Year` rather than reconfiguring the engine's default usings.
-- **`BlockedSlotDetailsDto`** (`SchedulingRepository.cs`): was a 7-param positional record, but `sp_Scheduling_GetBlockedSlotDetails` returns 11 columns (`BlockTypeId`, `BlockTypeName`, `IsPaid`, `ColorHex` weren't in the record at all) — blocked `POST /api/admin/scheduling/blocked-slots` (the create handler re-fetches details afterward to resolve the location for the availability-sync notify call). Fixed by converting to init-property record (matches the established pattern from the GET sweep) — only `Id`/`LocationId`/`WorkDate` are ever actually read by callers, so the extra columns just get ignored now instead of needing every one declared and positionally exact.
-
-**Investigated, not a real bug**: `POST /api/admin/staff/attendance` `"Failed to read parameter ... as JSON"` — this was a cascading failure of the test script, not the API: the test chains staff-creation's returned id into the attendance call's JSON body, so when staff-creation 500'd (the Razor bug above), the body became literally `{"userId":?,...}` — invalid JSON by construction. `LogStaffAttendanceRequest`'s shape (`int UserId, int LocationId, string WorkDate, string? ArrivalTime, string? LeftTime`) matches the intended payload fine. Will re-confirm clean once retested after the Razor fix.
-
-**Noted, not fixed (flagging for whoever picks this up next)**: `AuthService.CreateCustomerAsync`/staff-creation call `SendSetPasswordEmailAsync` synchronously and uncaught — a template-render failure (or, in this sandboxed test env, hitting Gmail's daily SMTP send-limit) throws all the way up through the endpoint, turning what should be a fire-and-forget welcome email into a full 500 on the create request, even though the DB insert already committed. Worth wrapping in try/catch (log + continue) the way `EmailQueueBackgroundService`'s own send failures already are, rather than letting it fail the whole create call — did not make this change yet since it's a design decision (silent-swallow vs surfaced-but-non-fatal) rather than a pure bug fix, and is separate from the DateTime compile bug that was actually blocking the test run.
-
-**Rebuilt and re-running** the isolated test server (`dotnet build -o <scratchpad>/api_test_build`, port 5199) after the fixes above to re-verify Staff/Customers/BlockedSlots writes — see chat for latest results if this file wasn't updated again after that run finished.
-
-**Not yet tested in the write-path pass**: Booking module's full write lifecycle (draft → schedule → confirm → cancel — needs a customer-role login, same PBKDF2-password-override trick applied to a seeded Customer user, not done yet), Review creation, Payment endpoints (create-intent needs a real Stripe test key, blank in this env — expected to fail, not a bug to chase), any remaining Admin/Staff/Customer write endpoints not yet exercised. Catalog, Inventory, Payroll, AppointmentStatuses, BlockTypes, most of Scheduling writes are confirmed clean as of this write.
-
-## refcursor-proc split + Dapper order-independence — DONE, this session
-
-All 10 multi-cursor `PROCEDURE`s in `db/postgres/03_procs_postgres.sql` are now split into single-purpose `RETURNS TABLE(...)` functions, called together via Dapper's native `QueryMultipleAsync` (`SELECT * FROM fn_a(...); SELECT * FROM fn_b(...);` in one round trip) instead of the old hand-rolled `RefCursorGridReader`/refcursor/transaction machinery — which is now **deleted** from `backend/SaloonApi/Shared/Data/DapperSp.cs` (0 remaining callers, confirmed by grep). Every Dapper-materialized row-record type these procedures feed is now an **init-property record** (`record Foo { public int A { get; init; } ... }`) instead of a positional one, so Dapper matches columns by NAME regardless of order/count — this is what fixes the root cause (a positional record required the SQL column order to exactly match its constructor parameter order; `sp_Booking_GetAvailabilityDataRange`'s `EligiblePairs`/`BlockedSlots` cursors had `WorkDate` in the wrong position, which is what originally crashed `AvailabilitySyncStartupHostedService` on startup) and prevents the same bug class recurring even if a SELECT list's column order drifts later.
-
-**Along the way, also fixed real data bugs the split surfaced** (found via a full audit of every multi-cursor proc against its C# consumer, before touching any SQL):
-- `sp_Booking_GetConfirmationDetails`, `sp_Booking_GetById`, `sp_Booking_GetForLocation`: treatment-line queries were missing `DurationSlots`/`PreTimeMinutes` (needed a `LEFT JOIN TreatmentDurations td ON td.Id = bt.TreatmentDurationId`) and `RoomName` (`LEFT JOIN Rooms r ON r.Id = bt.RoomId` — **LEFT**, not INNER, so a treatment line without a room yet isn't silently dropped).
-- `sp_Booking_GetConfirmationDetails` header query was missing `LocationId`/`CustomerId` entirely.
-- `sp_Booking_GetMine`: dead `Reviews` join / unused `HasReview` column removed; was missing `AppointmentStatus*`/`CancelReason*` on the header.
-- `sp_Booking_GetForLocation` was a genuine **structural** bug, not just missing columns: its two cursors (booking-header shape, treatment-line shape) matched neither the flat 31-field `StaffBookingRow` the C# side actually read from a single `ReadAsync<StaffBookingRow>()` call. Split into `fn_Booking_ForLocationHeaders` + `fn_Booking_ForLocationTreatments`, and `BookingRepository.GetForLocationAsync` rewritten to read both and `GroupBy(BookingId)`-join them client-side into `StaffBookingSummaryDto` — same pattern `GetMineAsync` already used. New types: `StaffBookingHeaderRow` + `StaffBookingTreatmentRow` replace the old single `StaffBookingRow`.
-- `sp_Admin_GetDashboardStats`'s shared scoped-locations resolution (an `IF p_Role IN (...) ... ELSIF ...` block previously inlined into one procedure) was factored into `fn_Admin_DashboardScopedLocations(p_Role, p_ChainId, p_LocationId) RETURNS TABLE(LocationId int)`, called by both `fn_Admin_DashboardKpis` and `fn_Admin_DashboardUpcoming` (each into its own local temp table — two independent function calls can't share one the way two `OPEN` statements in one procedure could). **Runtime bug caught by actually executing the split functions, not just parsing them**: `fn_Admin_DashboardUpcoming`'s `RETURNS TABLE(BookingId int, ...)` makes `BookingId` a PL/pgSQL variable in scope for the whole function body — an unaliased nested subquery (`SELECT SUM(Price) FROM public.BookingTreatments WHERE BookingId = c.BookingId`) collided with it ("column reference \"bookingid\" is ambiguous"). Fixed by aliasing that subquery's table and qualifying the column (`FROM public.BookingTreatments bt WHERE bt.BookingId = c.BookingId`). **Any future `LANGUAGE plpgsql RETURNS TABLE(...)` function should watch for this** — a returned column name shadows same-named table columns referenced unqualified anywhere in the body, including nested subqueries; `LANGUAGE sql` functions don't have this problem (no PL/pgSQL variable scope).
-- `sp_Scheduling_GetRoster`, `sp_Inventory_GetPurchaseOrderDetail`, `sp_Payroll_GetPayRunDetail`: no bugs found, pure mechanical split.
-
-**Verification performed**: full `db/postgres/01_table_postgres.sql` → `02_types_postgres.sql` → `03_procs_postgres.sql` loaded clean into a throwaway `postgres:18` Docker container (`docker run --name saloon_validate_pg -p 5433:5432 ...`, `docker cp` each file in, `MSYS_NO_PATHCONV=1 docker exec ... psql -f`, `docker rm -f` when done — always clean up, nothing left holding the port); **every one of the ~30 new functions was actually executed** (`SELECT * FROM fn_x(...)` with placeholder args), not just parsed, which is what caught the ambiguous-column bug above — parsing alone would have missed it. `cd backend/SaloonApi && dotnet build` succeeds (0 errors, 0 warnings) after every change.
-
-**Not verified**: against the project's real dev database (no Postgres reachable in this environment — `docker ps` was empty, no local service on 5432), and no live end-to-end app run (no running backend to hit these endpoints through). Before considering this fully done: run `db/postgres/03_procs_postgres.sql` against the real dev DB, start the API, and exercise booking availability (the original crash), booking confirm/get-by-id/my-bookings/staff-for-location views, the scheduling roster, the admin dashboard, a purchase order detail page, and a pay run detail page.
+Test env used this session: the real remote dev DB (`ConnectionStrings__SaloonDb=Host=server;
+Port=5432;Database=saloon_db;Username=dev;Password=m00ns00n`). Seeded RootSuperAdmin login is
+`rootsuperadmin@saloons.local` / `admin123`. The only customer is id 9. Location 1 ("Location 1",
+`TimeZoneId='UTC'`, open 09:00–18:00) has rooms r1/r2, therapists th2/th3 (TherapistProfile ids
+1/2), and room-category + shift scheduling for 2026-08-31 and 2026-09-01 only.
 
 ---
 
-## What this session did, in order (for context if you need to cross-reference)
+## Done this session
 
-1. **Backend security/perf/correctness audit** (`backend/SaloonApi`, `db/`) — all done, deployed pending the user's own `sqlcmd` run against their dev DB (I don't have DB access in this environment):
-   - Stripe checkout session now bound to `bookingId` via metadata (was a payment-fraud hole).
-   - `confirm-manual` payment endpoint restricted to `StaffAccess` + ownership check, rejects Stripe-provider payments.
-   - `GET /api/payments/booking/{id}` restricted to `StaffAccess` (was an IDOR).
-   - 48h cancellation window now resolves venue timezone instead of comparing local wall-clock to UTC directly (`BookingService.IsWithinCancellationWindow`, unit-tested in `SaloonApi.Tests/CancellationWindowTests.cs`).
-   - N+1 fixes: `BookingService.WarmAvailabilityAsync` (bounded `Parallel.ForEachAsync`), `StaffAttendanceSweepHostedService` (manager lookup deduped per location).
-   - `sp_Catalog_Search` rewritten (EXISTS instead of LEFT JOIN + DISTINCT fan-out); added `IX_Treatments_LocationId` / `IX_TreatmentCategories_LocationId` (`db/01_tables.sql` + `db/migrations/014_treatments_location_index.sql`).
-   - **Staff/location availability correctness bug**: `EligibleShifts` in `sp_Booking_GetAvailabilityData`/`...Range` treated a therapist with no shift *that specific day* as available all-day in every room — fixed to check "never shift-assigned at all" (matches the existing "legacy" comment's actual intent). `GetAvailableSlotsAsync` now also honors `WorkingDaysMask` (previously only checked `IsHoliday`).
-   - **Write-path re-validation**: new `sp_Booking_ValidateSlotEligibility` (`db/03_procs.sql`) re-checks room/therapist/time eligibility server-side at commit time — wired into `sp_Booking_ScheduleTreatment`, `sp_Booking_RescheduleConfirmed`, `sp_Booking_ReassignTherapist`. Previously these only checked for a *conflicting* booking, never that the submitted combination was legitimate at all.
-   - Booking-conflict guards added where missing: `sp_Scheduling_UpdateTherapistShift`, `sp_Booking_CreateDraft` (silently-dropped-treatment guard), `sp_Catalog_UpdateLocation` (deactivation / hours-shrink guard).
-   - **Not verified against a live DB** — auto-mode blocks direct `sqlcmd` access in this environment. User needs to run `db/01_tables.sql` (or just the migration), then `db/03_procs.sql`, against their dev DB and sanity-check booking/search/scheduling.
+### 1. Backend hang / ThreadPool starvation  (committed `8394947`, `1a68e0b`, `6a29995`)
+- **`RedisConnectionProvider`** was taking a lock on every `GetMultiplexer()` call and holding it
+  across the *synchronous* `ConnectionMultiplexer.Connect()`. A flaky Redis serialized the whole
+  thread pool → API hung, and even Postgres DNS lookups failed with `EAGAIN`. Now: lock-free
+  happy path, single-flight connect (Interlocked gate, no lock across `Connect()`),
+  `ConnectTimeout=2000`, `AbortOnConnectFail=false`.
+- **`Program.cs`** — `ThreadPool.SetMinThreads(ProcessorCount*8, ≥64)` at startup so a burst of
+  synchronous `getaddrinfo` (every Npgsql open) can't collapse the pool.
+- **`SqlConnectionFactory`** — caps the Npgsql connect `Timeout` at 10s.
+- **`Dockerfile`** — reverted `aspnet:10.0-noble-chiseled-extra` → `aspnet:10.0` (Debian). The
+  chiseled image ships no `/etc/nsswitch.conf`; under load glibc name resolution returned EAGAIN.
+- Immediate mitigation applied by the user: `SALOON_DB_CONN_STRING` / `POSTGRES_HOST` now points
+  at the DB **IP**, so no hostname resolution on the hot path.
 
-2. **Client portal sidebar nav** (`frontend/apps/clientportal`) — done. `components/Nav.tsx` rebuilt as a collapsible sidebar matching `adminportal`'s pattern (desktop rail + mobile drawer, localStorage-persisted collapse). `App.tsx`'s `AuthedLayout` switched to the `flex h-screen` sidebar+content layout.
+### 2. BackgroundService crash-loop  (committed `de4ca0c`)
+`StaffAttendanceSweepHostedService` only caught `OperationCanceled` / `InvalidOperation` /
+`DbException`; a `RedisConnectionException` escaped → `BackgroundServiceFaulted` → default
+`StopHost` → compose `restart: unless-stopped` crash-loop. Added a broad top-level
+`catch (Exception)` guard matching the three sibling sweep services.
 
-3. **Tooltip sweep, both apps** — done. New `Tooltip` component in `packages/ui/src/components/Tooltip.tsx`, built on `@radix-ui/react-tooltip` (added as a real dependency — portal-rendered so it isn't clipped by `overflow:hidden` ancestors, auto-flips off viewport edges, `asChild` trigger so it doesn't inject a wrapper `<div>` that would break absolutely-positioned triggers). `TooltipProvider` mounted once at each app's root in `App.tsx`. All 26 real `title=` attributes across both apps replaced (verified via `grep title=\{` — remaining hits are all `PageHeader`'s `title` prop, a false positive on the grep, not the HTML attribute). One nuance: a `disabled` native `<button>` doesn't reliably fire hover events, so `CustomersPage.tsx`'s two disabled-button tooltips wrap the `Button` in a plain `<span>` that's the actual Radix trigger.
+### 3. SSE backplane re-subscription  (committed `de4ca0c` / `8394947`)
+`SseBroadcaster` only subscribed to the Redis pub/sub channel once, in the constructor — if Redis
+was down at startup it fell back to local-only *forever*. Now `TryAttachSubscription(mux)` is
+called from the `Publish`/`Subscribe` paths; it holds a tiny lock for a pointer compare only and
+fires `SubscribeAsync` fire-and-forget (no blocking on the hot path). Re-subscribes if
+`RedisConnectionProvider` hands back a new multiplexer.
 
-4. **React 19 hook adoption sweep — this is what's in progress.** See below.
+### 4. Durable email outbox  (committed `fbef7c8`)
+Non-alert emails (booking confirm/cancel, set/reset password, email-change verify, manager
+alerts) no longer use the in-memory `Channel` queue (which dropped everything on a restart).
+- New `public.EmailOutbox` table + 4 routines (`sp_EmailOutbox_Enqueue`, `fn_EmailOutbox_Claim`
+  with `FOR UPDATE SKIP LOCKED`, `sp_EmailOutbox_MarkSent`, `sp_EmailOutbox_MarkFailed`) in
+  `db/postgres/03_procs_postgres.sql`.  **Migration: `db/postgres/migrations/001_email_outbox.sql`.**
+- `IBackgroundEmailQueue.EnqueueAsync` INSERTs a row (`EmailOutboxQueue` → `EmailOutboxDbService`).
+- `EmailQueueBackgroundService` rewritten as a poll loop (`EmailOptions.OutboxPollSeconds`, default
+  10) → claim batch → send → mark Sent / Failed (linear backoff, `OutboxMaxAttempts` default 5).
+- `BackgroundEmailQueue.cs` deleted. Developer error alerts still send inline via
+  `IDeveloperErrorNotifier` (work even when the DB is down).
+- Round-trip pinned by `SaloonApi.Tests/EmailOutboxPayloadTests.cs`.
 
-## Why the hook sweep
+### 5. SuperAdmin can always emulate  (committed `5ae46a8`)
+New `UserRole.CanAlwaysEmulate()` (`RootSuperAdmin` or `SuperAdmin`) is the single source of
+truth, applied at all 4 sites that hard-coded `Role == RootSuperAdmin`
+(`AuthService.EmulateCustomerAsync` / `LoginAsync` / `RefreshAsync`, `AuthEndpoints /me`).
+`CustomersPage.tsx` now shows/enables the emulate button for SuperAdmin and doesn't apply the
+per-customer "no bookings in your chain" restriction to them.
 
-`CLAUDE.md` states a policy: "Prefer native React 19 hooks (`useEffectEvent`, `useSyncExternalStore`, `useActionState`, `useFormStatus`)". An audit (two Explore-agent surveys, one per app) found **0% adoption** of any React 19 hook in either app — every form/toggle is hand-rolled `useState`+`useEffect`. Full findings and file lists are in the two agent reports (not saved to disk, but the file lists below are complete and were cross-checked against the actual files).
+### 6. Calendar popup "Add appointment" gated on emulate  (committed `5ae46a8`)
+`QuickActionsPopover` gained `showAddAppointment?: boolean`; `CalendarPage` passes
+`canAddAppointment={!!currentUser?.canEmulate}` (that action books via customer emulation).
 
-## The `useActionState` recipe (established, now consistent across 4 files)
+### 7. Calendar "cannot open room"  (committed `5ae46a8`)
+`CalendarPage.tsx` — the room-category `<select>` is `disabled={categories.length === 0}` and the
+category load swallowed all errors (`.catch(() => {})`). Now load errors surface in the page
+banner and a "No treatment categories for this location — add one in Catalog" hint shows.
 
-Replaces the `const [loading, setLoading] = useState(false)` + `const [error, setError] = useState(...)` + `try { setLoading(true); await api(...) } catch { setError(...) } finally { setLoading(false) }` shape.
+### 8. Client "no available open dates" — two root causes
+**a. `sp_Booking_GetLocationOpenDates` too strict**  (committed) — required an explicit
+`RoomCategoryAssignments` **and** `ShiftAssignments` row for the exact date, stricter than the
+actual slot engine (`fn_Booking_AvailabilityRangeEligiblePairs`, which also accepts a floating
+therapist with no shifts, and treats all rooms as open when the location has no RCA anywhere).
+Rewritten to mirror the engine. **Migration: `db/postgres/migrations/002_align_location_open_dates.sql`.**
 
-**Single-string-error case** (see `MyBookingsPage.tsx`'s `ReviewForm.submit`, converted):
-```tsx
-const [error, submitAction, submitting] = useActionState<string | null>(async (previousError) => {
-  if (someGuardThatShouldNoOp) return previousError; // or return null / a new message
-  try {
-    await api.call(...);
-    onSuccessSideEffect();
-    return null;
-  } catch (err) {
-    return err instanceof ApiError ? err.message : 'Fallback message.';
-  }
-}, null);
-// wire: onClick={() => submitAction()}  (not tied to a <form>)
-// button: disabled={submitting}
-```
+**b. Dapper `QueryAsync<DateOnly>` silently returns `DateOnly.MinValue`**  (committed `59c7f47`) —
+Dapper treats `DateOnly` as a POCO for a bare column and never calls `DateOnlyTypeHandler`, so
+`BookingDbService.sp_Booking_GetLocationOpenDatesAsync` got `{0001-01-01}` for every row →
+`BookingService.GetAvailableDatesAsync` line ~66 (`if (!openDates.Contains(d)) continue;`) dropped
+every real date → `[]`. Fixed with an `OpenDateRow { public DateOnly WorkDate }` wrapper record.
+Verified live: `available-dates?treatmentIds=1` now returns `["2026-09-01"]`.
+See `~/.claude/.../memory/project_dapper_dateonly_scalar.md`.
 
-**Multi-field state case** (see `LoginPage.tsx`, `ForgotPasswordPage.tsx`, `ResetPasswordPage.tsx`, `MyBookingsPage.tsx`'s `BookingCard.handleConfirmCancel` — all converted): bundle every piece of derived state (`error`, `submitError` for `getFieldError`, `done`/`submitted` flags, etc.) into one object type, return the whole object from every branch:
-```tsx
-interface FooState { error: string | null; submitError: unknown; done: boolean }
-const INITIAL: FooState = { error: null, submitError: null, done: false };
-const [{ error, submitError, done }, handleSubmit, submitting] = useActionState<FooState>(async () => {
-  // early-return client-side validation still returns the full shape, e.g.:
-  // if (password !== confirmPassword) return { error: 'Passwords do not match.', submitError: null, done: false };
-  try {
-    await api.call(...);
-    return { error: null, submitError: null, done: true };
-  } catch (err) {
-    return { error: err instanceof ApiError ? err.message : 'Something went wrong', submitError: err, done: false };
-  }
-}, INITIAL);
-```
-When it's a real `<form onSubmit={handleSubmit}>` with a `SyntheticEvent` handler, change to **`<form action={handleSubmit}>`** (drop the param, drop `e.preventDefault()` — React 19 form actions handle that natively) — see all three files above for the exact diff shape.
+### 9. Time-slot select crashed: `DateTime Kind=Unspecified` → `TIMESTAMPTZ`  (committed `59c7f47`)
+`BookingTreatments.StartTime/EndTime` are `TIMESTAMPTZ`; the client-supplied times arrived
+`Kind=Unspecified` and Npgsql refuses those. Added `BookingDbService.AsUtc()` on the
+`sp_Booking_ScheduleTreatment` / `sp_Booking_RescheduleConfirmed` param binds.
 
-**Known limitation, accepted**: `useActionState` has no external setter, so a handler that used to eagerly clear `error`/`submitError` on an unrelated UI event (e.g. `LoginPage.handleModeChange`/`handleFillDemo` switching tabs, previously called `setError(null)`) can no longer do that directly. Left as-is in the 4 converted files — the stale error just clears on the next submit attempt instead of immediately on mode-switch. Minor UX nuance, not a bug; mention it if asked but don't over-engineer a workaround (a full remount via `key` isn't worth it here).
+### 10. Client timezone header → UTC storage  (working tree — NOT yet committed)
+Per decision: **server stores every timestamp UTC; clients render in their own zone.**
+- `Shared/Http/RequestContext.cs` — scoped `IRequestContext` with `ClientTimeZone`
+  (from `X-Timezone`, IANA id, UTC fallback), `ClientNow` / `ClientToday`, and
+  `ToUtc(DateTime clientLocal)`.
+- `Shared/Http/RequestContextMiddleware.cs` — reads the `X-Timezone` header. Registered scoped +
+  `app.UseMiddleware<RequestContextMiddleware>()` right after `CorrelationIdMiddleware`.
+- `BookingService.ScheduleTreatmentAsync` / `RescheduleConfirmedAsync` now call
+  `requestContext.ToUtc(start/end)` before persisting (`AsUtc` in the DbService stays as a net).
+- Both portals' `api/client.ts` request interceptors send
+  `X-Timezone: Intl.DateTimeFormat().resolvedOptions().timeZone` on every call. CORS is
+  `AllowAnyHeader()`, no change needed.
+- **Live-verified**: `Asia/Kolkata` + naive `15:00` → stored `09:30:00Z`; `...Z` input →
+  passthrough; no header → UTC.
 
-## clientportal — `useActionState` remaining (6 of 10 files done)
+### Sweeps run (no further bugs found)
+- Reflection validator: all **58 single-result `QueryAsync<Record>` DbService paths** vs live
+  `pg_get_function_result` → 0 column-name / type mismatches.
+- Param-binding validator: **190 `sp_/fn_` invocations** vs `pg_get_function_arguments` → 0 real
+  issues (23 flags were all OUT-param or `integer[]` artifacts).
+- Only scalar `QueryAsync<value-type>` and non-UTC `DbType.DateTime`→TIMESTAMPTZ were buggy; both
+  classes fully resolved (#8b, #9).
 
-Done: `LoginPage.tsx`, `ForgotPasswordPage.tsx`, `ResetPasswordPage.tsx`, `MyBookingsPage.tsx` (both instances).
+---
 
-**Still to do** (apply the exact recipe above):
-- `pages/VerifyEmailPage.tsx` (`handleConfirm`, `submitting`/`error`)
-- `components/VerifyEmailGate.tsx` (`handleSend`, `sending`/`error`)
-- `pages/ProfilePage.tsx` — **3 separate instances in one file**: `handleSave` (`saving`/`error`/`submitError`), `handleChangeEmailRequest` (`emailSubmitting`/`emailError`/`emailSubmitError`), `handlePasswordResetRequest` (`passwordResetSubmitting`/`passwordResetError`)
-- `features/booking/TreatmentsStep.tsx` (`handleNext`, `loading`/`error`) — **also has a manual `inFlight` ref for double-click guarding** (added earlier this session, see the ponytail-comment above it). `useActionState`'s `pending` boolean is derived from the action's own transition and already prevents concurrent invocations when the action is only ever invoked through the hook's returned dispatcher — so once converted, the `inFlight` ref becomes redundant and should be removed, not kept alongside it.
-- `features/booking/PaymentStep.tsx` (`handlePaymentAndConfirm`, `isProcessing`/`paymentError`) — **same `inFlight` ref removal applies** (`paymentInFlight`, also added this session). Be careful here: this function has an early `return` for the Stripe-redirect branch (`window.location.href = checkoutUrl; return;`) that never resolves the action — check that this doesn't leave `submitting` stuck true forever (it navigates away from the page immediately after, so in practice it's harmless, but return a valid state object from that branch too rather than a bare `return` if adapting the shape used above).
+## Deploy checklist
 
-## clientportal — other hooks remaining
+1. **Run migrations against the DB** (order): `db/postgres/migrations/001_email_outbox.sql`,
+   then `db/postgres/migrations/002_align_location_open_dates.sql`.
+   (Or re-run the full `db/postgres/03_procs_postgres.sql` + the `EmailOutbox` block from
+   `01_table_postgres.sql`.)
+2. **Rebuild + redeploy the backend image** (Debian base now — was chiseled).
+3. **Rebuild + redeploy both frontends** (adminportal, clientportal — `X-Timezone` interceptor,
+   emulate/calendar UI changes).
+4. Commit the working-tree changes for item **#10** (RequestContext + middleware + BookingService
+   + both `client.ts`) — everything else is already committed.
 
-- **`useMemo`**: `pages/ExplorePage.tsx` (`filteredVenues`, recomputed every render — memoize on `[venues, selectedCategory]`); `pages/VenueDetailPage.tsx` (`categories` derived from `treatments`, and a per-category `.filter()` re-run inside a `.map()` on every render/tab-click — memoize `categories` on `[treatments]`, and build a `Map<string, Treatment[]>` grouped by category once instead of re-filtering per category per render).
-- **`useSyncExternalStore`**: `features/auth/AuthContext.tsx` — `user` state is manually kept in lockstep with `localStorage` (read at mount, written on every mutation). Converting to `useSyncExternalStore` also fixes a real bug: another tab logging out currently does NOT update this tab (only the SSE `user-logged-out` listener triggers a refresh, not a `storage` event). Lower-value near-duplicate: `components/Nav.tsx`'s `collapsed` state mirrors `localStorage` the same way (cosmetic, single-tab, lower priority).
-- **`useOptimistic`** (not started, 3 spots): `features/booking/useBookingFlow.ts` `removeTreatment`/`addTreatment` (treatment chip removal waits for the DELETE to resolve before disappearing; add re-fetches the whole booking via a second GET) — see `features/booking/TreatmentBar.tsx` for where the removed line is rendered. `pages/MyBookingsPage.tsx`'s `handleConfirmCancel` (now converted to `useActionState` — could layer `useOptimistic` on top so cancellation looks instant instead of the `setTimeout(..., 1500)` delay before `onReload()`, but this is an *additional* enhancement on top of the already-done `useActionState` conversion, not required to consider the file "done").
-- **`useDeferredValue`**: `pages/ExplorePage.tsx` — `selectedCategory` tab clicks drive a synchronous client-side `.filter()` over the venue grid; wrap in `useDeferredValue(selectedCategory)` (or `startTransition` the `setSelectedCategory` call) so the tab click itself doesn't block on the grid re-render. Separate from the search box's existing debounce — additive, not a duplicate fix.
-- `useCallback`, `useId`, `useImperativeHandle` — audited, no genuine opportunities found in this app. Don't chase these speculatively.
+## Follow-ups (not done — judgement calls)
 
-## adminportal — `useActionState` remaining (0 of ~30 files done, not started)
-
-Every file below has the identical `useState(loading)` + `useState(error)` + `try/catch/finally` shape around a form submit or CRUD save. Apply the exact recipe above to each:
-
-`pages/DashboardPage.tsx`, `pages/ProfilePage.tsx` (3 instances — load/save, save, password reset, same as clientportal's), `pages/SettingsPage.tsx`, `pages/LoginPage.tsx`, `pages/ForgotPasswordPage.tsx`, `pages/ResetPasswordPage.tsx`, `pages/VerifyEmailPage.tsx`, `pages/bookings/BookingsPage.tsx`, `pages/calendar/CalendarPage.tsx`, `pages/catalog/LocationUsersPage.tsx`, `pages/catalog/LocationsPage.tsx` (`handleSubmit`), `pages/catalog/MyLocationPage.tsx`, `pages/catalog/SaloonUsersPage.tsx`, `pages/catalog/SaloonsPage.tsx`, `pages/catalog/TreatmentCategoriesPage.tsx`, `pages/catalog/TreatmentDurationsPage.tsx`, `pages/catalog/TreatmentPricesPage.tsx`, `pages/catalog/TreatmentsPage.tsx` (`handleSubmitTreatment`), `pages/customers/ClientProfilePage.tsx`, `pages/customers/CustomersPage.tsx`, `pages/inventory/InventoryPage.tsx`, `pages/payroll/PayrollPage.tsx`, `pages/settings/AppointmentStatusesPage.tsx`, `pages/settings/BlockTypesPage.tsx`, `pages/staff/RoomsPage.tsx`, `pages/staff/StaffPage.tsx` (`handleSubmit`), `components/AddLocationWizard.tsx`, `components/ClosuresModal.tsx`, `components/DayScheduleModal.tsx`, `components/EditBlockSlotModal.tsx`.
-
-**Suggested order**: do `ProfilePage.tsx` first (3 instances, same shape as the already-converted clientportal version — copy the pattern directly), then the small standalone auth pages (`LoginPage`/`ForgotPasswordPage`/`ResetPasswordPage`/`VerifyEmailPage` — these are near-identical to the already-converted clientportal ones, just copy the diff shape), then work through the `catalog`/`settings`/`staff` CRUD pages and modals, which all share the same "save one record, refetch the list" shape.
-
-## adminportal — `useOptimistic` remaining (0 of ~13 files done, not started)
-
-Every file below does `await PUT(...)` then `await loadWholeList()` before any visual change — the toggle/switch visibly lags a full round trip. Recipe: `useOptimistic(list, (state, updatedItem) => state.map(x => x.id === updatedItem.id ? updatedItem : x))`, flip locally inside a `startTransition`, let the real PUT+refetch reconcile (or roll back) after.
-
-`pages/catalog/LocationsPage.tsx` (`toggleActive`), `pages/staff/StaffPage.tsx` (`toggleActive`/`toggleEmulator`), `pages/customers/CustomersPage.tsx`, `pages/inventory/InventoryPage.tsx`, `pages/catalog/LocationUsersPage.tsx`, `pages/catalog/SaloonUsersPage.tsx`, `pages/catalog/TreatmentCategoriesPage.tsx`, `pages/catalog/TreatmentsPage.tsx`, `pages/settings/AppointmentStatusesPage.tsx`, `pages/settings/BlockTypesPage.tsx`, `pages/staff/RoomsPage.tsx`.
-
-Given 11+ files share the exact same shape, consider building one small shared hook (e.g. `useOptimisticToggle` in a shared location) that wraps this pattern once, rather than hand-rolling `useOptimistic` calls in each file independently — lower risk of the 11 conversions drifting out of sync with each other.
-
-## adminportal — other hooks remaining
-
-- **`useMemo`**: `pages/calendar/CalendarPage.tsx` — `flatTreatments` (`extractFlatTreatments(bookings)`), `timeSlots` (`generateTimeSlots(...)`), and especially `blockSpans` (`computeBlockSpans(rooms, roster.blockedSlots, timeSlots)` — does a filter+map+sort+cluster pass per room, the one genuinely non-trivial derived-data computation in either app) are all called unconditionally in the render body of a 1356-line grid page with lots of unrelated re-render triggers (hover popovers, modal opens). Memoize on their actual inputs.
-- **`useCallback`**: `components/Nav.tsx` — `NavLink`/`NavSubLink` are `memo()`-wrapped but every call site passes `onClick={() => setMobileOpen(false)}` inline (~12 call sites), defeating the memo. Fix: `const closeMobile = useCallback(() => setMobileOpen(false), [])` once, reuse across all call sites. (Note: this file's tooltip wrapping was already done this session — check current line numbers before editing, they've shifted.) Secondary/lower-value: `DateInput.tsx`/`TimeInput.tsx` are also `memo()`-wrapped with the same issue at ~10 call sites across `AddLocationWizard.tsx`, `EditBlockSlotModal.tsx`, `BookingsPage.tsx`, `DashboardPage.tsx`, `StaffPage.tsx`, `AttendanceTab.tsx` — lower priority, not worth chasing individually.
-- `useDeferredValue`/`useTransition`, `useId`, `useSyncExternalStore`, `useImperativeHandle` — audited, no genuine opportunities found in this app (search inputs operate on lists the code's own comments describe as "tens, not thousands"; no hand-rolled ids; SSE listeners are correctly modeled as `useEffect`, not an external-store snapshot; the one `forwardRef` in `CalendarPage.tsx` is standard DOM-ref forwarding for `react-datepicker`, nothing to replace). Don't chase these.
-
-## Verification checklist for whoever continues this
-
-After each file (or small batch): `cd frontend/apps/clientportal && npx tsc --noEmit -p .` (clientportal) or `cd frontend/apps/adminportal && npx tsc -b --force` (adminportal — `tsc --noEmit -p .` is a no-op there, known gotcha). Run `npx oxlint` in each app when done with a batch. No live-backend smoke test was done for any of the hook conversions in this session — the user should exercise each converted form/toggle in a running app before considering this fully done, same caveat as the SQL changes above.
+- **Slot generation is still naive server-local.** `SlotCalculator` / `GetAvailableSlotsAsync` /
+  `GetAvailableDatesAsync` use `DateTime.Now` and emit `Kind=Unspecified` times. This is only
+  correct while the server runs UTC *and* the venue `TimeZoneId='UTC'` (current dev setup). The
+  right model: generate slots as real UTC instants using `Location.TimeZoneId`, and make the
+  "past slot" / "today" cutoffs UTC-absolute (or use `IRequestContext.ClientToday`/`ClientNow`).
+- **`sp_Booking_HasLocationRoomOpenings`** still uses the old strict RCA⋈shift⋈therapist
+  definition — only toggles "mask-only vs openDates-gated" mode, so lower priority, but it should
+  match `sp_Booking_GetLocationOpenDates` for consistency.
+- **DataProtection keys** log as ephemeral (`/root/.aspnet/DataProtection-Keys`) — every backend
+  restart invalidates issued cookies/tokens. Mount a volume there or `PersistKeysToFileSystem`
+  at `/app/uploads`.

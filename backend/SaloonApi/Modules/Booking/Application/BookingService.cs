@@ -5,6 +5,7 @@ using SaloonApi.Modules.Payment.Infrastructure;
 using SaloonApi.Shared.Caching;
 using SaloonApi.Shared.Email;
 using SaloonApi.Shared.Email.TemplateModels;
+using SaloonApi.Shared.Http;
 using SaloonApi.Shared.Realtime;
 using System.Globalization;
 using System.Text.Json;
@@ -21,6 +22,7 @@ internal sealed class BookingService(
     PaymentRepository paymentRepo,
     IPaymentGatewayFactory paymentGatewayFactory,
     IServiceScopeFactory scopeFactory,
+    IRequestContext requestContext,
     ILogger<BookingService> logger)
 {
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(
@@ -194,6 +196,10 @@ internal sealed class BookingService(
     public async Task<DateTime> ScheduleTreatmentAsync(
         int bookingId, int customerId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
+        // Client posts the slot as its own wall-clock; the DB stores UTC. Convert via the caller's
+        // X-Timezone (RequestContext); an already-UTC value passes through untouched.
+        start = requestContext.ToUtc(start);
+        end = requestContext.ToUtc(end);
         var (expiresAt, locationId) = await repo.ScheduleTreatmentAsync(bookingId, customerId, treatmentId, roomId, therapistId, start, end);
         _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
         return expiresAt;
@@ -203,6 +209,8 @@ internal sealed class BookingService(
     // See sp_Booking_RescheduleConfirmed for why this can't reuse ScheduleTreatmentAsync above.
     public async Task RescheduleConfirmedAsync(int bookingId, int treatmentId, int roomId, int therapistId, DateTime start, DateTime end)
     {
+        start = requestContext.ToUtc(start);
+        end = requestContext.ToUtc(end);
         var locationId = await repo.RescheduleConfirmedAsync(bookingId, treatmentId, roomId, therapistId, start, end);
         _ = SyncAndNotifyAsync(locationId, DateOnly.FromDateTime(start));
     }

@@ -154,6 +154,13 @@ axiosInstance.interceptors.request.use((config) => {
   }
   const isPublicPath = NO_AUTH_HEADER_PATHS.some((p) => config.url?.endsWith(p));
   if (authToken && !isPublicPath) config.headers.set('Authorization', `Bearer ${authToken}`);
+  // Server stores every timestamp in UTC; it uses this IANA zone to interpret caller-local
+  // wall-clock times (e.g. a booking slot) on write. Display-side conversion happens here.
+  try {
+    config.headers.set('X-Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {
+    /* no Intl tz available -- server falls back to UTC */
+  }
   return config;
 });
 
