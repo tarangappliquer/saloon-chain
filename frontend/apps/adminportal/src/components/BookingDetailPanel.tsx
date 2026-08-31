@@ -79,7 +79,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setSettingStatusId(id ?? 'clear');
     setError(null);
     try {
-      await adminBookingsApi.apiAdminBookingsIdStatusPut(booking.bookingId, { appointmentStatusId: id });
+      await adminBookingsApi.apiAdminBookingsIdStatusPut(booking.bookingId, { appointmentStatusId: id ?? 0 });
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update appointment status');
@@ -94,7 +94,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setError(null);
     try {
       // NO_REASON_ID is the local "No Reason Provided" fallback -> send null (server default).
-      const reasonId = cancelReasonId === NO_REASON_ID ? null : cancelReasonId;
+      const reasonId = cancelReasonId === NO_REASON_ID ? 0 : cancelReasonId;
       await adminBookingsApi.apiAdminBookingsIdCancelPost(booking.bookingId, { cancelReasonId: reasonId });
       setShowCancelPicker(false);
       onChanged();

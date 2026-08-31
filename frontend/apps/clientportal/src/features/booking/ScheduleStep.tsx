@@ -42,7 +42,7 @@ export function ScheduleStep() {
     if (!locationId) return;
     let isMounted = true;
     catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => {
-      if (isMounted) setTreatments(data as unknown as Treatment[]);
+      if (isMounted) setTreatments(data);
     });
     return () => {
       isMounted = false;
@@ -91,21 +91,21 @@ export function ScheduleStep() {
 
   useEffect(() => {
     if (state.restoring || !booking || !locationId) return;
-    const tIds = booking.treatments.map((t) => t.treatmentId);
+    const tIds = booking.treatments.map((t) => t.treatmentId).filter((id): id is number => id !== undefined);
     loadDates(locationId, tIds, Number(bookingId));
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [state.restoring, locationId, treatmentIdsKey, loadDates, bookingId]);
 
   useEffect(() => {
     if (!booking || !locationId || !date) return;
-    const tIds = booking.treatments.map((t) => t.treatmentId);
+    const tIds = booking.treatments.map((t) => t.treatmentId).filter((id): id is number => id !== undefined);
     loadSlots(locationId, date, tIds);
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [treatmentIdsKey, locationId, date, loadSlots]);
 
   const handleRealtimeUpdate = () => {
     if (booking && locationId) {
-      const tIds = booking.treatments.map((t) => t.treatmentId);
+      const tIds = booking.treatments.map((t) => t.treatmentId).filter((id): id is number => id !== undefined);
       loadDates(locationId, tIds, Number(bookingId));
       if (date) {
         loadSlots(locationId, date, tIds);
@@ -117,7 +117,7 @@ export function ScheduleStep() {
   const handleMonthYearChange = useCallback(
     (year: number, month: number) => {
       if (!booking || !locationId) return;
-      const tIds = booking.treatments.map((t) => t.treatmentId);
+      const tIds = booking.treatments.map((t) => t.treatmentId).filter((id): id is number => id !== undefined);
       const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const lastDayNum = new Date(year, month + 1, 0).getDate();
       const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
@@ -190,7 +190,7 @@ export function ScheduleStep() {
   };
 
   const invalidLines = booking.treatments.map((line) => {
-    const slots = state.slotsByTreatment[line.treatmentId] ?? [];
+    const slots = (line.treatmentId !== undefined ? state.slotsByTreatment[line.treatmentId] : undefined) ?? [];
     const hasSlots = slots.length > 0;
     const hasSelectedSlot = line.startTime !== null;
 

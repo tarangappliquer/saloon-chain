@@ -50,7 +50,7 @@ export function DayScheduleModal({
     setError(null);
     adminCatalogApi
       .apiAdminCatalogLocationsIdDayScheduleGet(locationId)
-      .then(({ data }) => setHistory(data as unknown as LocationDaySchedule[]))
+      .then(({ data }) => setHistory(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load day schedule'));
   }
 
@@ -111,11 +111,11 @@ export function DayScheduleModal({
     try {
       const payload = {
         dayBit: addingForBit,
-        openTime: form.isClosed ? null : toApiTime(form.openTime)!,
-        closeTime: form.isClosed ? null : toApiTime(form.closeTime)!,
+        openTime: form.isClosed ? '' : (toApiTime(form.openTime) ?? ''),
+        closeTime: form.isClosed ? '' : (toApiTime(form.closeTime) ?? ''),
         isClosed: form.isClosed,
         effectiveFrom: form.effectiveFrom,
-        effectiveTo: resolveEffectiveTo(form.mode, form.effectiveFrom, form.effectiveTo),
+        effectiveTo: resolveEffectiveTo(form.mode, form.effectiveFrom, form.effectiveTo) ?? '',
       };
       if (editingId !== null) {
         await adminCatalogApi.apiAdminCatalogLocationsIdDayScheduleScheduleIdPut(locationId, editingId, payload);

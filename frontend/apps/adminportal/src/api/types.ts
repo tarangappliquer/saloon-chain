@@ -1,3 +1,29 @@
+import type {
+  AdminBookingDto,
+  AdminChainDto,
+  AdminCustomerDto,
+  AdminCustomersPageDto,
+  AdminLocationDto,
+  AdminTreatmentDto,
+  AuthResponse as ApiAuthResponse,
+  BlockedSlotDto,
+  CustomerSummaryDto,
+  LocationClosureDto,
+  LocationDayScheduleDto,
+  PaymentDto,
+  ProfileResponse,
+  RoomDto,
+  RoomOpeningDto,
+  RosterDto,
+  StaffBookingTreatmentLineDto,
+  StaffUserDto,
+  TherapistDto,
+  TherapistShiftDto,
+  TreatmentCategoryDto,
+  TreatmentDurationDto,
+  TreatmentPriceDto,
+} from '@saloon/api-client';
+
 export type UserRole = 'RootSuperAdmin' | 'SuperAdmin' | 'Admin' | 'Manager' | 'Receptionist' | 'Therapist' | 'Other' | 'Customer';
 
 const ROLE_MAP: Record<number, UserRole> = {
@@ -25,251 +51,45 @@ export function normalizeUserRole(role: unknown): UserRole {
   return 'Other';
 }
 
-export interface AuthResponse {
-  userId: number;
-  name: string;
-  email: string;
+export type AuthResponse = Omit<ApiAuthResponse, 'role'> & {
   role: UserRole;
-  token: string;
-  canEmulate: boolean;
-  isEmulated: boolean;
-  emulatedByName: string | null;
-  refreshToken: string;
-  photoPath: string | null;
-  isEmailVerified: boolean;
-}
+  emulatedByName?: string | null;
+  photoPath?: string | null;
+  emulatorChainId?: number | null;
+  emulatorLocationId?: number | null;
+};
 
-export interface Chain {
-  id: number;
-  name: string;
-  breakStartTime?: string | null;
-  breakEndTime?: string | null;
-  isActive?: boolean;
-}
-
-export interface Location {
-  id: number;
-  chainId: number;
-  name: string;
-  address: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  openTime: string;
-  closeTime: string;
-  breakStartTime?: string | null;
-  breakEndTime?: string | null;
-  workingDaysMask: number;
-  timeZoneId: string;
-  isActive?: boolean;
-}
-
+export type Chain = AdminChainDto;
+export type Location = AdminLocationDto;
 export type ClosureType = 'Holiday' | 'Maintenance';
+export type LocationClosure = LocationClosureDto;
+export type LocationDaySchedule = LocationDayScheduleDto;
+export type TreatmentCategory = TreatmentCategoryDto;
+export type Treatment = AdminTreatmentDto;
+export type TreatmentPrice = TreatmentPriceDto;
+export type TreatmentDuration = TreatmentDurationDto;
+export type Therapist = TherapistDto;
+export type Room = RoomDto;
 
-export interface LocationClosure {
-  id: number;
-  locationId: number;
-  locationName: string;
-  holidayDate: string;
-  reason: string | null;
-  type: ClosureType;
-}
-
-export interface LocationDaySchedule {
-  id: number;
-  dayBit: number;
-  openTime: string | null;
-  closeTime: string | null;
-  isClosed: boolean;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-}
-
-export interface TreatmentCategory {
-  id: number;
-  locationId: number;
-  name: string;
-  isActive?: boolean;
-}
-
-export interface Treatment {
-  id: number;
-  categoryId: number;
-  categoryName?: string;
-  name: string;
-  description?: string | null;
-  // null only when the treatment's sole price is future-dated (not yet effective).
-  price: number | null;
-  durationSlots: number;
-  preTimeMinutes: number;
-  // Go-live date: gates client-portal visibility/bookability independently of price.
-  effectiveFrom: string;
-  isActive?: boolean;
-}
-
-export interface TreatmentPrice {
-  id: number;
-  price: number;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-}
-
-export interface TreatmentDuration {
-  id: number;
-  durationSlots: number;
-  preTimeMinutes: number;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-}
-
-export interface Therapist {
-  id: number;
-  name: string;
-  isActive: boolean;
-}
-
-export interface Room {
-  id: number;
-  locationId: number;
-  name: string;
-  isActive: boolean;
-}
-
-export interface StaffUser {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
+export type StaffUser = Omit<StaffUserDto, 'role'> & {
   role: UserRole;
-  chainId: number | null;
-  locationId: number | null;
-  therapistId: number | null;
-  isEmulator: boolean;
-  isActive: boolean;
-  joiningDate: string | null;
-  createdDate: string;
-}
+};
 
-export interface CustomerSummary {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  canEmulate?: boolean;
-}
-
-export interface AdminCustomer {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  isActive: boolean;
-  createdDate: string;
-  canEmulate?: boolean;
-}
-
-export interface AdminCustomersPage {
+export type CustomerSummary = CustomerSummaryDto;
+export type AdminCustomer = AdminCustomerDto;
+export type AdminCustomersPage = Omit<AdminCustomersPageDto, 'items'> & {
   items: AdminCustomer[];
-  nextCursorName: string | null;
-  nextCursorId: number | null;
-  hasMore: boolean;
-}
+};
 
-// Hand-kept because the generated @saloon/api-client aliases every int as a junk union
-// (ApiBookingStreamGetLocationIdParameter etc.), so the DTOs can't be consumed directly. Field
-// NAMES here must match the JSON the API actually sends -- see AdminBookingDto / StaffBooking-
-// TreatmentLineDto in the generated api.ts (key: it is `bookingId`, not `id`).
-export interface AdminBookingTreatment {
-  bookingTreatmentId: number;
-  treatmentId: number;
-  treatmentName: string;
-  durationSlots: number;
-  preTimeMinutes: number;
-  price: number;
-  startTime: string | null;
-  endTime: string | null;
-  roomId?: number | null;
-  roomName: string | null;
-  therapistId?: number | null;
-  therapistName: string | null;
-  expiresAt?: string | null;
-}
-
-export interface AdminBooking {
-  bookingId: number;
-  locationId: number;
-  locationName: string;
-  customerId: number;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string | null;
-  status: string;
-  createdDate: string;
-  treatments: AdminBookingTreatment[];
-  appointmentStatusId?: number | null;
-  appointmentStatusName?: string | null;
-  appointmentStatusColorHex?: string | null;
-  cancelReasonId?: number | null;
-  cancelReasonName?: string | null;
-  isPaid?: boolean;
-  paymentProvider?: string | null;
-}
+export type AdminBookingTreatment = StaffBookingTreatmentLineDto;
+export type AdminBooking = AdminBookingDto;
 
 export type ShiftType = 'Morning' | 'Evening';
+export type TherapistShift = TherapistShiftDto;
+export type RoomOpening = RoomOpeningDto;
+export type BlockedSlot = BlockedSlotDto;
+export type Roster = RosterDto;
 
-export interface TherapistShift {
-  id: number;
-  therapistId: number;
-  therapistName: string;
-  roomId: number | null;
-  shiftType: ShiftType;
-  startTime: string;
-  endTime: string;
-}
+export type Profile = ProfileResponse;
 
-export interface RoomOpening {
-  id: number;
-  roomId: number;
-  roomName: string;
-  treatmentCategoryId: number;
-  categoryName: string;
-  shiftType: ShiftType;
-}
-
-export interface BlockedSlot {
-  id: number;
-  roomId: number;
-  roomName: string;
-  startTime: string;
-  endTime: string;
-  reason: string;
-  blockTypeId?: number | null;
-}
-
-export interface Roster {
-  therapistShifts: TherapistShift[];
-  roomOpenings: RoomOpening[];
-  blockedSlots: BlockedSlot[];
-}
-
-export interface Profile {
-  userId: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  role: UserRole;
-  photoPath: string | null;
-  isEmailVerified: boolean;
-}
-
-export interface PaymentRecord {
-  id: number;
-  bookingId: number;
-  amount: number;
-  currency: string;
-  provider: string;
-  paymentMethod: string;
-  status: string;
-  transactionId: string | null;
-  failureReason: string | null;
-  createdDate: string;
-}
+export type PaymentRecord = PaymentDto;

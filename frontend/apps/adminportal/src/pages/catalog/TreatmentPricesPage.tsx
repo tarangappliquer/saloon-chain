@@ -51,7 +51,7 @@ export function TreatmentPricesPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
@@ -63,7 +63,7 @@ export function TreatmentPricesPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         if (paramLocationId) {
           setLocationId(Number(paramLocationId));
@@ -79,7 +79,7 @@ export function TreatmentPricesPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogTreatmentsGet(id);
-      const treats = data as unknown as Treatment[];
+      const treats = data;
       setTreatments(treats);
       setTreatmentId((prev) => {
         if (prev !== null && treats.some((t) => t.id === prev)) return prev;
@@ -100,7 +100,7 @@ export function TreatmentPricesPage() {
     setLoadingPrices(true);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogTreatmentsIdPricesGet(id);
-      setPriceHistory(data as unknown as TreatmentPrice[]);
+      setPriceHistory(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load price history');
       setPriceHistory([]);
@@ -187,7 +187,7 @@ export function TreatmentPricesPage() {
       await adminCatalogApi.apiAdminCatalogTreatmentsIdPricesPost(treatmentId, {
         price: Number(priceForm.price),
         effectiveFrom: priceForm.effectiveFrom,
-        effectiveTo: resolveEffectiveTo(priceForm.mode, priceForm.effectiveFrom, priceForm.effectiveTo),
+        effectiveTo: resolveEffectiveTo(priceForm.mode, priceForm.effectiveFrom, priceForm.effectiveTo) ?? '',
       });
       setPriceForm(emptyPriceForm());
       await loadPriceHistory(treatmentId);

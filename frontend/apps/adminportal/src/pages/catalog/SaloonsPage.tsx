@@ -45,7 +45,7 @@ export function SaloonsPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogChainsGet();
-      setChains(data as unknown as Chain[]);
+      setChains(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load saloon chains');
     } finally {
@@ -117,15 +117,15 @@ export function SaloonsPage() {
       if (editingChain) {
         await adminCatalogApi.apiAdminCatalogChainsIdPut(editingChain.id, {
           name,
-          breakStartTime: bStart,
-          breakEndTime: bEnd,
+          breakStartTime: bStart ?? '',
+          breakEndTime: bEnd ?? '',
           isActive,
         });
       } else {
         await adminCatalogApi.apiAdminCatalogChainsPost({
           name,
-          breakStartTime: bStart,
-          breakEndTime: bEnd,
+          breakStartTime: bStart ?? '',
+          breakEndTime: bEnd ?? '',
         });
       }
       handleCancelForm();
@@ -158,7 +158,7 @@ export function SaloonsPage() {
     setLoadingLocations(true);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogLocationsGet(chain.id);
-      setChainLocations(data as unknown as Location[]);
+      setChainLocations(data);
     } catch {
       setChainLocations([]);
     } finally {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../api/client';
-import type { Chain, Location, Treatment } from '../api/types';
+import type { Location, Treatment } from '../api/types';
 import { routes } from '../routes';
 import { TreatmentDetailsModal } from '../features/booking/TreatmentDetailsModal';
 
@@ -36,16 +36,16 @@ export function VenueDetailPage() {
 
       try {
         const treatmentsRes = await catalogApi.apiCatalogTreatmentsGet(targetLocId);
-        setTreatments(treatmentsRes.data as unknown as Treatment[]);
+        setTreatments(treatmentsRes.data);
 
         // Fetch location & chain details
         const chainsRes = await catalogApi.apiCatalogChainsGet();
-        const chains = chainsRes.data as unknown as Chain[];
+        const chains = chainsRes.data;
         let foundLoc: Location | null = null;
 
         for (const chain of chains) {
           const locsRes = await catalogApi.apiCatalogLocationsGet(chain.id);
-          const locs = locsRes.data as unknown as Location[];
+          const locs = locsRes.data;
           const matching = locs.find((l) => l.id === targetLocId);
           if (matching) {
             foundLoc = matching;
@@ -59,9 +59,9 @@ export function VenueDetailPage() {
         setSpecialists(SAMPLE_SPECIALISTS);
       } catch {
         setTreatments([
-          { id: 101, categoryId: 1, categoryName: 'Hair & Styling', name: 'Signature Haircut & Blowdry', price: 45, durationSlots: 2, preTimeMinutes: 0 },
-          { id: 102, categoryId: 1, categoryName: 'Hair & Styling', name: 'Full Balayage & Toning', price: 120, durationSlots: 4, preTimeMinutes: 0 },
-          { id: 103, categoryId: 2, categoryName: 'Nails', name: 'Gel Manicure & Hand Care', price: 35, durationSlots: 2, preTimeMinutes: 0 },
+          { id: 101, categoryId: 1, categoryName: 'Hair & Styling', name: 'Signature Haircut & Blowdry', price: 45, durationSlots: 2, preTimeMinutes: 0, description: '' },
+          { id: 102, categoryId: 1, categoryName: 'Hair & Styling', name: 'Full Balayage & Toning', price: 120, durationSlots: 4, preTimeMinutes: 0, description: '' },
+          { id: 103, categoryId: 2, categoryName: 'Nails', name: 'Gel Manicure & Hand Care', price: 35, durationSlots: 2, preTimeMinutes: 0, description: '' },
         ]);
         setLocation({
           id: targetLocId || 1,
@@ -72,6 +72,10 @@ export function VenueDetailPage() {
           closeTime: '20:00:00',
           workingDaysMask: 127,
           timeZoneId: 'UTC',
+          latitude: 0,
+          longitude: 0,
+          breakStartTime: '',
+          breakEndTime: '',
         });
         setSpecialists(SAMPLE_SPECIALISTS);
       } finally {

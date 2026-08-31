@@ -54,7 +54,7 @@ export function TreatmentDurationsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
@@ -66,7 +66,7 @@ export function TreatmentDurationsPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         if (paramLocationId) {
           setLocationId(Number(paramLocationId));
@@ -82,7 +82,7 @@ export function TreatmentDurationsPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogTreatmentsGet(id);
-      const treats = data as unknown as Treatment[];
+      const treats = data;
       setTreatments(treats);
       setTreatmentId((prev) => {
         if (prev !== null && treats.some((t) => t.id === prev)) return prev;
@@ -103,7 +103,7 @@ export function TreatmentDurationsPage() {
     setLoadingDurations(true);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogTreatmentsIdDurationsGet(id);
-      setDurationHistory(data as unknown as TreatmentDuration[]);
+      setDurationHistory(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load duration history');
       setDurationHistory([]);
@@ -209,7 +209,7 @@ export function TreatmentDurationsPage() {
         durationSlots: Number(durationForm.durationSlots),
         preTimeMinutes: Number(durationForm.preTimeMinutes),
         effectiveFrom: durationForm.effectiveFrom,
-        effectiveTo: resolveEffectiveTo(durationForm.mode, durationForm.effectiveFrom, durationForm.effectiveTo),
+        effectiveTo: resolveEffectiveTo(durationForm.mode, durationForm.effectiveFrom, durationForm.effectiveTo) ?? '',
       });
       setDurationForm(emptyDurationForm());
       await loadDurationHistory(treatmentId);

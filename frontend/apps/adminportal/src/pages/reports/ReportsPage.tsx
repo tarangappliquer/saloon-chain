@@ -34,7 +34,7 @@ async function downloadCsv(path: string, filename: string, setError: (e: string 
 }
 
 interface RevenueRow {
-  bookingCount: number;
+  bookingCount: string;
   totalRevenue: number;
 }
 
@@ -71,13 +71,13 @@ interface SalesByLocationRow extends RevenueRow {
   locationName: string;
 }
 interface RetentionRow {
-  totalCustomers: number;
-  returningCustomers: number;
+  totalCustomers: string;
+  returningCustomers: string;
   retentionRatePercent: number;
 }
 interface NoShowRow {
-  totalAppointments: number;
-  noShowCount: number;
+  totalAppointments: string;
+  noShowCount: string;
   noShowRatePercent: number;
 }
 
@@ -106,7 +106,7 @@ export function ReportsPage() {
 
   useEffect(() => {
     adminCatalogApi.apiAdminCatalogChainsGet().then(({ data }) => {
-      const cs = data as unknown as Chain[];
+      const cs = data;
       setChains(cs);
       if (cs.length > 0) setChainId(cs[0].id);
     });
@@ -115,7 +115,7 @@ export function ReportsPage() {
   useEffect(() => {
     if (chainId === null) return;
     adminCatalogApi.apiAdminCatalogLocationsGet(chainId).then(({ data }) => {
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       setLocationId(locs.length > 0 ? locs[0].id : null);
     });
@@ -194,7 +194,7 @@ function SalesByServicePanel({ locationId, range, setError }: { locationId: numb
     setRows(null);
     adminReportsApi
       .apiAdminReportsSalesByServiceGet(locationId, range.from, range.to)
-      .then(({ data }) => setRows(data as unknown as SalesByServiceRow[]))
+      .then(({ data }) => setRows(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load report.'));
   }, [locationId, range, setError]);
 
@@ -223,7 +223,7 @@ function SalesByStaffPanel({ locationId, range, setError }: { locationId: number
     setRows(null);
     adminReportsApi
       .apiAdminReportsSalesByStaffGet(locationId, range.from, range.to)
-      .then(({ data }) => setRows(data as unknown as SalesByStaffRow[]))
+      .then(({ data }) => setRows(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load report.'));
   }, [locationId, range, setError]);
 
@@ -253,7 +253,7 @@ function SalesByLocationPanel({ chainId, range, setError }: { chainId: number | 
     setRows(null);
     adminReportsApi
       .apiAdminReportsSalesByLocationGet(chainId, range.from, range.to)
-      .then(({ data }) => setRows(data as unknown as SalesByLocationRow[]))
+      .then(({ data }) => setRows(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load report.'));
   }, [chainId, range, setError]);
 
@@ -282,7 +282,7 @@ function RetentionPanel({ locationId, range, setError }: { locationId: number; r
     setData(null);
     adminReportsApi
       .apiAdminReportsRetentionGet(locationId, range.from, range.to)
-      .then(({ data }) => setData(data as unknown as RetentionRow))
+      .then(({ data }) => setData(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load report.'));
   }, [locationId, range, setError]);
 
@@ -303,7 +303,7 @@ function NoShowPanel({ locationId, range, setError }: { locationId: number; rang
     setData(null);
     adminReportsApi
       .apiAdminReportsNoShowRateGet(locationId, range.from, range.to)
-      .then(({ data }) => setData(data as unknown as NoShowRow))
+      .then(({ data }) => setData(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load report.'));
   }, [locationId, range, setError]);
 

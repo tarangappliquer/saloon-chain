@@ -35,7 +35,7 @@ export function RoomsPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogRoomsGet(locId);
-      setRooms(data as unknown as Room[]);
+      setRooms(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load rooms');
     } finally {
@@ -47,7 +47,7 @@ export function RoomsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         if (cs.length > 0 && chainId === null) {
           setChainId(cs[0].id);
         }
@@ -64,7 +64,7 @@ export function RoomsPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         if (locationId === null) {
           const initial = paramLocationId ? Number(paramLocationId) : locs[0]?.id ?? null;

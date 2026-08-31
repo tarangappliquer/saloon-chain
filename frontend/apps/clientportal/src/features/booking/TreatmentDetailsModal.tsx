@@ -27,8 +27,8 @@ export function TreatmentDetailsModal({ treatment, onClose }: Props) {
     ])
       .then(([pricesRes, durationsRes]) => {
         if (cancelled) return;
-        setPrices(pricesRes.data as unknown as TreatmentPrice[]);
-        setDurations(durationsRes.data as unknown as TreatmentDuration[]);
+        setPrices(pricesRes.data);
+        setDurations(durationsRes.data);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

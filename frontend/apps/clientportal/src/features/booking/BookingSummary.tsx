@@ -40,7 +40,7 @@ export function BookingSummary({ lines, treatments, onConfirm, onEdit, loading }
             ? new Date(new Date(line.startTime).getTime() - preTimeMinutes * 60_000).toISOString()
             : null;
           return (
-            <div key={line.id} className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/40 pb-2">
+            <div key={line.bookingTreatmentId ?? line.treatmentId ?? line.treatmentName} className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/40 pb-2">
               <div>
                 <span className="font-semibold text-sm text-foreground">{line.treatmentName}</span>
                 {line.startTime && (
@@ -52,7 +52,7 @@ export function BookingSummary({ lines, treatments, onConfirm, onEdit, loading }
                   </p>
                 )}
               </div>
-              <span className="font-mono text-xs font-semibold text-primary">${line.price.toFixed(2)}</span>
+              <span className="font-mono text-xs font-semibold text-primary">${(line.price ?? 0).toFixed(2)}</span>
             </div>
           );
         })}

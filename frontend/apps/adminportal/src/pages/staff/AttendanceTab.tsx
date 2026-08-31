@@ -39,7 +39,7 @@ export function AttendanceTab() {
       const { data: chains } = await adminCatalogApi.apiAdminCatalogChainsGet();
       if (chains.length === 0) return;
       const { data } = await adminCatalogApi.apiAdminCatalogLocationsGet(Number(chains[0].id));
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       if (!selectedLocationId && locs.length > 0) {
         setSelectedLocationId(locs[0].id);
@@ -55,7 +55,7 @@ export function AttendanceTab() {
     setError(null);
     try {
       const { data } = await adminStaffApi.apiAdminStaffAttendanceGet(selectedLocationId, workDate);
-      const rows = data as unknown as StaffAttendanceRow[];
+      const rows = data;
       setAttendanceList(rows);
 
       // Initialize inputs with current time string as default for quick logging
@@ -99,8 +99,8 @@ export function AttendanceTab() {
       userId,
       locationId: selectedLocationId!,
       workDate,
-      arrivalTime: type === 'arrival' ? arrivalTimeInputs[userId] : null,
-      leftTime: type === 'left' ? leftTimeInputs[userId] : null,
+      arrivalTime: type === 'arrival' ? arrivalTimeInputs[userId] : '',
+      leftTime: type === 'left' ? leftTimeInputs[userId] : '',
     });
   }
 

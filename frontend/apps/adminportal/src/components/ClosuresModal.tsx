@@ -56,7 +56,7 @@ function groupClosures(rows: LocationClosure[]): ClosureGroup[] {
         key: `${row.locationId}|${row.type}|${row.reason ?? ''}|${date}`,
         locationId: row.locationId,
         locationName: row.locationName,
-        type: row.type,
+        type: row.type as ClosureType,
         reason: row.reason,
         fromDate: date,
         toDate: date,
@@ -102,7 +102,7 @@ export function ClosuresModal({
     setSelectedKeys(new Set());
     adminCatalogApi
       .apiAdminCatalogClosuresGet(scope.kind === 'location' ? scope.id : undefined, scope.kind === 'chain' ? scope.id : undefined)
-      .then(({ data }) => setClosures(data as unknown as LocationClosure[]))
+      .then(({ data }) => setClosures(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load closures'));
   }
 
@@ -146,22 +146,22 @@ export function ClosuresModal({
         // than diffing individual dates.
         await Promise.all(editingGroup.ids.map((id) => adminCatalogApi.apiAdminCatalogClosuresIdDelete(id)));
         await adminCatalogApi.apiAdminCatalogClosuresPost({
-          locationId: editingGroup.locationId,
-          chainId: null,
+          locationId: editingGroup.locationId ?? 0,
+          chainId: 0,
           fromDate,
           toDate,
           type,
-          reason: reason || null,
+          reason: reason || '',
         });
       } else {
         const useChainScope = scope.kind === 'chain' || (applyToAll && applyToAllChainId !== undefined);
         await adminCatalogApi.apiAdminCatalogClosuresPost({
-          locationId: useChainScope ? null : scope.id,
-          chainId: useChainScope ? (scope.kind === 'chain' ? scope.id : applyToAllChainId!) : null,
+          locationId: useChainScope ? 0 : scope.id,
+          chainId: useChainScope ? (scope.kind === 'chain' ? scope.id : (applyToAllChainId ?? 0)) : 0,
           fromDate,
           toDate,
           type,
-          reason: reason || null,
+          reason: reason || '',
         });
       }
       resetForm();

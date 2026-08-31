@@ -24,8 +24,7 @@ export function ProfilePage() {
 
   const refreshProfilePhoto = async () => {
     const { data: res } = await profileApi.apiProfileGet();
-    const updated = res as unknown as Profile;
-    setProfile(updated);
+    setProfile(res);
     setCacheBuster(Date.now());
     await refreshUser();
     setSuccess('Profile photo updated.');
@@ -36,10 +35,9 @@ export function ProfilePage() {
     setLoadError(null);
     try {
       const { data } = await profileApi.apiProfileGet();
-      const p = data as unknown as Profile;
-      setProfile(p);
-      setName(p.name);
-      setPhone(p.phone ?? '');
+      setProfile(data);
+      setName(data.name);
+      setPhone(data.phone ?? '');
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Failed to load profile');
     } finally {
@@ -71,10 +69,9 @@ export function ProfilePage() {
       if (isEmulated) return { error: null, submitError: null };
       setSuccess(null);
       try {
-        const { data } = await profileApi.apiProfilePut({ name, phone: phone || null });
-        const updated = data as unknown as Profile;
-        setProfile(updated);
-        updateName(updated.name);
+        const { data } = await profileApi.apiProfilePut({ name, phone: phone || '' });
+        setProfile(data);
+        updateName(data.name);
         setSuccess('Profile updated successfully.');
         return { error: null, submitError: null };
       } catch (err) {

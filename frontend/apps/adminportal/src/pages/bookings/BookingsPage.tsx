@@ -41,12 +41,12 @@ function RetailLines({ bookingId, locationId }: { bookingId: number; locationId:
   const [saving, setSaving] = useState(false);
 
   function load() {
-    adminBookingsApi.apiAdminBookingsIdProductsGet(bookingId).then(({ data }) => setLines(data as unknown as BookingProductRow[]));
+    adminBookingsApi.apiAdminBookingsIdProductsGet(bookingId).then(({ data }) => setLines(data));
   }
 
   useEffect(() => {
     load();
-    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data as unknown as ProductRow[]));
+    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId, locationId]);
 
@@ -152,7 +152,7 @@ function BookingDetailsModal({
     async function loadPayments() {
       try {
         const { data } = await paymentApi.apiPaymentsBookingBookingIdGet(booking.bookingId);
-        setPayments(data as unknown as PaymentRecord[]);
+        setPayments(data);
       } catch {
         setPayments([]);
       } finally {
@@ -399,7 +399,7 @@ function ReassignTherapistModal({ target, locationId, onClose, onSuccess }: Reas
     adminCatalogApi
       .apiAdminCatalogTherapistsGet()
       .then(({ data }) => {
-        const list = (data as unknown as { id: number; name: string; locationId?: number }[]).filter(
+        const list = data.filter(
           (t) => !t.locationId || t.locationId === locationId
         );
         setTherapists(list);
@@ -418,7 +418,7 @@ function ReassignTherapistModal({ target, locationId, onClose, onSuccess }: Reas
       await adminBookingsApi.apiAdminBookingsIdTreatmentsTreatmentIdReassignTherapistPost(
         target.bookingId,
         target.treatmentId,
-        { newTherapistId: Number(newTherapistId), reason: reason || null }
+        { newTherapistId: Number(newTherapistId), reason: reason || '' }
       );
       onSuccess();
       onClose();
@@ -539,7 +539,7 @@ export function BookingsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number; name: string }[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0) setChainId(cs[0].id);
       })
@@ -551,7 +551,7 @@ export function BookingsPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         setLocationId(locs.length > 0 ? locs[0].id : null);
       })
@@ -564,7 +564,7 @@ export function BookingsPage() {
     setError(null);
     try {
       const { data } = await adminBookingsApi.apiAdminBookingsGet(locationId, date);
-      setBookings(data as unknown as AdminBooking[]);
+      setBookings(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load bookings');
     } finally {

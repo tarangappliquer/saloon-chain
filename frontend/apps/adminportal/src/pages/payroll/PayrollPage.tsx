@@ -2,6 +2,7 @@ import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminPayrollApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
+import type { PayRunLineDto } from '@saloon/api-client';
 
 type Tab = 'commission-rules' | 'pay-runs';
 
@@ -39,22 +40,6 @@ interface PayRunRow {
   totalCommission: number;
 }
 
-interface PayRunLineRow {
-  id: number;
-  therapistId: number;
-  therapistName: string;
-  grossSales: number;
-  hoursWorked: number;
-  regularHours: number;
-  overtimeHours: number;
-  hourlyRate: number;
-  commissionRate: number;
-  commissionType: string;
-  commissionAmount: number;
-  overtimePay: number;
-  totalPay: number;
-}
-
 export function PayrollPage() {
   const [chains, setChains] = useState<Chain[]>([]);
   const [chainId, setChainId] = useState<number | null>(null);
@@ -65,7 +50,7 @@ export function PayrollPage() {
 
   useEffect(() => {
     adminCatalogApi.apiAdminCatalogChainsGet().then(({ data }) => {
-      const cs = data as unknown as Chain[];
+      const cs = data;
       setChains(cs);
       if (cs.length > 0) setChainId(cs[0].id);
     });
@@ -74,7 +59,7 @@ export function PayrollPage() {
   useEffect(() => {
     if (chainId === null) return;
     adminCatalogApi.apiAdminCatalogLocationsGet(chainId).then(({ data }) => {
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       setLocationId(locs.length > 0 ? locs[0].id : null);
     });
@@ -161,14 +146,14 @@ function CommissionRulesTab({ locationId, setError }: { locationId: number; setE
     setRules(null);
     adminPayrollApi
       .apiAdminPayrollCommissionRulesGet(locationId)
-      .then(({ data }) => setRules(data as unknown as CommissionRuleRow[]))
+      .then(({ data }) => setRules(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load commission rules.'));
   }
 
   useEffect(() => {
     load();
     adminCatalogApi.apiAdminCatalogTherapistsGet().then(({ data }) => {
-      setTherapists((data as unknown as TherapistRow[]).filter((t) => t.locationId === locationId));
+      setTherapists(data.filter((t) => t.locationId === locationId));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
@@ -180,7 +165,7 @@ function CommissionRulesTab({ locationId, setError }: { locationId: number; setE
     try {
       await adminPayrollApi.apiAdminPayrollCommissionRulesPost({
         locationId,
-        therapistId: form.therapistId ? Number(form.therapistId) : null,
+        therapistId: form.therapistId ? Number(form.therapistId) : 0,
         type: form.type,
         rate: Number(form.rate),
         hourlyRate: Number(form.hourlyRate || 0),
@@ -337,13 +322,13 @@ function PayRunsTab({ locationId, setError }: { locationId: number; setError: (e
   const [period, setPeriod] = useState(defaultPeriod());
   const [creating, setCreating] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedLines, setExpandedLines] = useState<PayRunLineRow[]>([]);
+  const [expandedLines, setExpandedLines] = useState<PayRunLineDto[]>([]);
 
   function load() {
     setRuns(null);
     adminPayrollApi
       .apiAdminPayrollPayRunsGet(locationId)
-      .then(({ data }) => setRuns(data as unknown as PayRunRow[]))
+      .then(({ data }) => setRuns(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load pay runs.'));
   }
 
@@ -381,7 +366,7 @@ function PayRunsTab({ locationId, setError }: { locationId: number; setError: (e
       return;
     }
     const { data } = await adminPayrollApi.apiAdminPayrollPayRunsIdGet(id);
-    setExpandedLines((data as unknown as { lines: PayRunLineRow[] }).lines);
+    setExpandedLines(data.lines ?? []);
     setExpandedId(id);
   }
 
@@ -461,18 +446,18 @@ function PayRunsTab({ locationId, setError }: { locationId: number; setError: (e
                       </thead>
                       <tbody className="divide-y divide-border/20">
                         {expandedLines.map((l) => {
-                          const baseWage = l.regularHours * l.hourlyRate;
+                          const baseWage = (l.regularHours ?? 0) * (l.hourlyRate ?? 0);
                           return (
-                            <tr key={l.id}>
+                            <tr key={l.id ?? l.therapistName}>
                               <td className="py-2 font-medium text-foreground">{l.therapistName}</td>
-                              <td className="py-2 text-right">{money(l.grossSales)}</td>
+                              <td className="py-2 text-right">{money(l.grossSales ?? 0)}</td>
                               <td className="py-2 text-right">
-                                {l.regularHours}h {l.overtimeHours > 0 ? `+ ${l.overtimeHours}h OT` : ''}
+                                {l.regularHours ?? 0}h {(l.overtimeHours ?? 0) > 0 ? `+ ${l.overtimeHours}h OT` : ''}
                               </td>
-                              <td className="py-2 text-right">{money(l.commissionAmount)}</td>
+                              <td className="py-2 text-right">{money(l.commissionAmount ?? 0)}</td>
                               <td className="py-2 text-right">{money(baseWage)}</td>
-                              <td className="py-2 text-right text-amber-500 font-medium">{money(l.overtimePay)}</td>
-                              <td className="py-2 text-right font-bold text-foreground">{money(l.totalPay)}</td>
+                              <td className="py-2 text-right text-amber-500 font-medium">{money(l.overtimePay ?? 0)}</td>
+                              <td className="py-2 text-right font-bold text-foreground">{money(l.totalPay ?? 0)}</td>
                             </tr>
                           );
                         })}

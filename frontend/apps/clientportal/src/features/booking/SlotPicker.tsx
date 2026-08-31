@@ -113,7 +113,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
 
       {lines.map((line) => {
         const held = line.startTime !== null;
-        const rawSlots = slotsByTreatment[line.treatmentId] ?? [];
+        const rawSlots = (line.treatmentId !== undefined ? slotsByTreatment[line.treatmentId] : undefined) ?? [];
         const slots = rawSlots.filter((s) => {
           if (therapistOption === 'specific' && selectedTherapistIds.length > 0) {
             return selectedTherapistIds.includes(s.therapistId);
@@ -125,11 +125,11 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
         const missingSelection = !loading && slots.length > 0 && !held;
 
         return (
-          <div key={line.treatmentId} className="space-y-2.5 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
+          <div key={line.treatmentId ?? line.treatmentName} className="space-y-2.5 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
             <div className="flex items-center justify-between">
               <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <span>{line.treatmentName}</span>
-                <span className="text-muted-foreground/70">· {line.slotCount * 15} mins</span>
+                <span className="text-muted-foreground/70">· {(line.durationSlots ?? 0) * 15} mins</span>
                 {held && line.startTime && (
                   <span className="ml-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                     Selected {fmtDateTime(line.startTime)}
@@ -140,7 +140,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
               {onRemove && lines.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => onRemove(line.treatmentId)}
+                  onClick={() => line.treatmentId !== undefined && onRemove(line.treatmentId)}
                   className="flex items-center gap-1 text-[11px] font-semibold text-destructive hover:underline cursor-pointer"
                   title="Remove this treatment"
                 >
@@ -166,7 +166,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
                 {onRemove && lines.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => onRemove(line.treatmentId)}
+                    onClick={() => line.treatmentId !== undefined && onRemove(line.treatmentId)}
                     className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 text-white px-2.5 py-1 text-xs font-semibold hover:bg-amber-700 transition cursor-pointer"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -183,7 +183,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
                   </div>
                 )}
                 <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-                  {slots.map((slot) => {
+                  {slots.map((slot: AvailableSlot) => {
                     const selected = held && isSameSlot(line, slot);
                     const conflict = scheduled.some((l) => l.treatmentId !== line.treatmentId && overlaps(l, slot));
                     const unavailable = conflict || slot.isHeld;
@@ -193,7 +193,7 @@ export function SlotPicker({ lines, slotsByTreatment, onSelect, onRemove, loadin
                         key={slot.startTime}
                         type="button"
                         disabled={!selected && (loading || unavailable)}
-                        onClick={() => onSelect(line.treatmentId, slot)}
+                        onClick={() => line.treatmentId !== undefined && onSelect(line.treatmentId, slot)}
                         className={`rounded-lg border py-2 text-xs font-mono font-semibold transition-all duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${selected
                             ? 'border-primary bg-primary text-primary-foreground shadow-xs font-bold ring-2 ring-primary/40'
                             : unavailable

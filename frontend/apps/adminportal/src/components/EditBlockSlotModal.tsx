@@ -125,7 +125,7 @@ export function EditBlockSlotModal({
     if (existingBlock) {
       setReason(existingBlock.reason || '');
       setSelectedBlockTypeId(existingBlock.blockTypeId ?? null);
-      const computedMins = computeMinutesDiff(existingBlock.startTime.slice(0, 5), existingBlock.endTime.slice(0, 5));
+      const computedMins = computeMinutesDiff((existingBlock.startTime ?? '').slice(0, 5), (existingBlock.endTime ?? '').slice(0, 5));
       setDurationMinutes(computedMins);
     } else {
       setSelectedBlockTypeId(null);
@@ -208,7 +208,9 @@ export function EditBlockSlotModal({
     setError(null);
     setDeleting(true);
     try {
-      await schedulingApi.apiAdminSchedulingBlockedSlotsIdDelete(existingBlock.id);
+      if (existingBlock.id !== undefined) {
+        await schedulingApi.apiAdminSchedulingBlockedSlotsIdDelete(existingBlock.id);
+      }
       onSuccess();
       onClose();
     } catch (err) {

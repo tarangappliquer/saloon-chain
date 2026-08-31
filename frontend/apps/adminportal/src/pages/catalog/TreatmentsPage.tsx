@@ -47,7 +47,7 @@ export function TreatmentsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
@@ -59,7 +59,7 @@ export function TreatmentsPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         if (paramLocationId) {
           setLocationId(Number(paramLocationId));
@@ -78,8 +78,8 @@ export function TreatmentsPage() {
         adminCatalogApi.apiAdminCatalogTreatmentCategoriesGet(id),
         adminCatalogApi.apiAdminCatalogTreatmentsGet(id),
       ]);
-      setCategories(cats.data as unknown as TreatmentCategory[]);
-      setTreatments(treats.data as unknown as Treatment[]);
+      setCategories(cats.data);
+      setTreatments(treats.data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load treatments');
     } finally {
@@ -133,7 +133,7 @@ export function TreatmentsPage() {
         await adminCatalogApi.apiAdminCatalogTreatmentsIdPut(editingTreatment.id, {
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
-          description: treatmentForm.description || null,
+          description: treatmentForm.description || '',
           effectiveFrom: treatmentForm.effectiveFrom,
           isActive: editingTreatment.isActive !== false,
         });
@@ -143,7 +143,7 @@ export function TreatmentsPage() {
           locationId,
           categoryId: Number(treatmentForm.categoryId),
           name: treatmentForm.name,
-          description: treatmentForm.description || null,
+          description: treatmentForm.description || '',
           durationSlots: Number(treatmentForm.durationSlots),
           preTimeMinutes: Number(treatmentForm.preTimeMinutes),
           effectiveFrom: treatmentForm.effectiveFrom,

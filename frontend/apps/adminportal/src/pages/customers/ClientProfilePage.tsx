@@ -7,33 +7,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { routes } from '../../routes';
 import type { Chain, Location } from '../../api/types';
 
-interface MyBookingTreatment {
-  bookingId?: number;
-  treatmentName?: string;
-  price?: number;
-  startTime?: string | null;
-  endTime?: string | null;
-  therapistName?: string | null;
-}
-
-interface MyBookingDto {
-  id?: number;
-  bookingId: number;
-  locationId: number;
-  locationName: string;
-  status: string;
-  createdDate: string;
-  treatments: MyBookingTreatment[];
-}
-
-interface CustomerProfile {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  isActive: boolean;
-  createdDate: string;
-}
+import type { MyBookingDto } from '@saloon/api-client';
 
 interface CustomerTag {
   id: number;
@@ -63,30 +37,16 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// Same "past" definition MyBookingsPage.tsx uses client-side (and sp_Review_Create re-derives
-// server-side): every treatment's EndTime has already passed.
 function isPast(b: MyBookingDto, now: number): boolean {
-  const ends = (b.treatments ?? [])
-    .map((t: MyBookingTreatment) => t.endTime)
-    .filter((s: string | null | undefined): s is string => !!s)
-    .map((s: string) => new Date(s).getTime());
-  return ends.length > 0 && now > Math.max(...ends);
+  return b.scheduledEnd ? now > new Date(b.scheduledEnd).getTime() : false;
 }
 
 function earliestStart(b: MyBookingDto): number {
-  const starts = (b.treatments ?? [])
-    .map((t: MyBookingTreatment) => t.startTime)
-    .filter((s: string | null | undefined): s is string => !!s)
-    .map((s: string) => new Date(s).getTime());
-  return starts.length > 0 ? Math.min(...starts) : Infinity;
+  return b.scheduledStart ? new Date(b.scheduledStart).getTime() : Infinity;
 }
 
 function latestEnd(b: MyBookingDto): number {
-  const ends = (b.treatments ?? [])
-    .map((t: MyBookingTreatment) => t.endTime)
-    .filter((s: string | null | undefined): s is string => !!s)
-    .map((s: string) => new Date(s).getTime());
-  return ends.length > 0 ? Math.max(...ends) : 0;
+  return b.scheduledEnd ? new Date(b.scheduledEnd).getTime() : 0;
 }
 
 function BookingRow({ b }: { b: MyBookingDto }) {
@@ -96,15 +56,20 @@ function BookingRow({ b }: { b: MyBookingDto }) {
         <span className="text-sm font-semibold text-foreground">{b.locationName}</span>
         <Badge status={b.status} />
       </div>
-      <ul className="text-xs text-muted-foreground space-y-0.5">
-        {(b.treatments ?? []).map((t: MyBookingTreatment, idx: number) => (
-          <li key={idx}>
-            {t.treatmentName} {t.therapistName ? `with ${t.therapistName}` : ''} — {t.startTime ? formatDate(t.startTime) : 'unscheduled'}
-          </li>
-        ))}
-      </ul>
+      <p className="text-xs text-muted-foreground">
+        {(b.treatmentNames ?? []).join(', ')} — {b.scheduledStart ? formatDate(b.scheduledStart) : 'unscheduled'}
+      </p>
     </div>
   );
+}
+
+interface CustomerProfile {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  isActive: boolean;
+  createdDate: string;
 }
 
 export function ClientProfilePage() {
@@ -138,10 +103,10 @@ export function ClientProfilePage() {
         adminCustomersApi.apiAdminCustomersIdNotesGet(customerId),
         adminCustomersApi.apiAdminCustomersIdBookingsGet(customerId),
       ]);
-      setProfile(profileData as unknown as CustomerProfile);
-      setTags(tagsData as unknown as CustomerTag[]);
-      setNotes(notesData as unknown as CustomerNote[]);
-      setBookings(bookingsData as unknown as MyBookingDto[]);
+      setProfile(profileData);
+      setTags(tagsData);
+      setNotes(notesData);
+      setBookings(bookingsData);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load customer.');
     } finally {
@@ -157,7 +122,7 @@ export function ClientProfilePage() {
   useEffect(() => {
     if (!canPickScope) return;
     adminCatalogApi.apiAdminCatalogChainsGet().then(({ data }) => {
-      const cs = data as unknown as Chain[];
+      const cs = data;
       setChains(cs);
       if (cs.length === 1) setScopeChainId(String(cs[0].id));
     });
@@ -169,7 +134,7 @@ export function ClientProfilePage() {
       setScopeLocations([]);
       return;
     }
-    adminCatalogApi.apiAdminCatalogLocationsGet(Number(scopeChainId)).then(({ data }) => setScopeLocations(data as unknown as Location[]));
+    adminCatalogApi.apiAdminCatalogLocationsGet(Number(scopeChainId)).then(({ data }) => setScopeLocations(data));
   }, [scopeChainId]);
 
   function writeScopeParams() {
@@ -426,7 +391,7 @@ export function ClientProfilePage() {
           ) : (
             <div className="divide-y divide-border/50">
               {upcoming.map((b) => (
-                <BookingRow key={b.bookingId ?? b.id} b={b} />
+                <BookingRow key={b.id} b={b} />
               ))}
             </div>
           )}
@@ -443,7 +408,7 @@ export function ClientProfilePage() {
           ) : (
             <div className="divide-y divide-border/50">
               {past.map((b) => (
-                <BookingRow key={b.bookingId ?? b.id} b={b} />
+                <BookingRow key={b.id} b={b} />
               ))}
             </div>
           )}

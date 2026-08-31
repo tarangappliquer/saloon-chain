@@ -12,7 +12,7 @@ export async function findChainForLocation(chains: Chain[], locationId: number):
   const results = await Promise.all(
     chains.map(async (chain) => {
       const { data } = await catalogApi.apiCatalogLocationsGet(chain.id);
-      return { chain, locations: data as unknown as Location[] };
+      return { chain, locations: data };
     }),
   );
   return results.find((r) => r.locations.some((l) => l.id === locationId)) ?? null;

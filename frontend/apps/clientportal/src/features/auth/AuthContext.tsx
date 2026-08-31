@@ -31,13 +31,6 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = 'saloon_user';
 
-// Tiny external store over localStorage[STORAGE_KEY] for useSyncExternalStore. A plain
-// `window.addEventListener('storage', ...)` only fires in *other* tabs -- the tab that calls
-// localStorage.setItem never gets its own 'storage' event -- so writes from this tab notify the
-// in-memory listener set directly, while readUser() re-checks the raw string on every call so a
-// genuine cross-tab 'storage' event (e.g. another tab logging out) is picked up too. This also
-// fixes a real bug the previous plain useState-mirrors-localStorage version had: another tab
-// logging out never updated this tab (only the SSE 'user-logged-out' listener did).
 type StoreListener = () => void;
 const storeListeners = new Set<StoreListener>();
 let cachedRaw: string | null | undefined;
@@ -79,32 +72,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       customerId: res.userId,
       name: res.name,
       email: res.email,
-      isEmulated: res.isEmulated,
-      emulatedByName: res.emulatedByName,
-      emulatorChainId: res.emulatorChainId,
-      emulatorLocationId: res.emulatorLocationId,
+      isEmulated: res.isEmulated ?? false,
+      emulatedByName: res.emulatedByName ?? null,
+      emulatorChainId: res.emulatorChainId ?? null,
+      emulatorLocationId: res.emulatorLocationId ?? null,
       photoPath: res.photoPath ?? null,
       photoVersion: Date.now(),
-      isEmailVerified: res.isEmailVerified,
+      isEmailVerified: res.isEmailVerified ?? false,
     };
     writeUser(authUser);
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.apiAuthLoginPost({ email, password });
-    persist(data as unknown as AuthResponse);
+    persist(data);
   }, [persist]);
 
   const register = useCallback(async (name: string, email: string, password: string, phone?: string) => {
-    const { data } = await authApi.apiAuthRegisterPost({ name, email, password, phone: phone ?? null });
-    persist(data as unknown as AuthResponse);
+    const { data } = await authApi.apiAuthRegisterPost({ name, email, password, phone: phone ?? '' });
+    persist(data);
   }, [persist]);
 
   const loginWithToken = useCallback(async (token: string) => {
     setAuthToken(token);
     try {
       const { data } = await authApi.apiAuthMeGet();
-      persist({ ...(data as unknown as AuthResponse), token });
+      persist({ ...data, token });
     } catch (err) {
       setAuthToken(null);
       throw err;
@@ -126,15 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeUser({ ...current, name });
   }, []);
 
-  // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
-  // state) so the top-nav avatar picks up a just-uploaded photo, and the email-verification gate
-  // picks up a just-confirmed email, from the server's source of truth.
   const refreshUser = useCallback(async () => {
     const { data } = await authApi.apiAuthMeGet();
-    const res = data as unknown as AuthResponse;
     const current = readUser();
     if (!current) return;
-    writeUser({ ...current, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified });
+    writeUser({ ...current, photoPath: data.photoPath ?? null, photoVersion: Date.now(), isEmailVerified: data.isEmailVerified ?? false });
   }, []);
 
   useEffect(() => {
@@ -160,7 +149,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// oxlint-disable-next-line react/only-export-components
 export function useAuth() {
   const ctx = use(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider');

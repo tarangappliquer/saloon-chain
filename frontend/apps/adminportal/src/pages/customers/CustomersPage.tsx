@@ -6,7 +6,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import { appConfig } from '../../config';
 import { routes } from '../../routes';
 import { ADMIN_ACCESS } from '../../constants';
-import type { AdminCustomer, AdminCustomersPage, AuthResponse, CustomerSummary } from '../../api/types';
+import type { AdminCustomer, CustomerSummary } from '../../api/types';
 
 const PAGE_SIZE = 50;
 
@@ -67,11 +67,10 @@ export function CustomersPage() {
     cursorRef.current = null;
     try {
       const { data } = await adminCustomersApi.apiAdminCustomersGet(deferredSearch || undefined, PAGE_SIZE);
-      const page = data as unknown as AdminCustomersPage;
-      setCustomers(page.items);
-      setHasMore(page.hasMore);
-      cursorRef.current = page.hasMore && page.nextCursorName != null && page.nextCursorId != null
-        ? { name: page.nextCursorName, id: page.nextCursorId }
+      setCustomers(data.items ?? []);
+      setHasMore(data.hasMore ?? false);
+      cursorRef.current = data.hasMore && data.nextCursorName != null && data.nextCursorId != null
+        ? { name: data.nextCursorName, id: data.nextCursorId }
         : null;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load customers');
@@ -87,11 +86,10 @@ export function CustomersPage() {
       const { data } = await adminCustomersApi.apiAdminCustomersGet(
         deferredSearch || undefined, PAGE_SIZE, cursorRef.current.name, cursorRef.current.id,
       );
-      const page = data as unknown as AdminCustomersPage;
-      setCustomers((prev) => [...prev, ...page.items]);
-      setHasMore(page.hasMore);
-      cursorRef.current = page.hasMore && page.nextCursorName != null && page.nextCursorId != null
-        ? { name: page.nextCursorName, id: page.nextCursorId }
+      setCustomers((prev) => [...prev, ...(data.items ?? [])]);
+      setHasMore(data.hasMore ?? false);
+      cursorRef.current = data.hasMore && data.nextCursorName != null && data.nextCursorId != null
+        ? { name: data.nextCursorName, id: data.nextCursorId }
         : null;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load more customers');
@@ -130,7 +128,7 @@ export function CustomersPage() {
     setError(null);
     try {
       const { data } = await adminCustomersApi.apiAdminCustomersSearchGet(deferredSearch.trim());
-      setLeanResults(data as unknown as CustomerSummary[]);
+      setLeanResults(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to search customers');
     } finally {
@@ -153,7 +151,7 @@ export function CustomersPage() {
 
   function handleOpenEdit(c: AdminCustomer) {
     setEditingCustomer(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', isWalkIn: (c as unknown as { isWalkIn?: boolean }).isWalkIn ?? false });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', isWalkIn: false });
     setShowForm(true);
     setSubmitError(null);
   }
@@ -173,19 +171,18 @@ export function CustomersPage() {
       if (editingCustomer) {
         await adminCustomersApi.apiAdminCustomersIdPut(editingCustomer.id, {
           name: form.name,
-          phone: form.phone || null,
+          phone: form.phone || '',
           isActive: editingCustomer.isActive,
         });
       } else {
         const { data } = await adminCustomersApi.apiAdminCustomersPost({
           name: form.name,
-          email: form.email || null,
-          phone: form.phone || null,
+          email: form.email || '',
+          phone: form.phone || '',
           isWalkIn: form.isWalkIn,
         });
         if (!canManage) {
-          const { id } = data as unknown as { id: number };
-          setLeanResults([{ id, name: form.name, email: form.email || 'Walk-in Customer', phone: form.phone || null }]);
+          setLeanResults([{ id: data.id, name: form.name, email: form.email || 'Walk-in Customer', phone: form.phone || '' }]);
           setLeanSearched(true);
         }
       }
@@ -242,8 +239,7 @@ export function CustomersPage() {
     const win = window.open('about:blank', '_blank');
     try {
       const { data } = await authApi.apiAuthEmulateCustomerIdPost(c.id);
-      const res = data as unknown as AuthResponse;
-      const targetUrl = `${clientPortalUrl}/emulate?token=${encodeURIComponent(res.token)}`;
+      const targetUrl = `${clientPortalUrl}/emulate?token=${encodeURIComponent(data.token)}`;
       if (win) {
         win.location.href = targetUrl;
       } else {
@@ -402,7 +398,7 @@ export function CustomersPage() {
                     <tr key={c.id} className="hover:bg-accent/40 transition">
                       <td className="px-6 py-4 font-semibold text-foreground flex items-center gap-2">
                         <span>{c.name}</span>
-                        {(c as unknown as { isWalkIn?: boolean }).isWalkIn && (
+                        {c.isWalkIn && (
                           <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-500">
                             🚶 Walk-In
                           </span>

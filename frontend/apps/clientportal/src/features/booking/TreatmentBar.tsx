@@ -34,7 +34,7 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
           className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
         >
           <span className="text-gray-900 dark:text-gray-100">{line.treatmentName}</span>
-          <span className="font-semibold text-gray-700 dark:text-gray-300">${line.price.toFixed(2)}</span>
+          <span className="font-semibold text-gray-700 dark:text-gray-300">${(line.price ?? 0).toFixed(2)}</span>
           <span className="text-gray-400">{line.startTime ? fmtTime(line.startTime) : 'no time yet'}</span>
           <button
             type="button"
@@ -50,7 +50,7 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
           <button
             type="button"
             disabled={loading}
-            onClick={() => onRemove(line.treatmentId)}
+            onClick={() => line.treatmentId !== undefined && onRemove(line.treatmentId)}
             aria-label={`Remove ${line.treatmentName}`}
             className="text-gray-400 hover:text-red-500 disabled:opacity-40"
           >

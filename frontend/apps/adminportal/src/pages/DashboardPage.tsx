@@ -43,8 +43,7 @@ export function DashboardPage() {
         const sDate = dateMode === 'single' ? date : startDate;
         const eDate = dateMode === 'single' ? date : endDate;
         const { data } = await adminDashboardApi.apiAdminDashboardGet(sDate, eDate);
-        const res = data as unknown as DashboardResponseDto;
-        setData(res);
+        setData(data);
       } catch {
         // Keep null or fallback gracefully
       } finally {

@@ -99,7 +99,7 @@ export function SettingsPage() {
   // Load Chains
   useEffect(() => {
     adminCatalogApi.apiAdminCatalogChainsGet().then(({ data }) => {
-      const cs = data as unknown as Chain[];
+      const cs = data;
       setChains(cs);
       if (cs.length > 0) setChainId(cs[0].id);
     });
@@ -145,8 +145,8 @@ export function SettingsPage() {
 
     setChainSubmitting(true);
     try {
-      const breakStart = toApiTime(chainForm.breakStartTime);
-      const breakEnd = toApiTime(chainForm.breakEndTime);
+      const breakStart = toApiTime(chainForm.breakStartTime) ?? '';
+      const breakEnd = toApiTime(chainForm.breakEndTime) ?? '';
 
       await adminCatalogApi.apiAdminCatalogChainsIdPut(activeChain.id, {
         name: chainForm.name,
@@ -185,7 +185,7 @@ export function SettingsPage() {
   useEffect(() => {
     if (chainId === null) return;
     adminCatalogApi.apiAdminCatalogLocationsGet(chainId).then(({ data }) => {
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       if (locs.length > 0) {
         setLocationId(locs[0].id);
@@ -234,7 +234,7 @@ export function SettingsPage() {
     setShowAddWizard(false);
     if (chainId === null) return;
     const { data } = await adminCatalogApi.apiAdminCatalogLocationsGet(chainId);
-    const locs = data as unknown as Location[];
+    const locs = data;
     setLocations(locs);
     setLocationId(newId);
     setSelectedLocation(locs.find((l) => l.id === newId) ?? null);
@@ -253,7 +253,7 @@ export function SettingsPage() {
 
       const { data } =
         await adminCatalogApi.apiAdminCatalogLocationsGet(chainId);
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       const next = locs[0] ?? null;
       setLocationId(next?.id ?? null);
@@ -301,13 +301,13 @@ export function SettingsPage() {
 
       await adminCatalogApi.apiAdminCatalogLocationsIdPut(selectedLocation.id, {
         name: form.name,
-        address: form.address || null,
+        address: form.address || '',
         latitude: form.latitude,
         longitude: form.longitude,
         openTime: toApiTime(form.openTime)!,
         closeTime: toApiTime(form.closeTime)!,
-        breakStartTime: toApiTime(form.breakStartTime),
-        breakEndTime: toApiTime(form.breakEndTime),
+        breakStartTime: toApiTime(form.breakStartTime) ?? '',
+        breakEndTime: toApiTime(form.breakEndTime) ?? '',
         workingDaysMask,
         timeZoneId: form.timeZoneId,
         isActive: selectedLocation.isActive !== false,

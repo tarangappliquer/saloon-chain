@@ -54,7 +54,7 @@ export function LocationUsersPage() {
     setError(null);
     try {
       const { data } = await adminStaffApi.apiAdminStaffGet(undefined, undefined, locationId);
-      const rawUsers = data as unknown as StaffUser[];
+      const rawUsers = data;
       setStaff(rawUsers.map((u) => ({ ...u, role: normalizeUserRole(u.role) })));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load location users');
@@ -68,7 +68,7 @@ export function LocationUsersPage() {
       adminCatalogApi
         .apiAdminCatalogChainsGet()
         .then(({ data }) => {
-          const cs = data as unknown as Chain[];
+          const cs = data;
           const found = cs.find((c) => c.id === chainId);
           if (found) setChain(found);
         })
@@ -79,7 +79,7 @@ export function LocationUsersPage() {
       adminCatalogApi
         .apiAdminCatalogLocationsGet(chainId)
         .then(({ data }) => {
-          const locs = data as unknown as Location[];
+          const locs = data;
           const found = locs.find((l) => l.id === locationId);
           if (found) setLocation(found);
         })
@@ -116,11 +116,11 @@ export function LocationUsersPage() {
       if (editingUser) {
         await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
           name: form.name,
-          phone: form.phone || null,
+          phone: form.phone || '',
           role: form.role,
           chainId: editingUser.chainId,
           locationId: editingUser.locationId,
-          therapistId: editingUser.therapistId,
+          therapistId: editingUser.therapistId ?? 0,
           isEmulator: false,
           isActive: editingUser.isActive,
         });
@@ -131,7 +131,7 @@ export function LocationUsersPage() {
           role: form.role,
           chainId,
           locationId,
-          therapistId: null,
+          therapistId: 0,
           isEmulator: false,
         });
       }

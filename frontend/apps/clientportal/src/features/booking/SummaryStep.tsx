@@ -20,7 +20,7 @@ export function SummaryStep() {
   const locationId = booking?.locationId ?? null;
   useEffect(() => {
     if (!locationId) return;
-    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data as unknown as Treatment[]));
+    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data));
   }, [locationId]);
 
   useEffect(() => {

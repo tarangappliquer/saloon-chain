@@ -45,7 +45,7 @@ export function ConfirmedStep() {
       if (!isNaN(bId) && bId > 0) {
         try {
           const { data } = await bookingApi.apiBookingIdGet(bId);
-          setAppointmentDate(earliestStart(data as unknown as BookingDetails));
+          setAppointmentDate(earliestStart(data));
         } catch {
           // Confirmation message still shows without a date -- not worth blocking on.
         }

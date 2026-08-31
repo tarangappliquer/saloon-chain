@@ -2,6 +2,7 @@ import { useEffect, useState, type SyntheticEvent } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@saloon/ui';
 import { adminCustomersApi, authApi, ApiError } from '../api/client';
 import type { CustomerSummary } from '../api/types';
+import type { TherapistShiftDto } from '@saloon/api-client';
 import { appConfig } from '../config';
 
 interface AddAppointmentModalProps {
@@ -14,7 +15,7 @@ interface AddAppointmentModalProps {
   workDate?: string;
   startTime?: string;
   therapists?: { id: number; name: string }[];
-  therapistShifts?: { therapistId: number; roomId: number | null; startTime: string; endTime: string }[];
+  therapistShifts?: TherapistShiftDto[];
   rooms?: { id: number; name: string }[];
 }
 
@@ -58,7 +59,7 @@ export function AddAppointmentModal({
     setError(null);
     try {
       const { data } = await adminCustomersApi.apiAdminCustomersSearchGet(searchQuery.trim());
-      setSearchResults(data as unknown as CustomerSummary[]);
+      setSearchResults(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to search customers');
     } finally {
@@ -81,11 +82,11 @@ export function AddAppointmentModal({
       try {
         const { data } = await adminCustomersApi.apiAdminCustomersPost({
           name: newName.trim(),
-          email: newEmail.trim() || null,
-          phone: newPhone.trim() || null,
+          email: newEmail.trim() || '',
+          phone: newPhone.trim() || '',
           isWalkIn: true,
         });
-        targetCustomer = { id: Number(data.id), name: newName.trim(), email: newEmail.trim(), phone: newPhone.trim() || null };
+        targetCustomer = { id: Number(data.id), name: newName.trim(), email: newEmail.trim(), phone: newPhone.trim() || '' };
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Failed to create walk-in customer');
         setResolvingCustomer(false);
@@ -97,9 +98,8 @@ export function AddAppointmentModal({
       setResolvingCustomer(true);
       try {
         const { data } = await authApi.apiAuthEmulateCustomerIdPost(targetCustomer.id);
-        const res = data as unknown as { token: string };
         const basePortalUrl = clientPortalUrl || window.location.origin.replace('5173', '5174');
-        const targetUrl = `${basePortalUrl}/emulate?token=${encodeURIComponent(res.token)}&locationId=${locationId ?? ''}`;
+        const targetUrl = `${basePortalUrl}/emulate?token=${encodeURIComponent(data.token)}&locationId=${locationId ?? ''}`;
         window.open(targetUrl, '_blank');
         onClose();
       } catch (err) {

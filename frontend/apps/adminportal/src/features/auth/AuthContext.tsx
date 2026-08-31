@@ -1,7 +1,7 @@
 import { createContext, use, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { authApi, getRefreshToken, setAuthToken, setRefreshToken, setUnauthorizedHandler } from '../../api/client';
 import { profileStreamUrl, subscribeToStream } from '../../api/sseClient';
-import type { AuthResponse, UserRole } from '../../api/types';
+import { normalizeUserRole, type UserRole } from '../../api/types';
 
 interface AuthUser {
   userId: number;
@@ -61,19 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.apiAuthLoginPost({ email, password, portal: 'Admin' });
-    const res = data as unknown as AuthResponse;
 
-    setAuthToken(res.token);
-    setRefreshToken(res.refreshToken);
+    setAuthToken(data.token);
+    setRefreshToken(data.refreshToken ?? null);
     const authUser: AuthUser = {
-      userId: res.userId,
-      name: res.name,
-      email: res.email,
-      role: res.role,
-      canEmulate: res.canEmulate,
-      photoPath: res.photoPath ?? null,
+      userId: data.userId,
+      name: data.name,
+      email: data.email,
+      role: normalizeUserRole(data.role),
+      canEmulate: data.canEmulate ?? false,
+      photoPath: data.photoPath ?? null,
       photoVersion: Date.now(),
-      isEmailVerified: res.isEmailVerified,
+      isEmailVerified: data.isEmailVerified ?? false,
     };
     writeUser(authUser);
   }, []);
@@ -93,15 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeUser({ ...current, name });
   }, []);
 
-  // Re-fetches the caller's own record from GET /api/auth/me (rather than trusting client-held
-  // state) so the top-nav avatar picks up a just-uploaded photo, and the email-verification gate
-  // picks up a just-confirmed email, from the server's source of truth.
   const refreshUser = useCallback(async () => {
     const { data } = await authApi.apiAuthMeGet();
-    const res = data as unknown as AuthResponse;
     const current = readUser();
     if (!current) return;
-    writeUser({ ...current, photoPath: res.photoPath, photoVersion: Date.now(), isEmailVerified: res.isEmailVerified });
+    writeUser({ ...current, photoPath: data.photoPath ?? null, photoVersion: Date.now(), isEmailVerified: data.isEmailVerified ?? false });
   }, []);
 
   useEffect(() => {
@@ -123,7 +118,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext value={value}>{children}</AuthContext>;
 }
 
-// oxlint-disable-next-line react/only-export-components
 export function useAuth() {
   const ctx = use(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

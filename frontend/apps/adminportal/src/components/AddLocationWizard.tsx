@@ -85,18 +85,18 @@ export function AddLocationWizard({ chainId, onClose, onCreated }: { chainId: nu
       const { data } = await adminCatalogApi.apiAdminCatalogLocationsPost({
         chainId,
         name: form.name,
-        address: form.address || null,
+        address: form.address || '',
         latitude: form.latitude!,
         longitude: form.longitude!,
         openTime: toApiTime(form.openTime)!,
         closeTime: toApiTime(form.closeTime)!,
-        breakStartTime: toApiTime(form.breakStartTime),
-        breakEndTime: toApiTime(form.breakEndTime),
+        breakStartTime: toApiTime(form.breakStartTime) ?? '',
+        breakEndTime: toApiTime(form.breakEndTime) ?? '',
         workingDaysMask,
         timeZoneId: form.timeZoneId,
       });
 
-      onCreated((data as unknown as { id: number }).id);
+      onCreated(data.id);
     } catch (err) {
       setSubmitError(err);
       setError(err instanceof ApiError ? err.message : 'Failed to create location');

@@ -125,7 +125,7 @@ export function StaffPage() {
       const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : undefined;
       const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : undefined;
       const { data } = await adminStaffApi.apiAdminStaffGet(undefined, cId, lId);
-      const rawUsers = data as unknown as StaffUser[];
+      const rawUsers = data;
       setStaff(rawUsers.map((u) => ({ ...u, role: normalizeUserRole(u.role) })));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load staff');
@@ -139,7 +139,7 @@ export function StaffPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (paramChainId) {
           setForm((f) => ({ ...f, chainId: paramChainId, locationId: paramLocationId ?? '' }));
@@ -150,7 +150,7 @@ export function StaffPage() {
       .catch(() => { });
     adminCatalogApi
       .apiAdminCatalogTherapistsGet()
-      .then(({ data }) => setTherapists(data as unknown as Therapist[]))
+      .then(({ data }) => setTherapists(data))
       .catch(() => { });
   }, [loadStaff, paramChainId, paramLocationId]);
 
@@ -158,7 +158,7 @@ export function StaffPage() {
     if (form.chainId) {
       adminCatalogApi
         .apiAdminCatalogLocationsGet(Number(form.chainId))
-        .then(({ data }) => setLocations(data as unknown as Location[]))
+        .then(({ data }) => setLocations(data))
         .catch(() => setLocations([]));
     } else {
       setLocations([]);
@@ -197,25 +197,25 @@ export function StaffPage() {
         if (editingUser) {
           await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
             name: form.name,
-            phone: form.phone || null,
+            phone: form.phone || '',
             role: form.role,
             chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
             locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
-            therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId,
+            therapistId: form.therapistId ? Number(form.therapistId) : (editingUser.therapistId ?? 0),
             isEmulator,
             joiningDate: form.joiningDate,
             isActive: editingUser.isActive,
           });
         } else {
-          const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : null;
-          const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : null;
+          const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : 0;
+          const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : 0;
           await adminStaffApi.apiAdminStaffPost({
             name: form.name,
             email: form.email,
             role: form.role,
             chainId: cId,
             locationId: lId,
-            therapistId: form.therapistId ? Number(form.therapistId) : null,
+            therapistId: form.therapistId ? Number(form.therapistId) : 0,
             isEmulator,
             joiningDate: form.joiningDate,
           });

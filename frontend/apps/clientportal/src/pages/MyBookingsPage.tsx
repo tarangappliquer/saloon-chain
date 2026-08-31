@@ -12,18 +12,15 @@ type Tab = 'upcoming' | 'past' | 'cancelled' | 'draft';
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 function isPast(b: MyBooking, now: number): boolean {
-  const ends = (b.treatments ?? []).map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
-  return ends.length > 0 && now > Math.max(...ends);
+  return !!b.scheduledEnd && now > new Date(b.scheduledEnd).getTime();
 }
 
 function earliestStart(b: MyBooking): number {
-  const starts = (b.treatments ?? []).map((t) => t.startTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
-  return starts.length ? Math.min(...starts) : Infinity;
+  return b.scheduledStart ? new Date(b.scheduledStart).getTime() : Infinity;
 }
 
 function latestEnd(b: MyBooking): number {
-  const ends = (b.treatments ?? []).map((t) => t.endTime).filter((s): s is string => !!s).map((s) => new Date(s).getTime());
-  return ends.length ? Math.max(...ends) : -Infinity;
+  return b.scheduledEnd ? new Date(b.scheduledEnd).getTime() : -Infinity;
 }
 
 function ReviewForm({ bookingId, onSubmitted }: { bookingId: number; onSubmitted: () => void }) {
@@ -83,7 +80,8 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [justReviewed, setJustReviewed] = useState(false);
 
-  const totalCost = b.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
+  const totalCost = b.totalPrice ?? 0;
+  const treatmentNames = b.treatmentNames ?? [];
 
   const startMs = earliestStart(b);
   const isWithin48h = startMs !== Infinity && startMs - Date.now() <= FORTY_EIGHT_HOURS_MS;
@@ -98,23 +96,16 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
     };
   }, []);
 
-  const [cancelState, cancelAction, cancelling] = useActionState<{ error: string | null; success: string | null }>(
-    async () => {
-      try {
-        await bookingApi.apiBookingIdDelete(b.id);
-        setShowConfirmModal(false);
-        timerRef.current = setTimeout(() => onReload(), 1500);
-        return { error: null, success: 'Booking cancelled. Full refund issued to original payment method.' };
-      } catch (err) {
-        return {
-          error: err instanceof ApiError ? err.message : 'Bookings cannot be cancelled within 48 hours of appointment.',
-          success: null,
-        };
-      }
-    },
-    { error: null, success: null },
-  );
-  const { error: actionError, success: actionSuccess } = cancelState;
+  const [actionError, cancelAction, cancelling] = useActionState<string | null>(async () => {
+    try {
+      await bookingApi.apiBookingIdDelete(b.id);
+      setShowConfirmModal(false);
+      onReload();
+      return null;
+    } catch (err) {
+      return err instanceof ApiError ? err.message : 'Failed to cancel booking.';
+    }
+  }, null);
 
   return (
     <>
@@ -137,7 +128,7 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-xs font-semibold text-muted-foreground">Booking #{b.id}</span>
               <Badge status={b.status} />
-              {b.isPaid || b.paymentStatus === 'Succeeded' || b.status === 'Confirmed' ? (
+              {b.isPaid || b.status === 'Confirmed' ? (
                 <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 flex items-center gap-1">
                   ✓ Paid
                 </span>
@@ -179,7 +170,7 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
               onClick={() => setExpanded(!expanded)}
               className="flex items-center gap-1.5 rounded-lg border border-border bg-accent/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
-              <span>{expanded ? 'Hide Details' : `View Details (${b.treatments.length})`}</span>
+              <span>{expanded ? 'Hide Details' : `View Details (${treatmentNames.length})`}</span>
               <svg
                 className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
                 fill="none"
@@ -199,18 +190,12 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
           </div>
         )}
 
-        {actionSuccess && (
-          <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 dark:text-emerald-300">
-            {actionSuccess}
-          </div>
-        )}
-
         {/* Accordion Content */}
         {expanded && (
           <div className="mt-4 pt-4 border-t border-border/70 space-y-4 animate-in fade-in slide-in-from-top-1 duration-150">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Treatment Details ({b.treatments.length})
+                Treatment Details ({treatmentNames.length})
               </h3>
               {b.status === 'Confirmed' && isWithin48h && (
                 <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
@@ -220,29 +205,9 @@ function BookingCard({ b, onReload }: { b: MyBooking; onReload: () => void }) {
             </div>
 
             <ul className="space-y-2 text-sm text-foreground">
-              {b.treatments.map((t, idx) => (
-                <li key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between rounded-lg border border-border/60 bg-accent/30 p-3 gap-2">
-                  <div className="space-y-1">
-                    <span className="font-medium text-foreground">{t.treatmentName}</span>
-                    <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                      <span>{t.slotCount * 15} mins</span>
-                      {t.startTime ? (
-                        <span>
-                          {new Date(t.startTime).toLocaleString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                          {t.therapistName ? ` · ${t.therapistName}` : ''}
-                        </span>
-                      ) : (
-                        <span className="text-amber-600 dark:text-amber-400 font-medium">Unscheduled</span>
-                      )}
-                    </div>
-                  </div>
-                  <span className="font-mono text-sm font-semibold text-foreground self-end sm:self-center">${t.price.toFixed(2)}</span>
+              {treatmentNames.map((name, idx) => (
+                <li key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 p-3">
+                  <span className="font-medium text-foreground">{name}</span>
                 </li>
               ))}
             </ul>
@@ -280,7 +245,7 @@ export function MyBookingsPage() {
   const [tab, setTab] = useState<Tab>('upcoming');
 
   function loadBookings() {
-    bookingApi.apiBookingMineGet().then(({ data }) => setBookings(data as unknown as MyBooking[]));
+    bookingApi.apiBookingMineGet().then(({ data }) => setBookings(data));
   }
 
   useEffect(() => {

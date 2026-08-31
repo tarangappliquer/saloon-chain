@@ -28,7 +28,7 @@ export function PaymentStep() {
   const locationId = booking?.locationId ?? null;
   useEffect(() => {
     if (!locationId) return;
-    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data as unknown as Treatment[]));
+    catalogApi.apiCatalogTreatmentsGet(locationId).then(({ data }) => setTreatments(data));
   }, [locationId]);
 
   const [selectedProvider, setSelectedProvider] = useState<PaymentProviderType>('Stripe');
@@ -42,7 +42,7 @@ export function PaymentStep() {
   const [tip, setTip] = useState('0');
   const [amountTendered, setAmountTendered] = useState('');
 
-  const owed = booking?.treatments.reduce((sum, t) => sum + t.price, 0) ?? 0;
+  const owed = booking?.treatments.reduce((sum, t) => sum + (t.price ?? 0), 0) ?? 0;
   const tipAmount = Number(tip) || 0;
   const tenderedAmount = Number(amountTendered) || 0;
   const changeDue = Math.max(0, tenderedAmount - (owed + tipAmount));
@@ -71,7 +71,7 @@ export function PaymentStep() {
         .then((res) => {
           setStripeClientSecret(res.data.clientSecret ?? null);
           setStripePublishableKey(res.data.publishableKey ?? null);
-          const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
+          const checkoutUrl = res.data.checkoutUrl;
           if (checkoutUrl) setStripeCheckoutUrl(checkoutUrl);
         })
         .catch((err: AxiosError<{ title?: string }>) => {
@@ -93,7 +93,7 @@ export function PaymentStep() {
           tipAmount,
         });
 
-        const checkoutUrl = (res.data as unknown as { checkoutUrl?: string }).checkoutUrl;
+        const checkoutUrl = res.data.checkoutUrl;
 
         // Stripe must never be confirmed here -- doing so used to mark the booking paid before the
         // customer had actually completed (or even reached) Stripe's checkout page. Confirmation

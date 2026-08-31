@@ -57,7 +57,7 @@ export function LocationsPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0 && chainId === null) {
           setChainId(cs[0].id);
@@ -72,7 +72,7 @@ export function LocationsPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogLocationsGet(id);
-      setLocations(data as unknown as Location[]);
+      setLocations(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load locations');
     } finally {
@@ -159,13 +159,13 @@ export function LocationsPage() {
       if (editingLocation) {
         await adminCatalogApi.apiAdminCatalogLocationsIdPut(editingLocation.id, {
           name: form.name,
-          address: form.address || null,
+          address: form.address || '',
           latitude: form.latitude,
           longitude: form.longitude,
           openTime: form.openTime,
           closeTime: form.closeTime,
-          breakStartTime: breakStart,
-          breakEndTime: breakEnd,
+          breakStartTime: breakStart ?? '',
+          breakEndTime: breakEnd ?? '',
           workingDaysMask,
           timeZoneId: form.timeZoneId,
           isActive: editingLocation.isActive !== false,
@@ -174,13 +174,13 @@ export function LocationsPage() {
         await adminCatalogApi.apiAdminCatalogLocationsPost({
           chainId: targetChainId,
           name: form.name,
-          address: form.address || null,
+          address: form.address || '',
           latitude: form.latitude,
           longitude: form.longitude,
           openTime: form.openTime,
           closeTime: form.closeTime,
-          breakStartTime: breakStart,
-          breakEndTime: breakEnd,
+          breakStartTime: breakStart ?? '',
+          breakEndTime: breakEnd ?? '',
           workingDaysMask,
           timeZoneId: form.timeZoneId,
         });

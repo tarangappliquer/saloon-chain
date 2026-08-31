@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, LoadingFallback, PageHeader } from '@saloon/ui';
 import { adminCatalogApi, adminInventoryApi, ApiError } from '../../api/client';
 import type { Chain, Location } from '../../api/types';
+import type { PurchaseOrderLineDto } from '@saloon/api-client';
 
 type Tab = 'products' | 'suppliers' | 'purchase-orders' | 'stocktakes';
 
@@ -43,14 +44,6 @@ interface PurchaseOrderRow {
   totalCost: number;
 }
 
-interface PurchaseOrderLineRow {
-  id: number;
-  productId: number;
-  productName: string;
-  quantityOrdered: number;
-  unitCost: number;
-}
-
 function money(n: number) {
   return `$${n.toFixed(2)}`;
 }
@@ -76,7 +69,7 @@ export function InventoryPage() {
 
   useEffect(() => {
     adminCatalogApi.apiAdminCatalogChainsGet().then(({ data }) => {
-      const cs = data as unknown as Chain[];
+      const cs = data;
       setChains(cs);
       if (cs.length > 0) setChainId(cs[0].id);
     });
@@ -87,7 +80,7 @@ export function InventoryPage() {
     // Backend already clamps this to the caller's own location for Manager (see
     // AdminCatalogEndpoints.GetLocations) -- no client-side filtering needed.
     adminCatalogApi.apiAdminCatalogLocationsGet(chainId).then(({ data }) => {
-      const locs = data as unknown as Location[];
+      const locs = data;
       setLocations(locs);
       setLocationId(locs.length > 0 ? locs[0].id : null);
     });
@@ -180,13 +173,13 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
     setProducts(null);
     adminInventoryApi
       .apiAdminInventoryProductsGet(locationId)
-      .then(({ data }) => setProducts(data as unknown as ProductRow[]))
+      .then(({ data }) => setProducts(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load products.'));
   }
 
   useEffect(() => {
     load();
-    adminInventoryApi.apiAdminInventorySuppliersGet(undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => { });
+    adminInventoryApi.apiAdminInventorySuppliersGet(undefined).then(({ data }) => setSuppliers(data)).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
@@ -197,9 +190,9 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
     try {
       await adminInventoryApi.apiAdminInventoryProductsPost({
         locationId,
-        supplierId: form.supplierId ? Number(form.supplierId) : null,
+        supplierId: form.supplierId ? Number(form.supplierId) : 0,
         name: form.name,
-        sku: form.sku || null,
+        sku: form.sku || '',
         price: Number(form.price),
         quantityOnHand: Number(form.quantityOnHand),
         reorderThreshold: Number(form.reorderThreshold),
@@ -220,9 +213,9 @@ function ProductsTab({ locationId, setError }: { locationId: number; setError: (
     });
     try {
       await adminInventoryApi.apiAdminInventoryProductsIdPut(p.id, {
-        supplierId: p.supplierId,
+        supplierId: p.supplierId ?? 0,
         name: p.name,
-        sku: p.sku,
+        sku: p.sku ?? '',
         price: p.price,
         reorderThreshold: p.reorderThreshold,
         isActive: !p.isActive,
@@ -345,7 +338,7 @@ function SuppliersTab({ chainId, setError }: { chainId: number | null; setError:
     setSuppliers(null);
     adminInventoryApi
       .apiAdminInventorySuppliersGet(chainId ?? undefined)
-      .then(({ data }) => setSuppliers(data as unknown as SupplierRow[]))
+      .then(({ data }) => setSuppliers(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load suppliers.'));
   }
 
@@ -361,8 +354,8 @@ function SuppliersTab({ chainId, setError }: { chainId: number | null; setError:
     try {
       await adminInventoryApi.apiAdminInventorySuppliersPost({
         name: form.name,
-        contactEmail: form.contactEmail || null,
-        contactPhone: form.contactPhone || null,
+        contactEmail: form.contactEmail || '',
+        contactPhone: form.contactPhone || '',
         chainId: chainId ?? undefined,
       });
       setForm({ name: '', contactEmail: '', contactPhone: '' });
@@ -440,20 +433,20 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
   const [lines, setLines] = useState<DraftLine[]>([{ productId: '', quantity: '1', unitCost: '' }]);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedLines, setExpandedLines] = useState<PurchaseOrderLineRow[]>([]);
+  const [expandedLines, setExpandedLines] = useState<PurchaseOrderLineDto[]>([]);
 
   function load() {
     setOrders(null);
     adminInventoryApi
       .apiAdminInventoryPurchaseOrdersGet(locationId)
-      .then(({ data }) => setOrders(data as unknown as PurchaseOrderRow[]))
+      .then(({ data }) => setOrders(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load purchase orders.'));
   }
 
   useEffect(() => {
     load();
-    adminInventoryApi.apiAdminInventorySuppliersGet(chainId ?? undefined).then(({ data }) => setSuppliers(data as unknown as SupplierRow[])).catch(() => { });
-    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data as unknown as ProductRow[])).catch(() => { });
+    adminInventoryApi.apiAdminInventorySuppliersGet(chainId ?? undefined).then(({ data }) => setSuppliers(data)).catch(() => { });
+    adminInventoryApi.apiAdminInventoryProductsGet(locationId).then(({ data }) => setProducts(data)).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, chainId]);
 
@@ -498,7 +491,7 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
       return;
     }
     const { data } = await adminInventoryApi.apiAdminInventoryPurchaseOrdersIdGet(id);
-    setExpandedLines((data as unknown as { lines: PurchaseOrderLineRow[] }).lines);
+    setExpandedLines(data.lines ?? []);
     setExpandedId(id);
   }
 
@@ -586,8 +579,8 @@ function PurchaseOrdersTab({ locationId, chainId, setError }: { locationId: numb
                 {expandedId === po.id && (
                   <ul className="mt-3 space-y-1 text-xs text-muted-foreground border-t border-border/50 pt-3">
                     {expandedLines.map((l) => (
-                      <li key={l.id}>
-                        {l.productName} — {l.quantityOrdered} × {money(l.unitCost)}
+                      <li key={l.id ?? l.productName}>
+                        {l.productName} — {l.quantityOrdered} × {money(l.unitCost ?? 0)}
                       </li>
                     ))}
                   </ul>
@@ -608,7 +601,7 @@ function StocktakesTab({ locationId, setError }: { locationId: number; setError:
     setProducts(null);
     adminInventoryApi
       .apiAdminInventoryProductsGet(locationId)
-      .then(({ data }) => setProducts(data as unknown as ProductRow[]))
+      .then(({ data }) => setProducts(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load stock audit.'));
   }
 

@@ -6,7 +6,7 @@ import { Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, Page
 import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
-import type { AdminBooking, BlockedSlot, Location, Room, RoomOpening, Roster, ShiftType, StaffUser, TreatmentCategory } from '../../api/types';
+import type { AdminBooking, BlockedSlot, Location, Room, RoomOpening, Roster, ShiftType, TherapistShift, TreatmentCategory } from '../../api/types';
 import { AddAppointmentModal } from '../../components/AddAppointmentModal';
 import { BookingDetailPanel } from '../../components/BookingDetailPanel';
 import { EditBlockSlotModal } from '../../components/EditBlockSlotModal';
@@ -144,8 +144,8 @@ function computeBlockSpans(rooms: Room[], blockedSlots: BlockedSlot[], timeSlots
     const covered = blockedSlots
       .filter((b) => b.roomId === room.id)
       .map((block) => {
-        const startStr = block.startTime.slice(0, 5);
-        const endStr = block.endTime.slice(0, 5);
+        const startStr = (block.startTime ?? '').slice(0, 5);
+        const endStr = (block.endTime ?? '').slice(0, 5);
         const idx: number[] = [];
         timeSlots.forEach((slot, i) => {
           const nextSlot = i + 1 < timeSlots.length ? timeSlots[i + 1] : '23:59';
@@ -210,24 +210,24 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
 
 const RefreshIcon = () => {
   return <label className="cursor-pointer inline-block p-2">
- 
-  <input type="checkbox" className="peer hidden" />
-  
- 
-  <svg xmlns="http://w3.org" 
-       className="w-5 h-5 transition-transform duration-700 ease-in-out peer-checked:rotate-180" 
-       viewBox="0 0 24 24" 
-       fill="none" 
-       stroke="currentColor" 
-       strokeWidth="2" 
-       strokeLinecap="round" 
-       strokeLinejoin="round">
-    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-    <path d="M3 3v5h5" />
-    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-    <path d="M16 16h5v5" />
-  </svg>
-</label>
+
+    <input type="checkbox" className="peer hidden" />
+
+
+    <svg xmlns="http://w3.org"
+      className="w-5 h-5 transition-transform duration-700 ease-in-out peer-checked:rotate-180"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 16h5v5" />
+    </svg>
+  </label>
 }
 
 export function CalendarPage() {
@@ -254,7 +254,7 @@ export function CalendarPage() {
   const [roster, setRoster] = useState<Roster>({ therapistShifts: [], roomOpenings: [], blockedSlots: [] });
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
 
-  
+
   const [detailBookingId, setDetailBookingId] = useState<number | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -311,7 +311,7 @@ export function CalendarPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as { id: number; name: string }[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0) {
           const matched = paramChainId ? cs.find((c) => c.id === Number(paramChainId)) : null;
@@ -332,7 +332,7 @@ export function CalendarPage() {
     adminStaffApi
       .apiAdminStaffGet('Therapist', undefined, locationId)
       .then(({ data }) => {
-        const staff = data as unknown as StaffUser[];
+        const staff = data;
         setTherapists(
           staff
             .filter((s) => s.therapistId !== null && s.isActive)
@@ -347,7 +347,7 @@ export function CalendarPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
 
         let resolvedLocationId: number | null = null;
@@ -373,14 +373,14 @@ export function CalendarPage() {
   useEffect(() => {
     if (locationId === null) return;
 
-    
+
     adminCatalogApi
       .apiAdminCatalogRoomsGet(locationId)
-      .then(({ data }) => setRooms(data as unknown as Room[]))
+      .then(({ data }) => setRooms(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load rooms'));
     adminCatalogApi
       .apiAdminCatalogTreatmentCategoriesGet(locationId)
-      .then(({ data }) => setCategories(data as unknown as TreatmentCategory[]))
+      .then(({ data }) => setCategories(data))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load treatment categories'));
   }, [locationId]);
 
@@ -393,8 +393,8 @@ export function CalendarPage() {
         schedulingApi.apiAdminSchedulingRosterGet(locationId, date),
         adminBookingsApi.apiAdminBookingsGet(locationId, date),
       ]);
-      setRoster(rosterRes.data as unknown as Roster);
-      setBookings(bookingsRes.data as unknown as AdminBooking[]);
+      setRoster(rosterRes.data);
+      setBookings(bookingsRes.data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load schedule');
     } finally {
@@ -444,7 +444,7 @@ export function CalendarPage() {
   async function changeRoomStatus(room: Room, opening: RoomOpening | undefined, categoryValue: string) {
     setError(null);
     try {
-      if (opening) {
+      if (opening && opening.id !== undefined) {
         await schedulingApi.apiAdminSchedulingRoomOpeningsIdDelete(opening.id);
       }
       if (categoryValue) {
@@ -607,9 +607,9 @@ export function CalendarPage() {
             className="flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer text-sm"
             title="Refresh Schedule"
           >
-            <RefreshIcon/>
+            <RefreshIcon />
           </button>
-          
+
         </div>
       </div>
 
@@ -665,16 +665,16 @@ function ShiftRow({
   onUpdate,
   onRemove,
 }: {
-  shift: { id: number; therapistName: string; startTime: string; endTime: string };
+  shift: TherapistShift;
   onUpdate: (id: number, start: string, end: string) => void;
   onRemove: (id: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [start, setStart] = useState(shift.startTime.slice(0, 5));
-  const [end, setEnd] = useState(shift.endTime.slice(0, 5));
+  const [start, setStart] = useState((shift.startTime ?? '').slice(0, 5));
+  const [end, setEnd] = useState((shift.endTime ?? '').slice(0, 5));
 
   function save() {
-    if (start >= end) return;
+    if (start >= end || shift.id === undefined) return;
     onUpdate(shift.id, start, end);
     setEditing(false);
   }
@@ -736,7 +736,7 @@ function ShiftRow({
     <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-accent/30 p-2 hover:bg-accent/50 transition-colors">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className="shrink-0 rounded bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
-          {shift.startTime.slice(0, 5)} – {shift.endTime.slice(0, 5)}
+          {(shift.startTime ?? '').slice(0, 5)} – {(shift.endTime ?? '').slice(0, 5)}
         </span>
         <Tooltip content={shift.therapistName}>
           <span className="truncate text-xs font-medium text-foreground">{shift.therapistName}</span>
@@ -753,7 +753,7 @@ function ShiftRow({
         </button>
         <button
           type="button"
-          onClick={() => onRemove(shift.id)}
+          onClick={() => shift.id !== undefined && onRemove(shift.id)}
           className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
           title="Remove assignment"
         >
@@ -883,8 +883,8 @@ function ScheduleGridView({
 
   const popoverAssignments = staffPopover
     ? (roster.therapistShifts || [])
-        .filter((s) => s.roomId === staffPopover.roomId && s.shiftType === shiftType)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .filter((s) => s.roomId === staffPopover.roomId && s.shiftType === shiftType)
+      .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))
     : [];
 
   // Compute free minutes from startTime until next booking/block/close
@@ -895,6 +895,7 @@ function ScheduleGridView({
       if (t.roomId === roomId && t.startTimeStr > startTime) candidates.push(t.startTimeStr);
     }
     for (const b of roster.blockedSlots) {
+      if (!b.startTime) continue;
       const bStart = b.startTime.slice(0, 5);
       if (b.roomId === roomId && bStart > startTime) candidates.push(bStart);
     }
@@ -912,7 +913,7 @@ function ScheduleGridView({
   }
 
   function handleEditBlockSlot(block: BlockedSlot) {
-    if (block.id <= 0) return;
+    if (!block.id || block.id <= 0 || !block.startTime || block.roomId === undefined) return;
     const rm = rooms.find((r) => r.id === block.roomId);
     const slotTime = block.startTime.slice(0, 5);
     const maxMinutes = getMaxBlockMinutes(block.roomId, slotTime);
@@ -921,181 +922,181 @@ function ScheduleGridView({
 
   return (
     <>
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b border-border/50 pb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Room Schedule Grid</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Showing room status, available open slots, and active bookings for {date}.
-            </p>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border/50 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Room Schedule Grid</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Showing room status, available open slots, and active bookings for {date}.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-500" />
+                Available Open Slot
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+                Booked Slot
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                Temp Booked
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-muted" />
+                Closed Room
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+                Blocked
+              </span>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-gray-500" />
-              Available Open Slot
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-              Booked Slot
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-              Temp Booked
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-muted" />
-              Closed Room
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
-              Blocked
-            </span>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {rooms.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">
-            No rooms configured for this location.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            {/* CSS Grid instead of a <table> -- a table cell's height is famously unreliable to
+        </CardHeader>
+        <CardContent className="p-0">
+          {rooms.length === 0 ? (
+            <div className="p-8 text-center text-xs text-muted-foreground">
+              No rooms configured for this location.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              {/* CSS Grid instead of a <table> -- a table cell's height is famously unreliable to
                 stretch a child to fill (percentage heights on <td> children are inconsistent across
                 browsers when a sibling column's row is taller), which showed up as a visible gap
                 between consecutive rows of the same blocked-slot group. Grid items stretch to fill
                 their row track by default, no percentage-height special-casing needed. */}
-            <div
-              role="table"
-              className="grid text-left text-xs"
-              style={{ gridTemplateColumns: `6.5rem repeat(${rooms.length}, minmax(260px, 1fr))` }}
-            >
-              <div role="row" className="contents">
-                <div
-                  role="columnheader"
-                  className="sticky left-0 z-20 w-26 border-r border-b border-border bg-accent/60 p-3.5 font-bold text-foreground flex items-center justify-center text-center"
-                >
-                  Time Slot
-                </div>
-                {rooms.map((room) => {
-                  const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
-                  const roomShifts = (roster.therapistShifts || [])
-                    .filter((s) => s.roomId === room.id && s.shiftType === shiftType)
-                    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-                  const primaryName = roomShifts[0]?.therapistName || room.name;
-
-                  const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
-                  void hasBooking;
-
-                  return (
-                    <div
-                      key={room.id}
-                      role="columnheader"
-                      className="border-r border-b border-border bg-card/90 p-3.5 font-semibold text-center flex flex-col items-center justify-between sticky top-0 z-10 space-y-2.5"
-                    >
-                      {/* Fresha Staff Avatar Icon -- Clickable to see/manage assigned staff */}
-                      <Tooltip content={`Click to view assigned staff for ${room.name}`}>
-                        <div
-                          onClick={(e) => openStaffPopover(e, room)}
-                          className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-primary hover:scale-105 transition-all"
-                        >
-                          {getInitials(primaryName)}
-                          {roomShifts.length > 1 && (
-                            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">
-                              +{roomShifts.length - 1}
-                            </span>
-                          )}
-                        </div>
-                      </Tooltip>
-
-                      <div className="w-full text-center min-w-0">
-                        <Tooltip content={primaryName}>
-                          <div className="text-sm font-bold text-foreground truncate w-full">{primaryName}</div>
-                        </Tooltip>
-                        <Tooltip content={room.name}>
-                          <div className="text-xs font-medium text-muted-foreground truncate w-full">{room.name}</div>
-                        </Tooltip>
-                      </div>
-
-                      {/* Category picker & Staff button */}
-                      <div className="w-full space-y-1.5 pt-1">
-                        <select
-                          value={opening ? String(opening.treatmentCategoryId) : ''}
-                          onChange={(e) => changeRoomStatus(room, opening, e.target.value)}
-                          disabled={categories.length === 0}
-                          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-semibold text-foreground text-center focus:ring-1 focus:ring-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer shadow-xs transition-colors"
-                        >
-                          <option value="">Closed</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {categories.length === 0 && (
-                          <p className="text-[10px] font-medium text-muted-foreground">
-                            No treatment categories for this location &mdash; add one in Catalog to open rooms.
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => openStaffPopover(e, room)}
-                          className="w-full rounded-lg border border-input bg-accent/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent hover:border-primary/40 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-                        >
-                          <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                          </svg>
-                          Staff ({roomShifts.length})
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {timeSlots.map((slot, slotIdx) => (
-                <div key={slot} role="row" className="contents">
-                  {/* Sticky Time Column -- display:contents on the row wrapper above means it has no
-                      box of its own, so :hover can't reliably hit-test on it (no rendered element to
-                      hover); each cell gets its own hover highlight instead of a synced whole-row one. */}
-                  <div className="sticky left-0 z-10 flex items-center border-r border-b border-border bg-card p-2.5 font-mono text-xs font-bold text-foreground hover:bg-accent/10 transition-colors">
-                    {slot}
+              <div
+                role="table"
+                className="grid text-left text-xs"
+                style={{ gridTemplateColumns: `6.5rem repeat(${rooms.length}, minmax(260px, 1fr))` }}
+              >
+                <div role="row" className="contents">
+                  <div
+                    role="columnheader"
+                    className="sticky left-0 z-20 w-26 border-r border-b border-border bg-accent/60 p-3.5 font-bold text-foreground flex items-center justify-center text-center"
+                  >
+                    Time Slot
                   </div>
-
-                  {/* Room Columns */}
                   {rooms.map((room) => {
-                    const blockCell = blockSpans.get(room.id)?.get(slotIdx);
-
                     const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
-                    const isOpen = !!opening;
+                    const roomShifts = (roster.therapistShifts || [])
+                      .filter((s) => s.roomId === room.id && s.shiftType === shiftType)
+                      .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''));
+                    const primaryName = roomShifts[0]?.therapistName || room.name;
 
-                    const nextSlot = slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
-
-                    // Find any treatment booking that covers this room and time slot
-                    const matchedTreatment = flatTreatments.find((t) => {
-                      const matchRoom = t.roomId ? t.roomId === room.id : t.roomName === room.name;
-                      return matchRoom && slot < t.endTimeStr && nextSlot > t.startTimeStr;
-                    });
-
-                    const isTempBooked = matchedTreatment?.status === 'Draft';
-                    void isTempBooked;
-
-                    const activeTherapists = (roster.therapistShifts || []).filter((s) => {
-                      if (s.roomId !== room.id) return false;
-                      const startStr = s.startTime.slice(0, 5);
-                      const endStr = s.endTime.slice(0, 5);
-                      return slot >= startStr && slot < endStr;
-                    });
-                    const isStaffed = isOpen && activeTherapists.length > 0;
+                    const hasBooking = flatTreatments.some((t) => (t.roomId ? t.roomId === room.id : t.roomName === room.name));
+                    void hasBooking;
 
                     return (
                       <div
                         key={room.id}
-                        role="cell"
-                        className={`border-r border-b border-border/40 hover:bg-accent/10 transition-colors ${blockCell ? 'px-2 py-0' : 'p-2'}`}
+                        role="columnheader"
+                        className="border-r border-b border-border bg-card/90 p-3.5 font-semibold text-center flex flex-col items-center justify-between sticky top-0 z-10 space-y-2.5"
                       >
-                        {matchedTreatment ? (
+                        {/* Fresha Staff Avatar Icon -- Clickable to see/manage assigned staff */}
+                        <Tooltip content={`Click to view assigned staff for ${room.name}`}>
+                          <div
+                            onClick={(e) => openStaffPopover(e, room)}
+                            className="relative h-12 w-12 rounded-full bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/30 flex items-center justify-center font-extrabold text-base shadow-xs shrink-0 cursor-pointer hover:ring-2 hover:ring-primary hover:scale-105 transition-all"
+                          >
+                            {getInitials(primaryName)}
+                            {roomShifts.length > 1 && (
+                              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-extrabold text-primary-foreground shadow-xs">
+                                +{roomShifts.length - 1}
+                              </span>
+                            )}
+                          </div>
+                        </Tooltip>
+
+                        <div className="w-full text-center min-w-0">
+                          <Tooltip content={primaryName}>
+                            <div className="text-sm font-bold text-foreground truncate w-full">{primaryName}</div>
+                          </Tooltip>
+                          <Tooltip content={room.name}>
+                            <div className="text-xs font-medium text-muted-foreground truncate w-full">{room.name}</div>
+                          </Tooltip>
+                        </div>
+
+                        {/* Category picker & Staff button */}
+                        <div className="w-full space-y-1.5 pt-1">
+                          <select
+                            value={opening ? String(opening.treatmentCategoryId) : ''}
+                            onChange={(e) => changeRoomStatus(room, opening, e.target.value)}
+                            disabled={categories.length === 0}
+                            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-semibold text-foreground text-center focus:ring-1 focus:ring-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer shadow-xs transition-colors"
+                          >
+                            <option value="">Closed</option>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                          {categories.length === 0 && (
+                            <p className="text-[10px] font-medium text-muted-foreground">
+                              No treatment categories for this location &mdash; add one in Catalog to open rooms.
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => openStaffPopover(e, room)}
+                            className="w-full rounded-lg border border-input bg-accent/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent hover:border-primary/40 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                          >
+                            <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            Staff ({roomShifts.length})
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {timeSlots.map((slot, slotIdx) => (
+                  <div key={slot} role="row" className="contents">
+                    {/* Sticky Time Column -- display:contents on the row wrapper above means it has no
+                      box of its own, so :hover can't reliably hit-test on it (no rendered element to
+                      hover); each cell gets its own hover highlight instead of a synced whole-row one. */}
+                    <div className="sticky left-0 z-10 flex items-center border-r border-b border-border bg-card p-2.5 font-mono text-xs font-bold text-foreground hover:bg-accent/10 transition-colors">
+                      {slot}
+                    </div>
+
+                    {/* Room Columns */}
+                    {rooms.map((room) => {
+                      const blockCell = blockSpans.get(room.id)?.get(slotIdx);
+
+                      const opening = roster.roomOpenings.find((ro) => ro.roomId === room.id && ro.shiftType === shiftType);
+                      const isOpen = !!opening;
+
+                      const nextSlot = slotIdx + 1 < timeSlots.length ? timeSlots[slotIdx + 1] : '23:59';
+
+                      // Find any treatment booking that covers this room and time slot
+                      const matchedTreatment = flatTreatments.find((t) => {
+                        const matchRoom = t.roomId ? t.roomId === room.id : t.roomName === room.name;
+                        return matchRoom && slot < t.endTimeStr && nextSlot > t.startTimeStr;
+                      });
+
+                      const isTempBooked = matchedTreatment?.status === 'Draft';
+                      void isTempBooked;
+
+                      const activeTherapists = (roster.therapistShifts || []).filter((s) => {
+                        if (s.roomId !== room.id || !s.startTime || !s.endTime) return false;
+                        const startStr = s.startTime.slice(0, 5);
+                        const endStr = s.endTime.slice(0, 5);
+                        return slot >= startStr && slot < endStr;
+                      });
+                      const isStaffed = isOpen && activeTherapists.length > 0;
+
+                      return (
+                        <div
+                          key={room.id}
+                          role="cell"
+                          className={`border-r border-b border-border/40 hover:bg-accent/10 transition-colors ${blockCell ? 'px-2 py-0' : 'p-2'}`}
+                        >
+                          {matchedTreatment ? (
                             /* FRESHA SKY-BLUE BOOKED APPOINTMENT CARD */
                             <Tooltip content={`Booking #${matchedTreatment.bookingId}: ${matchedTreatment.treatmentName} — ${matchedTreatment.customerName}`}>
                               <div
@@ -1132,38 +1133,40 @@ function ScheduleGridView({
                                   }`}
                                 onClick={() => blockCell.blocks.length > 0 && handleEditBlockSlot(blockCell.blocks[0])}
                               >
-                                {blockCell.blocks.map((block) => (
-                                  <div key={block.id} className="space-y-1">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
-                                        block.id <= 0
+                                {blockCell.blocks.map((block) => {
+                                  const blockId = block.id ?? 0;
+                                  return (
+                                    <div key={blockId} className="space-y-1">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${blockId <= 0
                                           ? 'bg-amber-500/25 border-amber-500/50 text-amber-900 dark:text-amber-100'
                                           : 'bg-violet-500/25 border-violet-500/50 text-violet-900 dark:text-violet-100'
-                                      }`}>
-                                        {block.id <= 0 ? 'Lunch Break' : 'Blocked'}
-                                      </span>
-                                      {block.id > 0 ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleUnblockSlot(block.id)}
-                                          className="text-xs font-bold text-violet-700 dark:text-violet-300 underline cursor-pointer"
-                                        >
-                                          Unblock
-                                        </button>
-                                      ) : (
-                                        <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
-                                          🔒 Locked
+                                          }`}>
+                                          {blockId <= 0 ? 'Lunch Break' : 'Blocked'}
                                         </span>
-                                      )}
+                                        {blockId > 0 ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUnblockSlot(blockId)}
+                                            className="text-xs font-bold text-violet-700 dark:text-violet-300 underline cursor-pointer"
+                                          >
+                                            Unblock
+                                          </button>
+                                        ) : (
+                                          <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
+                                            🔒 Locked
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs font-mono font-extrabold text-violet-900 dark:text-violet-100">
+                                        {(block.startTime ?? '').slice(0, 5)}–{(block.endTime ?? '').slice(0, 5)}
+                                      </p>
+                                      <p className="text-xs font-semibold text-violet-950 dark:text-violet-100 line-clamp-2">
+                                        {block.reason}
+                                      </p>
                                     </div>
-                                    <p className="text-xs font-mono font-extrabold text-violet-900 dark:text-violet-100">
-                                      {block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}
-                                    </p>
-                                    <p className="text-xs font-semibold text-violet-950 dark:text-violet-100 line-clamp-2">
-                                      {block.reason}
-                                    </p>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </Tooltip>
                           ) : isStaffed ? (
@@ -1219,155 +1222,155 @@ function ScheduleGridView({
                 ))}
               </div>
             </div>
-        )}
-      </CardContent>
-    </Card>
-
-    {staffPopover && (
-      <div
-        className="fixed z-50 w-96 rounded-xl border border-border/80 bg-card p-4 text-xs shadow-2xl space-y-3.5"
-        style={{
-          top: Math.min(staffPopover.y, window.innerHeight - 420),
-          left: Math.min(staffPopover.x, window.innerWidth - 400),
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border/50 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <div>
-              <div className="font-bold text-sm text-foreground">{staffPopover.roomName}</div>
-              <p className="text-[10px] text-muted-foreground">Manage Assigned Staff & Shifts</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setStaffPopover(null)}
-            className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Active Staff</p>
-            <span className="text-[10px] font-medium text-muted-foreground font-mono">{popoverAssignments.length} assigned</span>
-          </div>
-          {popoverAssignments.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border/80 p-3.5 text-center text-muted-foreground/70 bg-muted/10">
-              No therapist assigned to this room yet.
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
-              {popoverAssignments.map((s) => (
-                <ShiftRow key={s.id} shift={s} onUpdate={updateTherapistShift} onRemove={removeTherapistShift} />
-              ))}
-            </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="space-y-2.5 border-t border-border/60 pt-3">
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assign Staff / Proxy Shift</p>
-          <select
-            value={newAssignTherapistId}
-            onChange={(e) => setNewAssignTherapistId(e.target.value ? Number(e.target.value) : '')}
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
-          >
-            <option value="">Select therapist to assign...</option>
-            {therapists.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">From</label>
-              <input
-                type="time"
-                value={newAssignStart}
-                onChange={(e) => setNewAssignStart(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
-              />
+      {staffPopover && (
+        <div
+          className="fixed z-50 w-96 rounded-xl border border-border/80 bg-card p-4 text-xs shadow-2xl space-y-3.5"
+          style={{
+            top: Math.min(staffPopover.y, window.innerHeight - 420),
+            left: Math.min(staffPopover.x, window.innerWidth - 400),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-border/50 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <div className="font-bold text-sm text-foreground">{staffPopover.roomName}</div>
+                <p className="text-[10px] text-muted-foreground">Manage Assigned Staff & Shifts</p>
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">To</label>
-              <input
-                type="time"
-                value={newAssignEnd}
-                onChange={(e) => setNewAssignEnd(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setStaffPopover(null)}
+              className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            className="w-full h-8 font-semibold mt-1"
-            disabled={newAssignTherapistId === '' || newAssignStart >= newAssignEnd}
-            onClick={handleAddAssignment}
-          >
-            + Add Staff Assignment
-          </Button>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Active Staff</p>
+              <span className="text-[10px] font-medium text-muted-foreground font-mono">{popoverAssignments.length} assigned</span>
+            </div>
+            {popoverAssignments.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/80 p-3.5 text-center text-muted-foreground/70 bg-muted/10">
+                No therapist assigned to this room yet.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+                {popoverAssignments.map((s) => (
+                  <ShiftRow key={s.id} shift={s} onUpdate={updateTherapistShift} onRemove={removeTherapistShift} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2.5 border-t border-border/60 pt-3">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assign Staff / Proxy Shift</p>
+            <select
+              value={newAssignTherapistId}
+              onChange={(e) => setNewAssignTherapistId(e.target.value ? Number(e.target.value) : '')}
+              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+            >
+              <option value="">Select therapist to assign...</option>
+              {therapists.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">From</label>
+                <input
+                  type="time"
+                  value={newAssignStart}
+                  onChange={(e) => setNewAssignStart(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground font-medium block mb-0.5">To</label>
+                <input
+                  type="time"
+                  value={newAssignEnd}
+                  onChange={(e) => setNewAssignEnd(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-mono shadow-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="w-full h-8 font-semibold mt-1"
+              disabled={newAssignTherapistId === '' || newAssignStart >= newAssignEnd}
+              onClick={handleAddAssignment}
+            >
+              + Add Staff Assignment
+            </Button>
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
-    <QuickActionsPopover
-      isOpen={popover?.isOpen ?? false}
-      onClose={() => setPopover(null)}
-      position={popover?.position ?? null}
-      timeDisplay={popover?.startTime ?? ''}
-      showAddAppointment={canAddAppointment}
-      onAddAppointment={() => {
-        if (popover) {
-          const room = rooms.find((r) => r.id === popover.roomId);
-          setAppointmentModal({ roomId: popover.roomId, roomName: room?.name, startTime: popover.startTime });
-        }
-      }}
-      onAddGroupAppointment={() => navigate(routes.bookings)}
-      onAddBlockedTime={() => {
-        if (popover) {
-          handleBlockSlot(popover.roomId, popover.startTime);
-        }
-      }}
-    />
+      <QuickActionsPopover
+        isOpen={popover?.isOpen ?? false}
+        onClose={() => setPopover(null)}
+        position={popover?.position ?? null}
+        timeDisplay={popover?.startTime ?? ''}
+        showAddAppointment={canAddAppointment}
+        onAddAppointment={() => {
+          if (popover) {
+            const room = rooms.find((r) => r.id === popover.roomId);
+            setAppointmentModal({ roomId: popover.roomId, roomName: room?.name, startTime: popover.startTime });
+          }
+        }}
+        onAddGroupAppointment={() => navigate(routes.bookings)}
+        onAddBlockedTime={() => {
+          if (popover) {
+            handleBlockSlot(popover.roomId, popover.startTime);
+          }
+        }}
+      />
 
-    <AddAppointmentModal
-      isOpen={appointmentModal !== null}
-      onClose={() => setAppointmentModal(null)}
-      onSuccess={() => loadRosterAndBookings(true)}
-      locationId={locationId}
-      roomId={appointmentModal?.roomId ?? 0}
-      roomName={appointmentModal?.roomName}
-      workDate={date}
-      startTime={appointmentModal?.startTime ?? '09:00'}
-      therapists={therapists}
-      therapistShifts={roster.therapistShifts}
-      rooms={rooms}
-    />
+      <AddAppointmentModal
+        isOpen={appointmentModal !== null}
+        onClose={() => setAppointmentModal(null)}
+        onSuccess={() => loadRosterAndBookings(true)}
+        locationId={locationId}
+        roomId={appointmentModal?.roomId ?? 0}
+        roomName={appointmentModal?.roomName}
+        workDate={date}
+        startTime={appointmentModal?.startTime ?? '09:00'}
+        therapists={therapists}
+        therapistShifts={roster.therapistShifts}
+        rooms={rooms}
+      />
 
-    <EditBlockSlotModal
-      isOpen={blockModalState.isOpen}
-      onClose={() => setBlockModalState((prev) => ({ ...prev, isOpen: false }))}
-      onSuccess={() => loadRosterAndBookings(true)}
-      chainId={chainId}
-      locationId={locationId}
-      roomId={blockModalState.roomId}
-      roomName={blockModalState.roomName}
-      workDate={date}
-      startTime={blockModalState.startTime}
-      maxMinutes={blockModalState.maxMinutes}
-      existingBlock={blockModalState.existingBlock}
-      therapists={therapists}
-    />
+      <EditBlockSlotModal
+        isOpen={blockModalState.isOpen}
+        onClose={() => setBlockModalState((prev) => ({ ...prev, isOpen: false }))}
+        onSuccess={() => loadRosterAndBookings(true)}
+        chainId={chainId}
+        locationId={locationId}
+        roomId={blockModalState.roomId}
+        roomName={blockModalState.roomName}
+        workDate={date}
+        startTime={blockModalState.startTime}
+        maxMinutes={blockModalState.maxMinutes}
+        existingBlock={blockModalState.existingBlock}
+        therapists={therapists}
+      />
     </>
   );
 }

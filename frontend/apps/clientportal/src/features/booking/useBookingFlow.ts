@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useReducer, useRef } from 'react';
 import { ApiError, bookingApi } from '../../api/client';
-import type { AvailableSlot, BookingDetails, ScheduleResponse } from '../../api/types';
+import type { AvailableSlot, BookingDetails } from '../../api/types';
 
 interface State {
   booking: BookingDetails | null;
@@ -123,7 +123,7 @@ export function useBookingFlow(bookingId: number) {
     (async () => {
       try {
         const { data } = await bookingApi.apiBookingIdGet(bookingId);
-        dispatch({ type: 'BOOKING_LOADED', booking: data as unknown as BookingDetails });
+        dispatch({ type: 'BOOKING_LOADED', booking: data });
       } catch (err) {
         dispatch({ type: 'ERROR', message: errorMessage(err, 'Booking not found') });
       } finally {
@@ -165,7 +165,7 @@ export function useBookingFlow(bookingId: number) {
       const entries = await Promise.all(
         treatmentIds.map(async (id) => {
           const { data } = await bookingApi.apiBookingAvailableSlotsGet(locationId, String(id), date, bookingId);
-          return [id, data as unknown as AvailableSlot[]] as const;
+          return [id, data] as const;
         }),
       );
       dispatch({ type: 'SLOTS_LOADED', slotsByTreatment: Object.fromEntries(entries) });
@@ -185,7 +185,7 @@ export function useBookingFlow(bookingId: number) {
           startTime: slot.startTime,
           endTime: slot.endTime,
         });
-        const { expiresAt } = data as unknown as ScheduleResponse;
+        const expiresAt = data.expiresAt ?? '';
         dispatch({ type: 'LINE_SCHEDULED', treatmentId, slot, expiresAt });
       } catch (err) {
         dispatch({ type: 'ERROR', message: errorMessage(err, 'That slot was just taken — pick another') });
@@ -205,7 +205,7 @@ export function useBookingFlow(bookingId: number) {
       try {
         await bookingApi.apiBookingIdTreatmentsPost(bookingId, { treatmentId });
         const { data } = await bookingApi.apiBookingIdGet(bookingId);
-        dispatch({ type: 'BOOKING_LOADED', booking: data as unknown as BookingDetails });
+        dispatch({ type: 'BOOKING_LOADED', booking: data });
       } catch (err) {
         dispatch({ type: 'ERROR', message: errorMessage(err, 'Failed to add treatment') });
       }

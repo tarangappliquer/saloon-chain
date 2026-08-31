@@ -37,7 +37,7 @@ export function TreatmentCategoriesPage() {
     adminCatalogApi
       .apiAdminCatalogChainsGet()
       .then(({ data }) => {
-        const cs = data as unknown as Chain[];
+        const cs = data;
         setChains(cs);
         if (cs.length > 0 && chainId === null) setChainId(cs[0].id);
       })
@@ -49,7 +49,7 @@ export function TreatmentCategoriesPage() {
     adminCatalogApi
       .apiAdminCatalogLocationsGet(chainId)
       .then(({ data }) => {
-        const locs = data as unknown as Location[];
+        const locs = data;
         setLocations(locs);
         if (paramLocationId) {
           setLocationId(Number(paramLocationId));
@@ -65,7 +65,7 @@ export function TreatmentCategoriesPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogTreatmentCategoriesGet(id);
-      setCategories(data as unknown as TreatmentCategory[]);
+      setCategories(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load categories');
     } finally {

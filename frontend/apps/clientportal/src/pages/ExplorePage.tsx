@@ -2,14 +2,13 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@saloon/ui';
 import { catalogApi } from '../api/client';
-import type { Location, Treatment } from '../api/types';
+import type { Treatment } from '../api/types';
+import type { VenueSearchResultDto } from '@saloon/api-client';
 import { routes } from '../routes';
 import { useAuth } from '../features/auth/AuthContext';
 
-interface VenueCardData extends Location {
-  chainName: string;
-  rating: number | null;
-  reviewCount: number;
+interface VenueCardData extends VenueSearchResultDto {
+  rating?: number;
   imageUrl: string;
   categories: string[];
   treatmentNames: string[];
@@ -47,9 +46,7 @@ export function ExplorePage() {
       setLoading(true);
       try {
         const searchRes = await catalogApi.apiCatalogSearchGet(searchQuery.trim() || undefined);
-        let searchResults = searchRes.data as unknown as Array<
-          Location & { chainName: string; averageRating: number | null; reviewCount: number | null }
-        >;
+        let searchResults = searchRes.data;
 
         // Emulated staff can only ever book at their own scope (enforced server-side too, in
         // BookingEndpoints) -- Manager/Receptionist see just their one location, SuperAdmin/Admin
@@ -74,7 +71,7 @@ export function ExplorePage() {
               let treats = treatmentsCache.current.get(loc.id);
               if (!treats) {
                 const treatsRes = await catalogApi.apiCatalogTreatmentsGet(loc.id);
-                treats = treatsRes.data as unknown as Treatment[];
+                treats = treatsRes.data;
                 treatmentsCache.current.set(loc.id, treats);
               }
               if (treats && treats.length > 0) {
@@ -95,7 +92,7 @@ export function ExplorePage() {
               ...loc,
               chainName: loc.chainName || 'Shoppey Saloon Chain',
               rating: loc.averageRating,
-              reviewCount: loc.reviewCount ?? 0,
+              reviewCount: loc.reviewCount ?? '0',
               imageUrl: SAMPLE_IMAGES[(loc.id + idx) % SAMPLE_IMAGES.length],
               categories: locationCategories,
               treatmentNames: treatmentNames,
@@ -122,7 +119,7 @@ export function ExplorePage() {
             workingDaysMask: 127,
             timeZoneId: 'UTC',
             rating: 4.9,
-            reviewCount: 184,
+            reviewCount: '184',
             imageUrl: SAMPLE_IMAGES[0],
             categories: ['Hair & Styling', 'Nails & Manicure', 'Skincare & Facials'],
             treatmentNames: ['Signature Haircut & Blowdry', 'Gel Manicure', 'Deep Hydrating Glow Facial'],
@@ -139,7 +136,7 @@ export function ExplorePage() {
             workingDaysMask: 127,
             timeZoneId: 'UTC',
             rating: 4.8,
-            reviewCount: 96,
+            reviewCount: '96',
             imageUrl: SAMPLE_IMAGES[1],
             categories: ['Barbershop', 'Hair & Styling'],
             treatmentNames: ['Executive Haircut', 'Beard Trim & Shave'],
@@ -284,7 +281,7 @@ export function ExplorePage() {
                     decoding="async"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
-                  {venue.rating !== null && (
+                  {venue.rating !== undefined && (
                     <div className="absolute top-3 right-3 rounded-full bg-card/90 px-2.5 py-1 text-xs font-bold text-foreground backdrop-blur-md flex items-center gap-1 shadow-sm">
                       <span className="text-amber-500">★</span>
                       <span>{venue.rating.toFixed(1)}</span>

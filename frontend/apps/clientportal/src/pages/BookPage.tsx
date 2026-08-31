@@ -3,7 +3,7 @@ import { Outlet, useMatch, useNavigate, useParams, useSearchParams } from 'react
 import Select, { type SingleValue } from 'react-select';
 import { Button, ConfirmDialog, LoadingFallback, PageHeader } from '@saloon/ui';
 import { ApiError, bookingApi, catalogApi } from '../api/client';
-import type { BookingDetails, Chain, Location, Treatment } from '../api/types';
+import type { Chain, Location, Treatment } from '../api/types';
 import { findChainForLocation } from '../api/findChainForLocation';
 import { type SelectOption, selectClassNames } from '../components/reactSelectStyles';
 import { routes } from '../routes';
@@ -52,7 +52,7 @@ export function BookPage() {
   useEffect(() => {
     if (isEditingBooking) return;
     catalogApi.apiCatalogChainsGet().then(async ({ data }) => {
-      let cs = data as unknown as Chain[];
+      let cs = data;
 
       // Emulated staff can only ever book within their own scope (enforced server-side too, in
       // BookingEndpoints) -- narrow the chain list before anything below picks a default from it.
@@ -87,12 +87,12 @@ export function BookPage() {
     if (!isEditingBooking || !bookingId) return;
 
     bookingApi.apiBookingIdGet(Number(bookingId)).then(async ({ data }) => {
-      const b = data as unknown as BookingDetails;
+      const b = data;
       if (!b || !b.locationId) return;
 
       const targetLocId = b.locationId;
       const chainsRes = await catalogApi.apiCatalogChainsGet();
-      const allChains = chainsRes.data as unknown as Chain[];
+      const allChains = chainsRes.data;
 
       const match = await findChainForLocation(allChains, targetLocId);
       if (match) {
@@ -107,7 +107,7 @@ export function BookPage() {
   useEffect(() => {
     if (isEditingBooking || !chainId) return;
     catalogApi.apiCatalogLocationsGet(chainId).then(({ data }) => {
-      let locs = data as unknown as Location[];
+      let locs = data;
       if (user?.isEmulated && user.emulatorLocationId) {
         locs = locs.filter((l) => l.id === user.emulatorLocationId);
       }
@@ -120,7 +120,7 @@ export function BookPage() {
     if (!locationId) return;
     catalogApi
       .apiCatalogTreatmentsGet(locationId)
-      .then(({ data }) => setTreatments(data as unknown as Treatment[]));
+      .then(({ data }) => setTreatments(data));
   }, [locationId]);
 
   const saloonName = chains.find((c) => c.id === chainId)?.name ?? null;

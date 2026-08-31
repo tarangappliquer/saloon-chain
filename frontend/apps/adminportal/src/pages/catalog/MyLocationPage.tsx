@@ -38,7 +38,7 @@ export function MyLocationPage() {
     setError(null);
     try {
       const { data } = await adminCatalogApi.apiAdminCatalogLocationsMineGet();
-      const loc = data as unknown as Location;
+      const loc = data;
       setLocation(loc);
       const days = new Set<number>();
       DAY_BITS.forEach((d) => {
@@ -108,13 +108,13 @@ export function MyLocationPage() {
 
       await adminCatalogApi.apiAdminCatalogLocationsIdPut(location.id, {
         name: form.name,
-        address: form.address || null,
+        address: form.address || '',
         latitude: form.latitude,
         longitude: form.longitude,
         openTime: form.openTime,
         closeTime: form.closeTime,
-        breakStartTime: breakStart,
-        breakEndTime: breakEnd,
+        breakStartTime: breakStart ?? '',
+        breakEndTime: breakEnd ?? '',
         workingDaysMask,
         timeZoneId: form.timeZoneId,
         isActive: location.isActive !== false,

@@ -38,7 +38,7 @@ export function SaloonUsersPage() {
     setError(null);
     try {
       const { data } = await adminStaffApi.apiAdminStaffGet(undefined, chainId);
-      const rawUsers = data as unknown as StaffUser[];
+      const rawUsers = data;
       const allUsers = rawUsers.map((u) => ({ ...u, role: normalizeUserRole(u.role) }));
       setStaff(allUsers.filter((u) => u.role === 'SuperAdmin' || u.role === 'Admin'));
     } catch (err) {
@@ -53,7 +53,7 @@ export function SaloonUsersPage() {
       adminCatalogApi
         .apiAdminCatalogChainsGet()
         .then(({ data }) => {
-          const cs = data as unknown as Chain[];
+          const cs = data;
           const found = cs.find((c) => c.id === chainId);
           if (found) setChain(found);
         })
@@ -89,11 +89,11 @@ export function SaloonUsersPage() {
       if (editingUser) {
         await adminStaffApi.apiAdminStaffIdPut(editingUser.id, {
           name: form.name,
-          phone: form.phone || null,
+          phone: form.phone || '',
           role: form.role,
           chainId: editingUser.chainId,
           locationId: editingUser.locationId,
-          therapistId: editingUser.therapistId,
+          therapistId: editingUser.therapistId ?? 0,
           isEmulator: editingUser.isEmulator,
           isActive: editingUser.isActive,
         });
@@ -103,8 +103,8 @@ export function SaloonUsersPage() {
           email: form.email,
           role: form.role,
           chainId,
-          locationId: null,
-          therapistId: null,
+          locationId: 0,
+          therapistId: 0,
         });
       }
       handleCancelEdit();

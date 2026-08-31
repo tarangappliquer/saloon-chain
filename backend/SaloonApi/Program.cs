@@ -80,6 +80,7 @@ try
         options.AddOperationTransformer<DefaultResponsesOperationTransformer>();
 
         options.AddFluentValidationRules();
+        options.AddDocumentTransformer<OpenApi30NormalizeTransformer>();
     });
 
     builder.Services.ConfigureHttpJsonOptions(options =>
