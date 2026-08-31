@@ -54,6 +54,15 @@ try
 {
     Log.Information("Starting SaloonApi web application...");
 
+    // In a CPU-limited container the ThreadPool starts with very few threads and grows only about
+    // one per second. Opening an Npgsql connection blocks a pool thread on synchronous name
+    // resolution, so when DNS or the database is briefly slow a burst of opens from request load
+    // plus the periodic sweeps parks every thread for the connect timeout and starves the pool.
+    // The whole API then stops responding and name resolution itself starts failing. Raising the
+    // floor lets the pool absorb that burst instead of collapsing.
+    ThreadPool.GetMinThreads(out _, out var minIoThreads);
+    ThreadPool.SetMinThreads(Math.Max(Environment.ProcessorCount * 8, 64), Math.Max(minIoThreads, 64));
+
     var builder = WebApplication.CreateBuilder(args);
 
     builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
