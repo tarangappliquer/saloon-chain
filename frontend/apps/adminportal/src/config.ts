@@ -4,7 +4,7 @@ class AppConfig {
   }
 
   get clientPortalUrl(): string {
-    return import.meta.env.VITE_CLIENT_PORTAL_URL ?? 'http://localhost:5173';
+    return import.meta.env.VITE_CLIENT_PORTAL_URL ?? 'http://localhost:58569';
   }
 
   get enableThemeToggle(): boolean {
