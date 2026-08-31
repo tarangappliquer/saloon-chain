@@ -14,15 +14,17 @@ COPY SaloonApi/ SaloonApi/
 WORKDIR /src/SaloonApi
 RUN dotnet publish SaloonApi.csproj -c Release -o /app/publish /p:UseAppHost=false
 
+# Stage uploads dir here — chiseled runtime has no shell for a RUN mkdir
+RUN mkdir -p /app/publish/uploads
+
 # Stage 2: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+# chiseled-extra: no shell/apt, but ships full ICU + libgssapi-krb5 (needed by Npgsql)
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra AS final
 WORKDIR /app
 
-# Install GSSAPI Kerberos library required by Npgsql
-RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
-
-# Ensure uploads directory exists for TUS resumable uploads / LocalStorageService
-RUN mkdir -p /app/uploads
+# ponytail: run as root so bind-mounted ./uploads + ./Logs (host-owned) stay writable,
+# matching the prior debian base. For non-root, chown host dirs to 1654:1654 and drop this.
+USER root
 
 COPY --from=build /app/publish .
 

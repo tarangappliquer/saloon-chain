@@ -40,6 +40,15 @@ internal sealed class StaffAttendanceSweepHostedService(
                 logger.LogError(ex, "Database error occurred during StaffAttendanceSweepHostedService sweep.");
                 await errorNotifier.NotifyAsync(ex, "StaffAttendanceSweepHostedService", ct: stoppingToken).ConfigureAwait(false);
             }
+            // Top-level guard, same as the sibling sweep services: any other failure (Redis
+            // unreachable, etc.) must not fault the BackgroundService and stop the whole host.
+#pragma warning disable CA1031
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "StaffAttendanceSweepHostedService sweep failed.");
+                await errorNotifier.NotifyAsync(ex, "StaffAttendanceSweepHostedService", ct: stoppingToken).ConfigureAwait(false);
+            }
+#pragma warning restore CA1031
 
             try
             {
