@@ -15,44 +15,55 @@ internal sealed class SseBroadcaster
     private readonly IRedisConnectionProvider _redisProvider;
     private readonly ILogger<SseBroadcaster> _logger;
 
-    private readonly object _subLock = new();
-    // The multiplexer instance we currently hold a subscription on. Null until the first successful
-    // subscribe. RedisConnectionProvider hands back a brand-new multiplexer if Redis was down at
-    // startup or the connection string changed, and that new instance has no subscription -- so we
-    // re-subscribe whenever this no longer matches the live multiplexer.
+    // The multiplexer instance we currently hold a subscription on. RedisConnectionProvider hands
+    // back a brand-new multiplexer if Redis was down at startup, so re-subscribe when it changes.
+    private readonly object _subGate = new();
     private IConnectionMultiplexer? _subscribedOn;
 
     public SseBroadcaster(IRedisConnectionProvider redisProvider, ILogger<SseBroadcaster> logger)
     {
         _redisProvider = redisProvider;
         _logger = logger;
-        EnsureRedisSubscription();
+        TryAttachSubscription(_redisProvider.GetMultiplexer());
     }
 
-    // Cheap no-op once subscribed on the current multiplexer; called from the ctor and from the
-    // Subscribe/Publish hot paths so the backplane recovers after a Redis outage without a restart.
-    private void EnsureRedisSubscription()
+    // Attaches the pub/sub handler to a multiplexer, once per instance. _subGate is held only for a
+    // reference compare-and-set (nanoseconds, never across I/O); the actual SubscribeAsync is fire-
+    // and-forget outside the lock, so this is safe to call from the Publish hot path.
+    // StackExchange.Redis re-establishes the subscription itself across reconnects of the SAME
+    // multiplexer -- this only re-runs if RedisConnectionProvider swaps in a different instance.
+    private void TryAttachSubscription(IConnectionMultiplexer? mux)
+    {
+        if (mux is null)
+            return;
+
+        lock (_subGate)
+        {
+            if (ReferenceEquals(_subscribedOn, mux))
+                return;
+            _subscribedOn = mux;
+        }
+
+        _ = SubscribeSafeAsync(mux);
+    }
+
+    private async Task SubscribeSafeAsync(IConnectionMultiplexer mux)
     {
 #pragma warning disable CA1031
         try
         {
-            var mux = _redisProvider.GetMultiplexer();
-            if (mux is null || !mux.IsConnected || ReferenceEquals(_subscribedOn, mux))
-                return;
-
-            lock (_subLock)
-            {
-                if (ReferenceEquals(_subscribedOn, mux))
-                    return;
-
-                mux.GetSubscriber().Subscribe(SseChannel, OnRedisMessage);
-                _subscribedOn = mux;
-                _logger.LogInformation("SSE Redis PubSub backplane subscribed.");
-            }
+            await mux.GetSubscriber().SubscribeAsync(SseChannel, OnRedisMessage).ConfigureAwait(false);
+            _logger.LogInformation("SSE Redis PubSub backplane subscribed.");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to initialize Redis PubSub backplane for SSE. Falling back to local in-process broadcasting.");
+            // Let a later Publish retry against this (or a newer) multiplexer.
+            lock (_subGate)
+            {
+                if (ReferenceEquals(_subscribedOn, mux))
+                    _subscribedOn = null;
+            }
+            _logger.LogWarning(ex, "Failed to subscribe SSE Redis backplane; using local broadcast only.");
         }
 #pragma warning restore CA1031
     }
@@ -77,7 +88,6 @@ internal sealed class SseBroadcaster
 
     public (Guid Id, ChannelReader<string> Reader) Subscribe(string group)
     {
-        EnsureRedisSubscription();
         var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(100)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
@@ -109,8 +119,8 @@ internal sealed class SseBroadcaster
 #pragma warning disable CA1031
         try
         {
-            EnsureRedisSubscription();
             var mux = _redisProvider.GetMultiplexer();
+            TryAttachSubscription(mux);
             if (mux is not null && mux.IsConnected)
             {
                 var payload = JsonSerializer.Serialize(new SseMessagePayload(_podInstanceId, group, message));
