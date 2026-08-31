@@ -223,7 +223,7 @@ internal sealed class BookingService(
 
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
         if (details is not null)
-            emailQueue.Enqueue(await BuildConfirmationEmailAsync(details).ConfigureAwait(false));
+            await emailQueue.EnqueueAsync(await BuildConfirmationEmailAsync(details).ConfigureAwait(false)).ConfigureAwait(false);
     }
 
     private async Task<EmailMessage> BuildConfirmationEmailAsync(ConfirmationDetailsDto details)
@@ -313,7 +313,7 @@ internal sealed class BookingService(
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
-            emailQueue.Enqueue(await BuildCancellationEmailAsync(details).ConfigureAwait(false));
+            await emailQueue.EnqueueAsync(await BuildCancellationEmailAsync(details).ConfigureAwait(false)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -388,7 +388,7 @@ internal sealed class BookingService(
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
 
         if (details is not null)
-            emailQueue.Enqueue(await BuildCancellationEmailAsync(details).ConfigureAwait(false));
+            await emailQueue.EnqueueAsync(await BuildCancellationEmailAsync(details).ConfigureAwait(false)).ConfigureAwait(false);
     }
 
     public Task<IReadOnlyList<MyBookingDto>> GetMineAsync(int customerId, int? chainId = null, int? locationId = null) =>

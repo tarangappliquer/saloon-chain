@@ -184,6 +184,7 @@ try
     builder.Services.AddSingleton<AuthDbService>();
     builder.Services.AddSingleton<ProfileDbService>();
     builder.Services.AddSingleton<ReviewDbService>();
+    builder.Services.AddSingleton<EmailOutboxDbService>();
 
     builder.Services.AddSingleton<SqlConnectionFactory>();
 
@@ -192,7 +193,7 @@ try
     builder.Services.AddSingleton<SseBroadcaster>();
     builder.Services.AddSingleton<TokenService>();
     builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-    builder.Services.AddSingleton<IBackgroundEmailQueue, BackgroundEmailQueue>();
+    builder.Services.AddSingleton<IBackgroundEmailQueue, EmailOutboxQueue>();
     builder.Services.AddSingleton<IRazorTemplateEngine, RazorTemplateEngine>();
     builder.Services.AddSingleton<IEmailBodyBuilder, EmailBodyBuilder>();
 

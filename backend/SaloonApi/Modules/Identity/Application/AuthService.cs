@@ -121,7 +121,7 @@ internal sealed class AuthService(
             Subject: "Set your password", 
             HtmlBody: html);
 
-        emailQueue.Enqueue(emailMsg);
+        await emailQueue.EnqueueAsync(emailMsg).ConfigureAwait(false);
     }
 
     public async Task RequestPasswordResetAsync(string email)
@@ -146,7 +146,7 @@ internal sealed class AuthService(
             To: [new EmailAddress(user.Email, user.Name)], 
             Subject: "Reset your password", 
             HtmlBody: html);
-        emailQueue.Enqueue(emailMsg);
+        await emailQueue.EnqueueAsync(emailMsg).ConfigureAwait(false);
     }
 
     public async Task<bool> ResetPasswordAsync(string rawToken, string newPassword)
@@ -184,7 +184,7 @@ internal sealed class AuthService(
             To: [new EmailAddress(newEmail, name)], 
             Subject: "Confirm your new email address", 
             HtmlBody: html);
-        emailQueue.Enqueue(emailMsg);
+        await emailQueue.EnqueueAsync(emailMsg).ConfigureAwait(false);
     }
 
     public async Task<bool> ConfirmEmailChangeAsync(string rawToken)

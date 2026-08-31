@@ -291,7 +291,7 @@ internal static class AdminStaffEndpoints
                     Subject: $"[SaloonChains Alert] Proxy Staff Assigned for Booking #{result.BookingId}",
                     HtmlBody: htmlBody
                 );
-                emailQueue.Enqueue(email);
+                await emailQueue.EnqueueAsync(email).ConfigureAwait(false);
             }
 
             return Results.Ok(result);

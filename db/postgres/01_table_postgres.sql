@@ -634,3 +634,22 @@ CREATE TABLE public.PayRunLines (
     TotalPay         NUMERIC(10,2) NOT NULL DEFAULT 0
 );
 CREATE INDEX IX_PayRunLines_PayRunId ON public.PayRunLines(PayRunId);
+
+-- Durable email outbox. Every non-alert email (booking confirm/cancel, set/reset password,
+-- email-change verify, manager alerts) is persisted here on the request/business path via
+-- IBackgroundEmailQueue, then EmailQueueBackgroundService polls, sends over SMTP, and marks the
+-- row -- so a process restart or SMTP outage never silently drops mail. Developer error alerts
+-- (DeveloperErrorNotifier) deliberately bypass this and send inline.
+CREATE TABLE public.EmailOutbox (
+    Id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    Payload       JSONB NOT NULL,                       -- serialized SaloonApi EmailMessage
+    Subject       VARCHAR(500) NOT NULL DEFAULT '',     -- denormalized for ops visibility
+    Status        VARCHAR(10) NOT NULL DEFAULT 'Pending' CHECK (Status IN ('Pending','Sent','Failed')),
+    Attempts      INT NOT NULL DEFAULT 0,
+    NextAttemptAt TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LastError     TEXT NULL,
+    CreatedDate   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    SentDate      TIMESTAMPTZ NULL
+);
+-- Partial index: the dispatcher only ever scans due 'Pending' rows, oldest first.
+CREATE INDEX IX_EmailOutbox_DuePending ON public.EmailOutbox(NextAttemptAt) WHERE Status = 'Pending';

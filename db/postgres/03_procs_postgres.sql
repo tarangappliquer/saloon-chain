@@ -4210,3 +4210,57 @@ BEGIN
     WHERE bt.Id = p_BookingTreatmentId;
 END;
 $$;
+
+-------------------------------------------------------------------------------------------------
+-- Email outbox (public.EmailOutbox). Enqueue on the request/business path; claim + send from
+-- EmailQueueBackgroundService. fn_EmailOutbox_Claim uses FOR UPDATE SKIP LOCKED so multiple API
+-- nodes dispatch disjoint batches with no distributed lock.
+-------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.sp_EmailOutbox_Enqueue(p_Payload jsonb, p_Subject varchar) RETURNS bigint
+LANGUAGE sql AS $$
+    INSERT INTO public.EmailOutbox (Payload, Subject)
+    VALUES (p_Payload, LEFT(COALESCE(p_Subject, ''), 500))
+    RETURNING Id;
+$$;
+
+-- Atomically claims up to p_BatchSize due rows: bumps Attempts and hides each row for
+-- p_VisibilitySeconds (so a dispatcher crash mid-send just means the row retries after the
+-- timeout, having spent one attempt). MarkSent / MarkFailed finalize the outcome.
+CREATE OR REPLACE FUNCTION public.fn_EmailOutbox_Claim(p_BatchSize int, p_VisibilitySeconds int)
+RETURNS TABLE (Id bigint, Payload jsonb)
+LANGUAGE sql AS $$
+    UPDATE public.EmailOutbox o
+    SET Attempts = o.Attempts + 1,
+        NextAttemptAt = now() + make_interval(secs => p_VisibilitySeconds)
+    FROM (
+        SELECT e.Id
+        FROM public.EmailOutbox e
+        WHERE e.Status = 'Pending' AND e.NextAttemptAt <= now()
+        ORDER BY e.CreatedDate
+        LIMIT p_BatchSize
+        FOR UPDATE SKIP LOCKED
+    ) c
+    WHERE o.Id = c.Id
+    RETURNING o.Id, o.Payload;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sp_EmailOutbox_MarkSent(p_Id bigint) RETURNS void
+LANGUAGE sql AS $$
+    UPDATE public.EmailOutbox
+    SET Status = 'Sent', SentDate = now(), LastError = NULL
+    WHERE Id = p_Id;
+$$;
+
+-- Attempts was already incremented by the claim. Exhausted (>= p_MaxAttempts) -> 'Failed';
+-- otherwise stay 'Pending' with NextAttemptAt pushed out by a linear backoff. Pass p_MaxAttempts
+-- = 0 to fail a row permanently (used for an unparseable payload that can never succeed).
+CREATE OR REPLACE FUNCTION public.sp_EmailOutbox_MarkFailed(
+    p_Id bigint, p_Error text, p_MaxAttempts int, p_BackoffBaseSeconds int) RETURNS void
+LANGUAGE sql AS $$
+    UPDATE public.EmailOutbox
+    SET Status = CASE WHEN Attempts >= p_MaxAttempts THEN 'Failed' ELSE 'Pending' END,
+        NextAttemptAt = now() + make_interval(secs => p_BackoffBaseSeconds * GREATEST(Attempts, 1)),
+        LastError = LEFT(COALESCE(p_Error, ''), 4000)
+    WHERE Id = p_Id;
+$$;

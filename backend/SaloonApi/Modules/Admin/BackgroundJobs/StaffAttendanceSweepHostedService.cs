@@ -111,7 +111,7 @@ internal sealed class StaffAttendanceSweepHostedService(
                     Subject: $"[URGENT ALERT] Assigned Staff Not Arrived for Booking #{alert.BookingId}",
                     HtmlBody: htmlBody
                 );
-                emailQueue.Enqueue(email);
+                await emailQueue.EnqueueAsync(email).ConfigureAwait(false);
             }
         }
     }
