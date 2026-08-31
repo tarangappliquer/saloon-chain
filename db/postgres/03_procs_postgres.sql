@@ -2643,9 +2643,9 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION public.fn_Scheduling_RosterBlocks(p_LocationId int, p_WorkDate date)
-RETURNS TABLE(Id int, RoomId int, RoomName varchar, StartTime time, EndTime time, Reason varchar, IsLocationBreak boolean)
+RETURNS TABLE(Id int, RoomId int, RoomName varchar, StartTime time, EndTime time, Reason varchar, IsLocationBreak boolean, BlockTypeId int)
 LANGUAGE sql STABLE AS $$
-    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason, FALSE AS IsLocationBreak
+    SELECT bs.Id, bs.RoomId, r.Name AS RoomName, bs.StartTime, bs.EndTime, bs.Reason, FALSE AS IsLocationBreak, bs.BlockTypeId
     FROM public.BlockedSlots bs
         JOIN public.Rooms r ON r.Id = bs.RoomId
     WHERE r.LocationId = p_LocationId AND bs.WorkDate = p_WorkDate AND bs.IsDelete = FALSE
@@ -2659,7 +2659,8 @@ LANGUAGE sql STABLE AS $$
         COALESCE(l.BreakStartTime, c.BreakStartTime) AS StartTime,
         COALESCE(l.BreakEndTime, c.BreakEndTime) AS EndTime,
         'Lunch Break' AS Reason,
-        TRUE AS IsLocationBreak
+        TRUE AS IsLocationBreak,
+        NULL::int AS BlockTypeId
     FROM public.Locations l
         JOIN public.SaloonChains c ON c.Id = l.ChainId
         CROSS JOIN public.Rooms r

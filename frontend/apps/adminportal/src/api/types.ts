@@ -174,36 +174,44 @@ export interface AdminCustomersPage {
   hasMore: boolean;
 }
 
+// Hand-kept because the generated @saloon/api-client aliases every int as a junk union
+// (ApiBookingStreamGetLocationIdParameter etc.), so the DTOs can't be consumed directly. Field
+// NAMES here must match the JSON the API actually sends -- see AdminBookingDto / StaffBooking-
+// TreatmentLineDto in the generated api.ts (key: it is `bookingId`, not `id`).
 export interface AdminBookingTreatment {
-  roomId?: number | null;
+  bookingTreatmentId: number;
+  treatmentId: number;
   treatmentName: string;
-  roomName: string | null;
-  therapistName: string | null;
+  durationSlots: number;
+  preTimeMinutes: number;
+  price: number;
   startTime: string | null;
   endTime: string | null;
-  slotCount: number;
-  price: number;
-  treatmentId: number;
+  roomId?: number | null;
+  roomName: string | null;
   therapistId?: number | null;
+  therapistName: string | null;
+  expiresAt?: string | null;
 }
 
 export interface AdminBooking {
-  id: number;
-  customerId?: number;
+  bookingId: number;
+  locationId: number;
   locationName: string;
+  customerId: number;
   customerName: string;
   customerEmail: string;
+  customerPhone: string | null;
   status: string;
+  createdDate: string;
   treatments: AdminBookingTreatment[];
-  isCancelled?: boolean;
-  isNoShow?: boolean;
   appointmentStatusId?: number | null;
   appointmentStatusName?: string | null;
   appointmentStatusColorHex?: string | null;
   cancelReasonId?: number | null;
   cancelReasonName?: string | null;
   isPaid?: boolean;
-  modeOfPayment?: string | null;
+  paymentProvider?: string | null;
 }
 
 export type ShiftType = 'Morning' | 'Evening';

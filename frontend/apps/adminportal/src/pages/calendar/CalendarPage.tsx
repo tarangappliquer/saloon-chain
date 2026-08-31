@@ -190,7 +190,7 @@ function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
         const startStr = t.startTime.includes('T') ? t.startTime.split('T')[1].slice(0, 5) : t.startTime.slice(0, 5);
         const endStr = t.endTime.includes('T') ? t.endTime.split('T')[1].slice(0, 5) : t.endTime.slice(0, 5);
         flat.push({
-          bookingId: b.id,
+          bookingId: b.bookingId,
           customerName: b.customerName,
           customerEmail: b.customerEmail,
           status: b.status,
@@ -394,13 +394,7 @@ export function CalendarPage() {
         adminBookingsApi.apiAdminBookingsGet(locationId, date),
       ]);
       setRoster(rosterRes.data as unknown as Roster);
-      // API returns `bookingId`; the rest of the app reads `booking.id`.
-      setBookings(
-        (bookingsRes.data as unknown as Array<AdminBooking & { bookingId?: number }>).map((b) => ({
-          ...b,
-          id: b.id ?? b.bookingId!,
-        })),
-      );
+      setBookings(bookingsRes.data as unknown as AdminBooking[]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load schedule');
     } finally {
@@ -649,7 +643,7 @@ export function CalendarPage() {
       )}
 
       {detailBookingId !== null && locationId !== null && (() => {
-        const detailBooking = bookings.find((b) => b.id === detailBookingId);
+        const detailBooking = bookings.find((b) => b.bookingId === detailBookingId);
         return detailBooking ? (
           <BookingDetailPanel
             booking={detailBooking}

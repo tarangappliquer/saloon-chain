@@ -42,6 +42,7 @@ internal sealed record BlockedSlotDto
     public TimeOnly EndTime { get; init; }
     public string Reason { get; init; } = "";
     public bool IsLocationBreak { get; init; }
+    public int? BlockTypeId { get; init; }
 }
 
 // Init-property -- sp_Scheduling_GetBlockedSlotDetails returns 11 columns (BlockTypeId/

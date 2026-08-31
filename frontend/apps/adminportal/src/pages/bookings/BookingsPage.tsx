@@ -151,7 +151,7 @@ function BookingDetailsModal({
   useEffect(() => {
     async function loadPayments() {
       try {
-        const { data } = await paymentApi.apiPaymentsBookingBookingIdGet(booking.id);
+        const { data } = await paymentApi.apiPaymentsBookingBookingIdGet(booking.bookingId);
         setPayments(data as unknown as PaymentRecord[]);
       } catch {
         setPayments([]);
@@ -160,7 +160,7 @@ function BookingDetailsModal({
       }
     }
     loadPayments();
-  }, [booking.id]);
+  }, [booking.bookingId]);
 
   const totalAmount = booking.treatments.reduce((sum, t) => sum + (t.price || 0), 0);
   const successfulPayment = payments.find((p) => p.status === 'Succeeded' || p.status === 'Paid');
@@ -169,7 +169,7 @@ function BookingDetailsModal({
   async function handleConfirmCancel() {
     setCancelling(true);
     try {
-      await onCancel(booking.id);
+      await onCancel(booking.bookingId);
       setShowConfirmCancel(false);
       onClose();
     } catch {
@@ -184,7 +184,7 @@ function BookingDetailsModal({
       <ConfirmDialog
         isOpen={showConfirmCancel}
         title="Cancel Customer Booking"
-        description={`Are you sure you want to cancel booking #${booking.id} for ${booking.customerName}? If paid, an automated refund will be processed.`}
+        description={`Are you sure you want to cancel booking #${booking.bookingId} for ${booking.customerName}? If paid, an automated refund will be processed.`}
         confirmLabel="Yes, Cancel Booking"
         cancelLabel="Keep Booking"
         variant="danger"
@@ -199,7 +199,7 @@ function BookingDetailsModal({
           <div className="flex items-center justify-between border-b border-border pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-sm font-bold text-primary">Booking #{booking.id}</span>
+                <span className="font-mono text-sm font-bold text-primary">Booking #{booking.bookingId}</span>
                 <Badge status={booking.status} />
               </div>
               <h2 className="text-xl font-extrabold text-foreground mt-1">{booking.locationName}</h2>
@@ -259,7 +259,7 @@ function BookingDetailsModal({
                         type="button"
                         onClick={() =>
                           onReassignTherapist({
-                            bookingId: booking.id,
+                            bookingId: booking.bookingId,
                             treatmentId: t.treatmentId,
                             treatmentName: t.treatmentName,
                             currentTherapist: t.therapistName ?? undefined,
@@ -278,7 +278,7 @@ function BookingDetailsModal({
           </div>
 
           {/* Retail line items */}
-          {(booking.status === 'Draft' || booking.status === 'Confirmed') && <RetailLines bookingId={booking.id} locationId={locationId} />}
+          {(booking.status === 'Draft' || booking.status === 'Confirmed') && <RetailLines bookingId={booking.bookingId} locationId={locationId} />}
 
           {/* Financial & Payment Details */}
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -358,7 +358,7 @@ function BookingDetailsModal({
                   onClick={async () => {
                     setMarkingNoShow(true);
                     try {
-                      await onNoShow(booking.id);
+                      await onNoShow(booking.bookingId);
                       onClose();
                     } finally {
                       setMarkingNoShow(false);
@@ -527,7 +527,7 @@ export function BookingsPage() {
   const [optimisticBookings, setOptimisticBookings] = useOptimistic(
     bookings,
     (state, action: { type: 'cancel' | 'noshow'; id: number }) =>
-      state.map((b) => (b.id === action.id ? { ...b, status: action.type === 'cancel' ? 'Cancelled' : 'NoShow' } : b)),
+      state.map((b) => (b.bookingId === action.id ? { ...b, status: action.type === 'cancel' ? 'Cancelled' : 'NoShow' } : b)),
   );
   const [selectedBooking, setSelectedBooking] = useState<AdminBooking | null>(null);
   const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<number | null>(null);
@@ -564,10 +564,7 @@ export function BookingsPage() {
     setError(null);
     try {
       const { data } = await adminBookingsApi.apiAdminBookingsGet(locationId, date);
-      // API returns `bookingId`; the rest of the app reads `booking.id`.
-      setBookings(
-        (data as unknown as Array<AdminBooking & { bookingId?: number }>).map((b) => ({ ...b, id: b.id ?? b.bookingId! })),
-      );
+      setBookings(data as unknown as AdminBooking[]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load bookings');
     } finally {
@@ -744,13 +741,13 @@ export function BookingsPage() {
 
                   return (
                     <tr
-                      key={b.id}
+                      key={b.bookingId}
                       onClick={() => setSelectedBooking(b)}
                       className="hover:bg-primary/5 transition align-top cursor-pointer group"
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="font-bold text-foreground group-hover:text-primary transition">{formattedBookingDate}</div>
-                        <div className="text-muted-foreground font-mono text-[11px]">Booking #{b.id}</div>
+                        <div className="text-muted-foreground font-mono text-[11px]">Booking #{b.bookingId}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-semibold text-foreground">{b.customerName}</div>
@@ -785,7 +782,7 @@ export function BookingsPage() {
                             View Details
                           </Button>
                           {canCancel && (b.status === 'Draft' || b.status === 'Confirmed') && (
-                            <Button variant="danger" size="sm" onClick={() => setConfirmCancelBookingId(b.id)}>
+                            <Button variant="danger" size="sm" onClick={() => setConfirmCancelBookingId(b.bookingId)}>
                               Cancel
                             </Button>
                           )}

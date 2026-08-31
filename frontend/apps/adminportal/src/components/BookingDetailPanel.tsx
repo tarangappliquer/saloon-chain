@@ -79,7 +79,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setSettingStatusId(id ?? 'clear');
     setError(null);
     try {
-      await adminBookingsApi.apiAdminBookingsIdStatusPut(booking.id, { appointmentStatusId: id });
+      await adminBookingsApi.apiAdminBookingsIdStatusPut(booking.bookingId, { appointmentStatusId: id });
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update appointment status');
@@ -95,7 +95,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     try {
       // NO_REASON_ID is the local "No Reason Provided" fallback -> send null (server default).
       const reasonId = cancelReasonId === NO_REASON_ID ? null : cancelReasonId;
-      await adminBookingsApi.apiAdminBookingsIdCancelPost(booking.id, { cancelReasonId: reasonId });
+      await adminBookingsApi.apiAdminBookingsIdCancelPost(booking.bookingId, { cancelReasonId: reasonId });
       setShowCancelPicker(false);
       onChanged();
       onClose();
@@ -111,7 +111,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setMarkingNoShow(true);
     setError(null);
     try {
-      await adminBookingsApi.apiAdminBookingsIdNoShowPost(booking.id);
+      await adminBookingsApi.apiAdminBookingsIdNoShowPost(booking.bookingId);
       onChanged();
       onClose();
     } catch (err) {
@@ -129,7 +129,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
     setError(null);
     try {
       const { data: intent } = await paymentApi.apiPaymentsCreateIntentPost({
-        bookingId: booking.id,
+        bookingId: booking.bookingId,
         provider: paymentProvider,
         customerId: booking.customerId,
         tipAmount,
@@ -160,7 +160,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 backdrop-blur px-5 py-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-bold text-primary">Booking #{booking.id}</span>
+              <span className="font-mono text-sm font-bold text-primary">Booking #{booking.bookingId}</span>
               <Badge status={booking.status} />
             </div>
             <h2 className="text-base font-extrabold text-foreground mt-0.5">{booking.customerName}</h2>
@@ -179,7 +179,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
             <div className="flex items-center justify-between pt-1">
               <span className="font-bold text-foreground">${totalAmount.toFixed(2)}</span>
               <span className={`text-[11px] font-bold ${booking.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                {booking.isPaid ? `✓ Paid via ${booking.modeOfPayment ?? 'unknown'}` : 'Payment pending'}
+                {booking.isPaid ? `✓ Paid via ${booking.paymentProvider ?? 'unknown'}` : 'Payment pending'}
               </span>
             </div>
             {booking.status === 'Cancelled' && booking.cancelReasonName && (
