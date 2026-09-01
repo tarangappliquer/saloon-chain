@@ -25,7 +25,7 @@ internal static class CatalogEndpoints
         }).Produces<IEnumerable<ChainDto>>()
           .WithDescription("List active saloon chains (filtered to the staff member's chain during emulation).");
 
-        group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, UserRepository userRepo, CatalogRepository repo) =>
+        group.MapGet("/locations", async (int? chainId, ICurrentUser currentUser, UserRepository userRepo, CatalogRepository repo) =>
         {
             var locations = await repo.GetLocationsAsync(chainId);
             if (currentUser.EmulatedByUserId is { } emulatorId)
@@ -43,8 +43,11 @@ internal static class CatalogEndpoints
         }).Produces<IEnumerable<LocationDto>>()
           .WithDescription("List active locations for a chain (filtered during emulation).");
 
-        group.MapGet("/treatments", async (int locationId, int? categoryId, CatalogRepository repo) =>
-            Results.Ok(await repo.GetTreatmentsAsync(locationId, categoryId)))
+        group.MapGet("/treatments", async (int? locationId, int? categoryId, CatalogRepository repo) =>
+        {
+            if (locationId is null || locationId <= 0) return Results.Ok(Array.Empty<TreatmentDto>());
+            return Results.Ok(await repo.GetTreatmentsAsync(locationId.Value, categoryId));
+        })
             .Produces<IEnumerable<TreatmentDto>>()
             .WithDescription("List the treatments a location offers, optionally filtered by category.");
 

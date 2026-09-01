@@ -220,12 +220,18 @@ internal static class AdminStaffEndpoints
           .WithDescription("Update a staff user's details, role, scope, or active/emulator state.");
 
         // GET /api/admin/staff/attendance
-        group.MapGet("attendance", async (int locationId, string date, ICurrentUser currentUser, UserRepository repo) =>
+        group.MapGet("attendance", async (int? locationId, string? date, ICurrentUser currentUser, UserRepository repo) =>
         {
-            if (!DateOnly.TryParse(date, System.Globalization.CultureInfo.InvariantCulture, out var workDate))
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<StaffAttendanceDto>());
+
+            DateOnly workDate;
+            if (string.IsNullOrWhiteSpace(date))
+                workDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            else if (!DateOnly.TryParse(date, System.Globalization.CultureInfo.InvariantCulture, out workDate))
                 return Results.Problem("Invalid date format. Expected yyyy-MM-dd.", statusCode: StatusCodes.Status400BadRequest);
 
-            var attendance = await repo.GetStaffAttendanceAsync(locationId, workDate);
+            var attendance = await repo.GetStaffAttendanceAsync(locId, workDate);
             return Results.Ok(attendance);
         }).Produces<IReadOnlyList<StaffAttendanceDto>>()
           .WithDescription("Get daily staff attendance roster for a location.");

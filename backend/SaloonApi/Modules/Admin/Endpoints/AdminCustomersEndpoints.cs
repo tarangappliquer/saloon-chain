@@ -56,10 +56,11 @@ internal static class AdminCustomersEndpoints
         // Backs the adminportal's emulation picker -- search only (no "list everyone" use case),
         // same StaffAccess gate as the emulate exchange itself in AuthEndpoints (any staff role can
         // be emulator-eligible, see AuthService.EmulatorEligibleRoles).
-        group.MapGet("/search", async (string q, ICurrentUser currentUser, UserRepository repo) =>
+        group.MapGet("/search", async (string? q, ICurrentUser currentUser, UserRepository repo) =>
         {
+            var query = q ?? string.Empty;
             var (chainId, locationId) = ResolveReadScope(currentUser);
-            return Results.Ok(await repo.SearchCustomersAsync(q, chainId, locationId));
+            return Results.Ok(await repo.SearchCustomersAsync(query, chainId, locationId));
         })
         .Produces<IReadOnlyList<CustomerSummaryDto>>()
         .WithDescription("Search customers by name/email for the emulation picker.");

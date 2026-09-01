@@ -67,7 +67,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return await catalogDb.sp_Catalog_GetChainsAsync(db);
     }
 
-    public async Task<IEnumerable<LocationDto>> GetLocationsAsync(int chainId)
+    public async Task<IEnumerable<LocationDto>> GetLocationsAsync(int? chainId = null)
     {
         using var db = factory.Create();
         return await catalogDb.sp_Catalog_GetLocationsAsync(db, chainId);
@@ -92,7 +92,7 @@ internal sealed class CatalogRepository(SqlConnectionFactory factory, ICurrentUs
         return await adminDb.sp_Admin_GetChainsAsync(db, chainId);
     }
 
-    public async Task<IEnumerable<AdminLocationDto>> GetLocationsForAdminAsync(int chainId)
+    public async Task<IEnumerable<AdminLocationDto>> GetLocationsForAdminAsync(int? chainId = null)
     {
         using var db = factory.Create();
         return await adminDb.sp_Admin_GetLocationsAsync(db, chainId, null);

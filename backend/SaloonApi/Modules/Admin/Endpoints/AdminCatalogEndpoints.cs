@@ -27,12 +27,13 @@ internal static class AdminCatalogEndpoints
             .Produces<IEnumerable<AdminChainDto>>()
             .WithDescription("List chains visible to the caller (all for RootSuperAdmin/Manager/Receptionist, own chain only for SuperAdmin/Admin).");
 
-        group.MapGet("/locations", async (int chainId, ICurrentUser currentUser, CatalogRepository repo) =>
+        group.MapGet("/locations", async (int? chainId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId != chainId)
+            var effectiveChainId = chainId ?? (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) ? currentUser.ChainId : null);
+            if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && chainId is { } passedChainId && currentUser.ChainId != passedChainId)
                 return Results.Problem("Not authorized for this chain.", statusCode: StatusCodes.Status403Forbidden);
 
-            var locations = await repo.GetLocationsForAdminAsync(chainId);
+            var locations = await repo.GetLocationsForAdminAsync(effectiveChainId);
 
             // Manager has no ChainId to clamp the request itself (see above), so instead of rejecting
             // the whole chain, the sibling locations are filtered out of the result -- this is the
@@ -64,12 +65,15 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status404NotFound)
           .WithDescription("Get the caller's own location (Manager/Receptionist/Therapist/Other).");
 
-        group.MapGet("/treatments", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
+        group.MapGet("/treatments", async (int? locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<AdminTreatmentDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(await repo.GetTreatmentsForAdminAsync(locationId));
+            return Results.Ok(await repo.GetTreatmentsForAdminAsync(locId));
         }).Produces<IEnumerable<AdminTreatmentDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's treatments, including inactive ones.");
@@ -220,12 +224,15 @@ internal static class AdminCatalogEndpoints
           .ProducesProblem(StatusCodes.Status409Conflict)
           .WithDescription("Cancel a not-yet-effective scheduled hours change; rejected with 409 if it's already in effect.");
 
-        group.MapGet("/treatment-categories", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
+        group.MapGet("/treatment-categories", async (int? locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<TreatmentCategoryDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(await repo.GetTreatmentCategoriesAsync(locationId));
+            return Results.Ok(await repo.GetTreatmentCategoriesAsync(locId));
         }).Produces<IEnumerable<TreatmentCategoryDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's treatment categories.");
@@ -461,12 +468,15 @@ internal static class AdminCatalogEndpoints
 
         // GET stays under the group's plain AdminAccess -- Manager/Receptionist still need the room
         // list to power the Scheduling page (room-opening).
-        group.MapGet("/rooms", async (int locationId, ICurrentUser currentUser, CatalogRepository repo) =>
+        group.MapGet("/rooms", async (int? locationId, ICurrentUser currentUser, CatalogRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<RoomDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(await repo.GetRoomsAsync(locationId));
+            return Results.Ok(await repo.GetRoomsAsync(locId));
         }).Produces<IEnumerable<RoomDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's rooms.");

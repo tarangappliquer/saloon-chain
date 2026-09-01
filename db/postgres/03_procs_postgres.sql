@@ -131,7 +131,7 @@ LANGUAGE sql STABLE AS $$
     ORDER BY Name;
 $$;
 
-CREATE OR REPLACE FUNCTION public.sp_Catalog_GetLocations(p_ChainId int)
+CREATE OR REPLACE FUNCTION public.sp_Catalog_GetLocations(p_ChainId int DEFAULT NULL)
 RETURNS TABLE(Id int, ChainId int, Name varchar, Address varchar, Latitude numeric, Longitude numeric,
               OpenTime time, CloseTime time, BreakStartTime time, BreakEndTime time,
               WorkingDaysMask smallint, TimeZoneId varchar)
@@ -143,7 +143,7 @@ LANGUAGE sql STABLE AS $$
            l.WorkingDaysMask, l.TimeZoneId
     FROM public.Locations l
         JOIN public.SaloonChains c ON c.Id = l.ChainId
-    WHERE l.ChainId = p_ChainId AND l.IsDelete = FALSE AND l.IsActive = TRUE
+    WHERE (p_ChainId IS NULL OR l.ChainId = p_ChainId) AND l.IsDelete = FALSE AND l.IsActive = TRUE
     ORDER BY l.Name;
 $$;
 

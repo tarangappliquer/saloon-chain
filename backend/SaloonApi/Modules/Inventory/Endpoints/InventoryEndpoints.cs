@@ -73,20 +73,26 @@ internal static class InventoryEndpoints
         }).Produces(StatusCodes.Status204NoContent)
           .WithDescription("Soft-delete a supplier.");
 
-        group.MapGet("/products", async (int locationId, ICurrentUser currentUser, InventoryRepository repo) =>
+        group.MapGet("/products", async (int? locationId, ICurrentUser currentUser, InventoryRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<ProductDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(await repo.GetProductsAsync(locationId));
+            return Results.Ok(await repo.GetProductsAsync(locId));
         }).Produces<IReadOnlyList<ProductDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's retail products, including inactive ones.");
 
-        group.MapGet("/products/low-stock", async (int locationId, ICurrentUser currentUser, InventoryRepository repo) =>
+        group.MapGet("/products/low-stock", async (int? locationId, ICurrentUser currentUser, InventoryRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<LowStockProductDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(await repo.GetLowStockProductsAsync(locationId));
+            return Results.Ok(await repo.GetLowStockProductsAsync(locId));
         }).Produces<IReadOnlyList<LowStockProductDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's products at or below their reorder threshold.");
@@ -124,11 +130,14 @@ internal static class InventoryEndpoints
         }).Produces(StatusCodes.Status204NoContent)
           .WithDescription("Soft-delete a product.");
 
-        group.MapGet("/purchase-orders", async (int locationId, ICurrentUser currentUser, InventoryRepository repo) =>
+        group.MapGet("/purchase-orders", async (int? locationId, ICurrentUser currentUser, InventoryRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<PurchaseOrderDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(await repo.GetPurchaseOrdersAsync(locationId));
+            return Results.Ok(await repo.GetPurchaseOrdersAsync(locId));
         }).Produces<IReadOnlyList<PurchaseOrderDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's purchase orders, newest first.");

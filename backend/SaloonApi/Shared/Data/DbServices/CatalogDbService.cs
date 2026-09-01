@@ -14,7 +14,7 @@ internal sealed class CatalogDbService
         return db.QueryAsync<ChainDto>("SELECT * FROM public.sp_Catalog_GetChains()", commandType: CommandType.Text);
     }
 
-    public Task<IEnumerable<LocationDto>> sp_Catalog_GetLocationsAsync(IDbConnection db, int chainId)
+    public Task<IEnumerable<LocationDto>> sp_Catalog_GetLocationsAsync(IDbConnection db, int? chainId)
     {
         var args = new DynamicParameters();
         args.Add("ChainId", chainId, DbType.Int32);

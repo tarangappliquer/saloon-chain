@@ -15,8 +15,14 @@ internal static class BookingEndpoints
         var group = app.MapGroup("/api/booking").RequireAuthorization().WithTags("Booking")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
-        group.MapGet("/available-dates", async (int locationId, DateOnly from, DateOnly to, string? treatmentIds, int? excludeBookingId, BookingService svc) =>
+        group.MapGet("/available-dates", async (int? locationId, DateOnly? from, DateOnly? to, string? treatmentIds, int? excludeBookingId, BookingService svc) =>
         {
+            var locId = locationId ?? 0;
+            if (locId <= 0) return Results.Ok(Array.Empty<DateOnly>());
+
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? fromDate.AddDays(30);
+
             var ids = new List<int>();
             if (!string.IsNullOrEmpty(treatmentIds))
             {
@@ -25,13 +31,17 @@ internal static class BookingEndpoints
                     if (int.TryParse(part, out var id)) ids.Add(id);
                 }
             }
-            return Results.Ok(await svc.GetAvailableDatesAsync(locationId, from, to, ids, excludeBookingId));
+            return Results.Ok(await svc.GetAvailableDatesAsync(locId, fromDate, toDate, ids, excludeBookingId));
         })
             .Produces<IReadOnlyList<DateOnly>>()
             .WithDescription("List dates in range that have at least one open slot for all requested treatments at a location.");
 
-        group.MapGet("/available-slots", async (int locationId, string treatmentIds, DateOnly date, int? excludeBookingId, BookingService svc) =>
+        group.MapGet("/available-slots", async (int? locationId, string? treatmentIds, DateOnly? date, int? excludeBookingId, BookingService svc) =>
         {
+            var locId = locationId ?? 0;
+            if (locId <= 0 || string.IsNullOrWhiteSpace(treatmentIds))
+                return Results.Ok(Array.Empty<AvailableSlot>());
+
             var parts = treatmentIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
             var ids = new List<int>(parts.Length);
             foreach (var part in parts)
@@ -41,7 +51,8 @@ internal static class BookingEndpoints
                 ids.Add(id);
             }
 
-            return Results.Ok(await svc.GetAvailableSlotsAsync(locationId, ids, date, excludeBookingId));
+            var targetDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return Results.Ok(await svc.GetAvailableSlotsAsync(locId, ids, targetDate, excludeBookingId));
         }).Produces<IReadOnlyList<AvailableSlot>>()
           .ProducesProblem(StatusCodes.Status400BadRequest)
           .WithDescription("List open time slots for a treatment combo at a location/date.");

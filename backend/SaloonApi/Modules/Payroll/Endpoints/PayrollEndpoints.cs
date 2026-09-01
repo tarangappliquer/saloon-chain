@@ -13,11 +13,14 @@ internal static class PayrollEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        group.MapGet("/commission-rules", async (int locationId, ICurrentUser currentUser, PayrollRepository repo) =>
+        group.MapGet("/commission-rules", async (int? locationId, ICurrentUser currentUser, PayrollRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<CommissionRuleDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(await repo.GetCommissionRulesAsync(locationId));
+            return Results.Ok(await repo.GetCommissionRulesAsync(locId));
         }).Produces<IReadOnlyList<CommissionRuleDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's commission rules (therapist-specific and the location default).");
@@ -41,11 +44,14 @@ internal static class PayrollEndpoints
         }).Produces(StatusCodes.Status204NoContent)
           .WithDescription("Delete a commission rule.");
 
-        group.MapGet("/pay-runs", async (int locationId, ICurrentUser currentUser, PayrollRepository repo) =>
+        group.MapGet("/pay-runs", async (int? locationId, ICurrentUser currentUser, PayrollRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0) return Results.Ok(Array.Empty<PayRunDto>());
+
+            if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
-            return Results.Ok(await repo.GetPayRunsAsync(locationId));
+            return Results.Ok(await repo.GetPayRunsAsync(locId));
         }).Produces<IReadOnlyList<PayRunDto>>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("List a location's pay runs, most recent period first.");

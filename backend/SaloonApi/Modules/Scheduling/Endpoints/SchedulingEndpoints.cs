@@ -19,12 +19,17 @@ internal static class SchedulingEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        group.MapGet("/roster", async (int locationId, DateOnly date, ICurrentUser currentUser, SchedulingRepository repo) =>
+        group.MapGet("/roster", async (int? locationId, DateOnly? date, ICurrentUser currentUser, SchedulingRepository repo) =>
         {
-            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != locationId)
+            var locId = locationId ?? currentUser.LocationId ?? 0;
+            if (locId == 0)
+                return Results.Ok(new RosterDto(Array.Empty<TherapistShiftDto>(), Array.Empty<RoomOpeningDto>(), Array.Empty<BlockedSlotDto>()));
+
+            if (currentUser.IsInRole(UserRole.Manager, UserRole.Receptionist) && currentUser.LocationId != locId)
                 return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
 
-            return Results.Ok(await repo.GetRosterAsync(locationId, date));
+            var targetDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return Results.Ok(await repo.GetRosterAsync(locId, targetDate));
         }).Produces<RosterDto>()
           .ProducesProblem(StatusCodes.Status403Forbidden)
           .WithDescription("Get a location's therapist shifts and room openings for a date.");
