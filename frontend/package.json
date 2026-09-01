@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm -r dev",
     "build": "pnpm -r build",
+    "build:prod": "pnpm -r build:prod",
     "lint": "pnpm -r lint",
     "preview": "pnpm -r preview",
     "e2e": "pnpm -r e2e",
