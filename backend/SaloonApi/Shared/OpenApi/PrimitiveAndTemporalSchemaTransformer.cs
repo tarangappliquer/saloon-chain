@@ -1,3 +1,4 @@
+using System.Collections;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
 
@@ -10,8 +11,32 @@ internal sealed class PrimitiveAndTemporalSchemaTransformer : IOpenApiSchemaTran
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(context);
 
-        var type = Nullable.GetUnderlyingType(context.JsonTypeInfo.Type) ?? context.JsonTypeInfo.Type;
+        var rawType = context.JsonTypeInfo.Type;
+        if (rawType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(rawType))
+        {
+            var elemType = rawType.IsArray
+                ? rawType.GetElementType()
+                : rawType.GetGenericArguments().FirstOrDefault();
 
+            if (elemType != null)
+            {
+                var underElem = Nullable.GetUnderlyingType(elemType) ?? elemType;
+                schema.Type = JsonSchemaType.Array;
+                var itemSchema = (schema.Items as OpenApiSchema) ?? new OpenApiSchema();
+                ApplyType(itemSchema, underElem);
+                schema.Items = itemSchema;
+            }
+            return Task.CompletedTask;
+        }
+
+        var type = Nullable.GetUnderlyingType(rawType) ?? rawType;
+        ApplyType(schema, type);
+
+        return Task.CompletedTask;
+    }
+
+    private static void ApplyType(OpenApiSchema schema, Type type)
+    {
         if (type == typeof(bool))
         {
             schema.Type = JsonSchemaType.Boolean;
@@ -43,6 +68,10 @@ internal sealed class PrimitiveAndTemporalSchemaTransformer : IOpenApiSchemaTran
             schema.Type = JsonSchemaType.Number;
             schema.Format = "float";
         }
+        else if (type == typeof(string))
+        {
+            schema.Type = JsonSchemaType.String;
+        }
         else if (type == typeof(Guid))
         {
             schema.Type = JsonSchemaType.String;
@@ -63,7 +92,5 @@ internal sealed class PrimitiveAndTemporalSchemaTransformer : IOpenApiSchemaTran
             schema.Type = JsonSchemaType.String;
             schema.Format = "date-time";
         }
-
-        return Task.CompletedTask;
     }
 }
