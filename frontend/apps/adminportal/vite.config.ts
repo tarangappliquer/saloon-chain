@@ -22,6 +22,8 @@ export default defineConfig({
         ],
     },
     build: {
+        outDir: 'D:\\publish\\saloon-admin',
+        emptyOutDir: true,
         target: 'es2022',
         cssCodeSplit: true,
         chunkSizeWarningLimit: 600,
