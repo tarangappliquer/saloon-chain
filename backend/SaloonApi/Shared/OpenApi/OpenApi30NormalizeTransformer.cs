@@ -67,41 +67,38 @@ internal sealed class OpenApi30NormalizeTransformer : IOpenApiDocumentTransforme
     {
         if (rawSchema is not OpenApiSchema schema || !visited.Add(schema)) return;
 
-        if (schema.Type.HasValue)
-        {
-            var type = schema.Type.Value;
+        var type = schema.Type ?? JsonSchemaType.Null;
 
-            if (schema.Format == "int64")
-            {
-                schema.Type = JsonSchemaType.String;
-                schema.Pattern = null;
-            }
-            else if ((type & JsonSchemaType.Integer) != 0 || schema.Format == "int32")
-            {
-                schema.Type = JsonSchemaType.Integer;
-                schema.Pattern = null;
-            }
-            else if ((type & JsonSchemaType.Number) != 0 || schema.Format == "float" || schema.Format == "double")
-            {
-                schema.Type = JsonSchemaType.Number;
-                schema.Pattern = null;
-            }
-            else if ((type & JsonSchemaType.Boolean) != 0)
-            {
-                schema.Type = JsonSchemaType.Boolean;
-            }
-            else if ((type & JsonSchemaType.Array) != 0)
-            {
-                schema.Type = JsonSchemaType.Array;
-            }
-            else if ((type & JsonSchemaType.Object) != 0)
-            {
-                schema.Type = JsonSchemaType.Object;
-            }
-            else if ((type & JsonSchemaType.String) != 0)
-            {
-                schema.Type = JsonSchemaType.String;
-            }
+        if (schema.Format == "int64")
+        {
+            schema.Type = JsonSchemaType.String;
+            schema.Pattern = null;
+        }
+        else if (schema.Format == "int32" || (type & JsonSchemaType.Integer) != 0)
+        {
+            schema.Type = JsonSchemaType.Integer;
+            schema.Pattern = null;
+        }
+        else if (schema.Format == "float" || schema.Format == "double" || (type & JsonSchemaType.Number) != 0)
+        {
+            schema.Type = JsonSchemaType.Number;
+            schema.Pattern = null;
+        }
+        else if ((type & JsonSchemaType.Boolean) != 0)
+        {
+            schema.Type = JsonSchemaType.Boolean;
+        }
+        else if ((type & JsonSchemaType.Array) != 0)
+        {
+            schema.Type = JsonSchemaType.Array;
+        }
+        else if ((type & JsonSchemaType.Object) != 0)
+        {
+            schema.Type = JsonSchemaType.Object;
+        }
+        else if ((type & JsonSchemaType.String) != 0 || schema.Format == "date" || schema.Format == "date-time" || schema.Format == "time" || schema.Format == "duration" || schema.Format == "uuid" || schema.Format == "uri")
+        {
+            schema.Type = JsonSchemaType.String;
         }
 
         if (schema.Items != null)
@@ -111,9 +108,18 @@ internal sealed class OpenApi30NormalizeTransformer : IOpenApiDocumentTransforme
 
         if (schema.Properties != null)
         {
-            foreach (var prop in schema.Properties.Values)
+            foreach (var (key, prop) in schema.Properties.ToList())
             {
-                NormalizeSchema(prop, visited);
+                if (prop is OpenApiSchema propSchema && propSchema.OneOf != null && propSchema.OneOf.Count == 2)
+                {
+                    var nullItem = propSchema.OneOf.FirstOrDefault(s => (s as OpenApiSchema)?.Type == JsonSchemaType.Null);
+                    var validItem = propSchema.OneOf.FirstOrDefault(s => (s as OpenApiSchema)?.Type != JsonSchemaType.Null);
+                    if (nullItem != null && validItem != null)
+                    {
+                        schema.Properties[key] = validItem;
+                    }
+                }
+                NormalizeSchema(schema.Properties[key], visited);
             }
         }
 

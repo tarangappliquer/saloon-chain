@@ -82,6 +82,7 @@ try
 
         options.AddFluentValidationRules();
         options.AddSchemaTransformer<LongAsStringSchemaTransformer>();
+        options.AddSchemaTransformer<PrimitiveAndTemporalSchemaTransformer>();
         options.AddDocumentTransformer<OpenApi30NormalizeTransformer>();
     });
 
