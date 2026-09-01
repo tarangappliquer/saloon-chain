@@ -89,6 +89,8 @@ try
     {
         options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
         options.SerializerOptions.Converters.Add(new LongToStringJsonConverterFactory());
+        options.SerializerOptions.Converters.Add(new PrimitiveJsonConverterFactory());
+        options.SerializerOptions.Converters.Add(new TemporalJsonConverterFactory());
     });
 
     builder.Services.AddValidatorsFromAssemblyContaining<Program>(includeInternalTypes: true);

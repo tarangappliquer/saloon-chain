@@ -8,21 +8,16 @@ internal sealed class LongToStringJsonConverterFactory : JsonConverterFactory
 {
     public override bool CanConvert(Type typeToConvert)
     {
-        return typeToConvert == typeof(long) || typeToConvert == typeof(long?);
+        return typeToConvert == typeof(long) || typeToConvert == typeof(long?) ||
+               typeToConvert == typeof(ulong) || typeToConvert == typeof(ulong?);
     }
 
     public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options)
     {
-        if (typeToConvert == typeof(long))
-        {
-            return new LongToStringJsonConverter();
-        }
-
-        if (typeToConvert == typeof(long?))
-        {
-            return new NullableLongToStringJsonConverter();
-        }
-
+        if (typeToConvert == typeof(long)) return new LongToStringJsonConverter();
+        if (typeToConvert == typeof(long?)) return new NullableLongToStringJsonConverter();
+        if (typeToConvert == typeof(ulong)) return new ULongToStringJsonConverter();
+        if (typeToConvert == typeof(ulong?)) return new NullableULongToStringJsonConverter();
         return null;
     }
 }
@@ -33,10 +28,9 @@ internal sealed class LongToStringJsonConverter : JsonConverter<long>
     {
         if (reader.TokenType == JsonTokenType.String)
         {
-            if (long.TryParse(reader.GetString(), CultureInfo.InvariantCulture, out var result))
-            {
-                return result;
-            }
+            var str = reader.GetString();
+            if (string.IsNullOrWhiteSpace(str)) return default;
+            if (long.TryParse(str, CultureInfo.InvariantCulture, out var result)) return result;
         }
         else if (reader.TokenType == JsonTokenType.Number)
         {
@@ -57,23 +51,13 @@ internal sealed class NullableLongToStringJsonConverter : JsonConverter<long?>
 {
     public override long? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        if (reader.TokenType == JsonTokenType.Null)
-        {
-            return null;
-        }
+        if (reader.TokenType == JsonTokenType.Null) return null;
 
         if (reader.TokenType == JsonTokenType.String)
         {
             var str = reader.GetString();
-            if (string.IsNullOrEmpty(str))
-            {
-                return null;
-            }
-
-            if (long.TryParse(str, CultureInfo.InvariantCulture, out var result))
-            {
-                return result;
-            }
+            if (string.IsNullOrWhiteSpace(str)) return null;
+            if (long.TryParse(str, CultureInfo.InvariantCulture, out var result)) return result;
         }
         else if (reader.TokenType == JsonTokenType.Number)
         {
@@ -86,14 +70,60 @@ internal sealed class NullableLongToStringJsonConverter : JsonConverter<long?>
     public override void Write(Utf8JsonWriter writer, long? value, JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(writer);
+        if (value.HasValue) writer.WriteStringValue(value.Value.ToString(CultureInfo.InvariantCulture));
+        else writer.WriteNullValue();
+    }
+}
 
-        if (value.HasValue)
+internal sealed class ULongToStringJsonConverter : JsonConverter<ulong>
+{
+    public override ulong Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
         {
-            writer.WriteStringValue(value.Value.ToString(CultureInfo.InvariantCulture));
+            var str = reader.GetString();
+            if (string.IsNullOrWhiteSpace(str)) return default;
+            if (ulong.TryParse(str, CultureInfo.InvariantCulture, out var result)) return result;
         }
-        else
+        else if (reader.TokenType == JsonTokenType.Number)
         {
-            writer.WriteNullValue();
+            return reader.GetUInt64();
         }
+
+        throw new JsonException($"Unable to convert JSON token '{reader.TokenType}' to ulong.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, ulong value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteStringValue(value.ToString(CultureInfo.InvariantCulture));
+    }
+}
+
+internal sealed class NullableULongToStringJsonConverter : JsonConverter<ulong?>
+{
+    public override ulong? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var str = reader.GetString();
+            if (string.IsNullOrWhiteSpace(str)) return null;
+            if (ulong.TryParse(str, CultureInfo.InvariantCulture, out var result)) return result;
+        }
+        else if (reader.TokenType == JsonTokenType.Number)
+        {
+            return reader.GetUInt64();
+        }
+
+        throw new JsonException($"Unable to convert JSON token '{reader.TokenType}' to ulong?.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, ulong? value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        if (value.HasValue) writer.WriteStringValue(value.Value.ToString(CultureInfo.InvariantCulture));
+        else writer.WriteNullValue();
     }
 }

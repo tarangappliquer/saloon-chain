@@ -10,7 +10,8 @@ internal sealed class LongAsStringSchemaTransformer : IOpenApiSchemaTransformer
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (context.JsonTypeInfo.Type == typeof(long) || context.JsonTypeInfo.Type == typeof(long?))
+        if (context.JsonTypeInfo.Type == typeof(long) || context.JsonTypeInfo.Type == typeof(long?) ||
+            context.JsonTypeInfo.Type == typeof(ulong) || context.JsonTypeInfo.Type == typeof(ulong?))
         {
             schema.Type = JsonSchemaType.String;
             schema.Format = null;
