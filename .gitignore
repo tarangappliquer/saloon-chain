@@ -507,3 +507,4 @@ backend/SaloonApi/uploads/
 /frontend/**/cypress/videos/
 
 /docker-data
+/opencode.json
