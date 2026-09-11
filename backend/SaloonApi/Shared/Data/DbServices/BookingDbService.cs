@@ -24,16 +24,6 @@ internal sealed record OpenDateRow
 [SuppressMessage("CodeSmell", "S2325:Methods that don't access instance data should be static", Justification = "Registered as Singleton service in DI container")]
 internal sealed class BookingDbService
 {
-    // Booking slot times are naive venue wall-clock (SlotCalculator emits DateTimeKind.Unspecified
-    // and the read path relabels them Utc). The columns are TIMESTAMPTZ, and Npgsql refuses a
-    // non-Utc DateTime for that -- so pin the Kind here. Unspecified is relabelled (digits kept),
-    // Local is converted.
-    //private static DateTime AsUtc(DateTime dt) => dt.Kind switch
-    //{
-    //    DateTimeKind.Utc => dt,
-    //    DateTimeKind.Local => dt.ToUniversalTime(),
-    //    _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
-    //};
 
     // Each result set is now its own single-purpose fn_Booking_Availability* function (see
     // db/postgres/03_procs_postgres.sql) instead of a hand-rolled refcursor procedure -- Dapper's
@@ -208,13 +198,15 @@ internal sealed class BookingDbService
         return db.QueryMultipleAsync(sql, args, commandType: CommandType.Text);
     }
 
-    public Task<IEnumerable<BookingLocationRow>> sp_Booking_CancelAsync(IDbConnection db, int bookingId, int customerId, int? updatedBy)
+    public Task<IEnumerable<BookingLocationRow>> sp_Booking_CancelAsync(IDbConnection db, int bookingId, int customerId, int? updatedBy, bool bypassCancellationWindow)
     {
         var args = new DynamicParameters();
         args.Add("BookingId", bookingId, DbType.Int32);
         args.Add("CustomerId", customerId, DbType.Int32);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
-        return db.QueryAsync<BookingLocationRow>("SELECT * FROM public.sp_Booking_Cancel(@BookingId, @CustomerId, @UpdatedBy)", args, commandType: CommandType.Text);
+        args.Add("BypassCancellationWindow", bypassCancellationWindow, DbType.Boolean);
+        return db.QueryAsync<BookingLocationRow>(
+            "SELECT * FROM public.sp_Booking_Cancel(@BookingId, @CustomerId, @UpdatedBy, @BypassCancellationWindow)", args, commandType: CommandType.Text);
     }
 
     public Task<IEnumerable<BookingLocationRow>> sp_Booking_ExpireStaleHoldsAsync(IDbConnection db)

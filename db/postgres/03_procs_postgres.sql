@@ -194,8 +194,9 @@ $$;
 -- scheduled override (LocationDaySchedule) if one is effective, else the location's own default
 -- hours. An override marked IsClosed rolls into IsHoliday, same "no slots" outcome as an explicit
 -- holiday.
-CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityLocationHours(p_LocationId int, p_WorkDate date)
-RETURNS TABLE(OpenTime time, CloseTime time, BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint, IsHoliday boolean)
+DROP FUNCTION IF EXISTS public.fn_Booking_AvailabilityLocationHours(int, date);
+CREATE FUNCTION public.fn_Booking_AvailabilityLocationHours(p_LocationId int, p_WorkDate date)
+RETURNS TABLE(OpenTime time, CloseTime time, BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint, IsHoliday boolean, TimeZoneId varchar)
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(dh.OpenTime, l.OpenTime) AS OpenTime, COALESCE(dh.CloseTime, l.CloseTime) AS CloseTime,
            COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
@@ -204,7 +205,8 @@ LANGUAGE sql STABLE AS $$
            (COALESCE(dh.IsClosed, FALSE) OR EXISTS (
                SELECT 1 FROM public.LocationHolidays h
                WHERE h.LocationId = l.Id AND h.HolidayDate = p_WorkDate AND h.IsDelete = FALSE AND h.IsActive = TRUE
-           )) AS IsHoliday
+           )) AS IsHoliday,
+           l.TimeZoneId
     FROM public.Locations l
         JOIN public.SaloonChains c ON c.Id = l.ChainId
         LEFT JOIN LATERAL (
@@ -246,12 +248,14 @@ $$;
 -- Location's break times/working-days-mask -- date-independent (no per-date holiday flag either --
 -- callers already resolve holiday dates for the whole range separately via LocationHolidays).
 -- OpenTime/CloseTime are NOT included here -- they can vary per date, see the DayHours function above.
-CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeLocation(p_LocationId int)
-RETURNS TABLE(BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint)
+DROP FUNCTION IF EXISTS public.fn_Booking_AvailabilityRangeLocation(int);
+CREATE FUNCTION public.fn_Booking_AvailabilityRangeLocation(p_LocationId int)
+RETURNS TABLE(BreakStartTime time, BreakEndTime time, WorkingDaysMask smallint, TimeZoneId varchar)
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(l.BreakStartTime, c.BreakStartTime) AS BreakStartTime,
            COALESCE(l.BreakEndTime, c.BreakEndTime) AS BreakEndTime,
-           l.WorkingDaysMask
+           l.WorkingDaysMask,
+           l.TimeZoneId
     FROM public.Locations l
         JOIN public.SaloonChains c ON c.Id = l.ChainId
     WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
@@ -727,16 +731,17 @@ CREATE OR REPLACE FUNCTION public.sp_Booking_ValidateSlotEligibility(
 ) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_WorkDate date := (p_StartTime AT TIME ZONE 'utc')::date;
-    v_DayBit smallint := public.fn_DayBit(v_WorkDate);
+    v_TimeZoneId varchar;
+    v_WorkDate date;
+    v_DayBit smallint;
     v_CategoryId int;
     v_LocOpenTime time;
     v_LocCloseTime time;
     v_BreakStart time;
     v_BreakEnd time;
     v_IsHoliday boolean;
-    v_StartTod time := (p_StartTime AT TIME ZONE 'utc')::time;
-    v_EndTod time := (p_EndTime AT TIME ZONE 'utc')::time;
+    v_StartTod time;
+    v_EndTod time;
 BEGIN
     SELECT t.CategoryId INTO v_CategoryId
     FROM public.Treatments t
@@ -745,6 +750,24 @@ BEGIN
     IF v_CategoryId IS NULL THEN
         RAISE EXCEPTION 'Treatment not offered at this location.' USING ERRCODE = '50036';
     END IF;
+
+    -- p_StartTime/p_EndTime are true UTC instants (see BookingService.ScheduleTreatmentAsync); every
+    -- venue-local concept below (OpenTime/CloseTime, LocationDaySchedule, RoomCategoryAssignments.
+    -- WorkDate, ShiftAssignments.WorkDate/StartTime/EndTime) is stated in the location's own zone,
+    -- not UTC -- resolve it first so WorkDate/day-bit/time-of-day are derived venue-local, not off a
+    -- UTC extraction that drifts from business hours by the venue's own offset.
+    SELECT l.TimeZoneId INTO v_TimeZoneId
+    FROM public.Locations l
+    WHERE l.Id = p_LocationId AND l.IsDelete = FALSE AND l.IsActive = TRUE;
+
+    IF v_TimeZoneId IS NULL THEN
+        RAISE EXCEPTION 'Location not found.' USING ERRCODE = '50037';
+    END IF;
+
+    v_WorkDate := (p_StartTime AT TIME ZONE v_TimeZoneId)::date;
+    v_DayBit := public.fn_DayBit(v_WorkDate);
+    v_StartTod := (p_StartTime AT TIME ZONE v_TimeZoneId)::time;
+    v_EndTod := (p_EndTime AT TIME ZONE v_TimeZoneId)::time;
 
     SELECT
         COALESCE(dh.OpenTime, l.OpenTime), COALESCE(dh.CloseTime, l.CloseTime),
@@ -1105,21 +1128,37 @@ LANGUAGE sql STABLE AS $$
     ORDER BY bt.SequenceOrder;
 $$;
 
-CREATE OR REPLACE FUNCTION public.sp_Booking_Cancel(p_BookingId int, p_CustomerId int, p_UpdatedBy int DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.sp_Booking_Cancel(
+    p_BookingId int, p_CustomerId int, p_UpdatedBy int DEFAULT NULL, p_BypassCancellationWindow boolean DEFAULT FALSE
+)
 RETURNS TABLE(LocationId int, RoomId int, WorkDate date)
 LANGUAGE plpgsql AS $$
 DECLARE
     v_EarliestStartTime timestamptz;
     v_PriorStatus varchar(10);
     v_RowCount int;
+    v_IsPaid boolean;
 BEGIN
-    -- Enforce 48-hour (2-day) cancellation policy
-    SELECT MIN(StartTime) INTO v_EarliestStartTime
-    FROM public.BookingTreatments
-    WHERE BookingId = p_BookingId AND IsDelete = FALSE AND StartTime IS NOT NULL;
+    -- 48-hour (2-day) cancellation policy: skipped entirely for staff cancelling on a customer's
+    -- behalf via emulation (p_BypassCancellationWindow, set by BookingRepository from
+    -- ICurrentUser.EmulatedByUserId -- not something this function can see on its own), and for a
+    -- booking with no succeeded payment -- the window exists to protect revenue already collected,
+    -- so an unpaid booking has nothing to protect.
+    IF NOT p_BypassCancellationWindow THEN
+        SELECT EXISTS (
+            SELECT 1 FROM public.Payments pay
+            WHERE pay.BookingId = p_BookingId AND pay.Status = 'Succeeded' AND pay.IsDelete = FALSE
+        ) INTO v_IsPaid;
 
-    IF v_EarliestStartTime IS NOT NULL AND v_EarliestStartTime <= now() + interval '48 hours' THEN
-        RAISE EXCEPTION 'Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.' USING ERRCODE = '50005';
+        IF v_IsPaid THEN
+            SELECT MIN(StartTime) INTO v_EarliestStartTime
+            FROM public.BookingTreatments
+            WHERE BookingId = p_BookingId AND IsDelete = FALSE AND StartTime IS NOT NULL;
+
+            IF v_EarliestStartTime IS NOT NULL AND v_EarliestStartTime <= now() + interval '48 hours' THEN
+                RAISE EXCEPTION 'Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.' USING ERRCODE = '50005';
+            END IF;
+        END IF;
     END IF;
 
     -- Only a Confirmed booking ever deducted stock -- restocking a Draft cancel would add

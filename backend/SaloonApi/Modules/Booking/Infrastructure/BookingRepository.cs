@@ -17,6 +17,7 @@ internal sealed record LocationHoursRow
     public TimeOnly? BreakEndTime { get; init; }
     public short WorkingDaysMask { get; init; }
     public bool IsHoliday { get; init; }
+    public string? TimeZoneId { get; init; }
 }
 
 internal sealed record LocationHoursRangeHeaderRow
@@ -24,6 +25,7 @@ internal sealed record LocationHoursRangeHeaderRow
     public TimeOnly? BreakStartTime { get; init; }
     public TimeOnly? BreakEndTime { get; init; }
     public short WorkingDaysMask { get; init; }
+    public string? TimeZoneId { get; init; }
 }
 
 internal sealed record TreatmentRow
@@ -345,7 +347,10 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsync(int bookingId, int customerId)
     {
         using var db = factory.Create();
-        var rows = await bookingDb.sp_Booking_CancelAsync(db, bookingId, customerId, currentUser.UserId);
+        // Staff cancelling on a customer's behalf via emulation bypasses the 48h window at the SQL
+        // layer too -- see sp_Booking_Cancel's own comment; BookingService.CancelAsync applies the
+        // same emulated/unpaid bypass in C#, this is the matching defense-in-depth copy.
+        var rows = await bookingDb.sp_Booking_CancelAsync(db, bookingId, customerId, currentUser.UserId, currentUser.EmulatedByUserId is not null);
         return rows.ToList();
     }
 

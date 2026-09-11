@@ -550,7 +550,7 @@ internal static class AdminCatalogEndpoints
         group.MapPost("/closures", async (LocationClosureRequest req, ICurrentUser currentUser, CatalogRepository repo) =>
         {
             IReadOnlyList<int> locationIds;
-            if (req.ChainId is { } chainId)
+            if (req.ChainId is { } chainId && chainId > 0)
             {
                 if (!currentUser.IsInRole(UserRole.RootSuperAdmin) &&
                     !(currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin) && currentUser.ChainId == chainId))
@@ -560,7 +560,7 @@ internal static class AdminCatalogEndpoints
             }
             else
             {
-                var locationId = req.LocationId!.Value;
+                var locationId = (req.LocationId ?? 0);
                 if (currentUser.IsInRole(UserRole.Manager) && currentUser.LocationId != locationId)
                     return Results.Problem("Not authorized for this location.", statusCode: StatusCodes.Status403Forbidden);
                 if (currentUser.IsInRole(UserRole.SuperAdmin, UserRole.Admin))
@@ -821,7 +821,7 @@ internal sealed class LocationClosureRequestValidator : AbstractValidator<Locati
 {
     public LocationClosureRequestValidator()
     {
-        RuleFor(x => x).Must(x => (x.LocationId is null) != (x.ChainId is null))
+        RuleFor(x => x).Must(x => ((x.LocationId ?? 0) == 0) != ((x.ChainId ?? 0) == 0))
             .WithMessage("Specify exactly one of LocationId or ChainId.");
         RuleFor(x => x.ToDate).GreaterThanOrEqualTo(x => x.FromDate);
         // Matches sp_Admin_CreateLocationClosures' OPTION (MAXRECURSION 366) -- without this, a

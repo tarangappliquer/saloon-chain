@@ -81,12 +81,19 @@ internal sealed class BookingService(
 
         if (rangeData.Treatments.Count == 0) return [];
 
+        // ExistingBookings' StartTime/EndTime are true UTC instants (see BookingService.
+        // ScheduleTreatmentAsync); everything SlotCalculator reasons about -- WorkDate, OpenTime/
+        // CloseTime, shift windows -- is venue-local. Resolve the venue's own zone and convert once
+        // so the date grouping and overlap checks below land on the venue's calendar day, not UTC's.
+        var rangeTz = TryGetTimeZone(rangeData.Location.TimeZoneId);
+
         var pairsByDate = rangeData.EligiblePairs
             .GroupBy(p => p.WorkDate)
             .ToDictionary(g => g.Key, IReadOnlyList<EligiblePair> (g) =>
                 [.. g.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart.ToTimeSpan(), p.ShiftEnd.ToTimeSpan()))]);
 
         var bookingsByDate = rangeData.ExistingBookings
+            .Select(b => b with { StartTime = ToVenueLocal(b.StartTime, rangeTz), EndTime = ToVenueLocal(b.EndTime, rangeTz) })
             .GroupBy(b => DateOnly.FromDateTime(b.StartTime))
             .ToDictionary(g => g.Key, IReadOnlyList<ExistingBooking> (g) =>
                 [.. g.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft"))]);
@@ -161,15 +168,31 @@ internal sealed class BookingService(
             if ((mask & (1 << dayBit)) == 0) return [];
         }
 
+        // ExistingBookings' StartTime/EndTime are true UTC instants (see BookingService.
+        // ScheduleTreatmentAsync); SlotCalculator otherwise reasons entirely in the venue's own
+        // wall-clock (OpenTime/CloseTime, shift windows), so convert before feeding it in.
+        var tz = TryGetTimeZone(data.Location.TimeZoneId);
+
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart.ToTimeSpan(), p.ShiftEnd.ToTimeSpan())).ToList();
-        var existing = data.ExistingBookings.Select(b => new ExistingBooking(b.RoomId, b.TherapistId, b.StartTime, b.EndTime, b.Status == "Draft")).ToList();
+        var existing = data.ExistingBookings.Select(b =>
+            new ExistingBooking(b.RoomId, b.TherapistId, ToVenueLocal(b.StartTime, tz), ToVenueLocal(b.EndTime, tz), b.Status == "Draft")).ToList();
         var blocked = data.BlockedRanges.Select(b =>
             new BlockedRange(b.RoomId, date.ToDateTime(b.StartTime), date.ToDateTime(b.EndTime))).ToList();
 
-        var slots = SlotCalculator.ComputeAvailableSlots(
+        var venueLocalSlots = SlotCalculator.ComputeAvailableSlots(
             date, data.Location.OpenTime.ToTimeSpan(), data.Location.CloseTime.ToTimeSpan(), totalSlots, pairs, existing, blocked,
             breakStart: data.Location.BreakStartTime?.ToTimeSpan(), breakEnd: data.Location.BreakEndTime?.ToTimeSpan());
+
+        // Slots above are computed in the venue's own wall-clock; hand back real UTC instants so
+        // the client (whatever its own zone) displays and re-posts an unambiguous value -- see
+        // sp_Booking_ValidateSlotEligibility, which now resolves the venue's TimeZoneId itself
+        // rather than assuming the posted instant's UTC clock face already is the venue's.
+        var slots = venueLocalSlots.Select(s => s with
+        {
+            StartTime = FromVenueLocal(s.StartTime, tz),
+            EndTime = FromVenueLocal(s.EndTime, tz),
+        }).ToList();
 
         if (excludeBookingId is null)
         {
@@ -294,28 +317,16 @@ internal sealed class BookingService(
     {
         var details = await repo.GetConfirmationDetailsAsync(bookingId);
 
-        var booking = await repo.GetByIdAsync(bookingId, customerId);
-        if (booking is not null)
-        {
-            var scheduledTimes = booking.Treatments
-                .Where(t => t.StartTime.HasValue)
-                .Select(t => t.StartTime.GetValueOrDefault())
-                .ToList();
-
-            if (scheduledTimes.Count > 0)
-            {
-                var earliest = scheduledTimes.Min();
-                var location = await catalog.GetLocationByIdForAdminAsync(booking.LocationId);
-                if (IsWithinCancellationWindow(earliest, location?.TimeZoneId, DateTime.UtcNow))
-                {
-                    throw new InvalidOperationException("Bookings cannot be cancelled within 48 hours (2 days) of the appointment date.");
-                }
-            }
-        }
-
+        // The 48h window (bypassed for emulated staff / unpaid bookings) is enforced by
+        // sp_Booking_Cancel itself now -- see BookingRepository.CancelAsync. A duplicate C# check
+        // here used to throw InvalidOperationException, which AppExceptionHandler has no special
+        // case for and turns into an opaque 500; letting the proc's RAISE EXCEPTION (ERRCODE 50005)
+        // propagate instead surfaces the real message as a 409, same as every other sp_* rejection.
         var affected = await repo.CancelAsync(bookingId, customerId);
 
-        await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled >48h prior to appointment");
+        // No longer always ">48h prior" -- emulated staff and unpaid bookings can cancel inside the
+        // window too (see the gate above), so the reason text can't assume the 48h reason applied.
+        await RefundSucceededPaymentsAsync(bookingId, "Automated refund: Booking cancelled");
 
         foreach (var group in affected.Select(a => (a.LocationId, WorkDate: a.WorkDate)).Distinct())
             _ = SyncAndNotifyAsync(group.LocationId, group.WorkDate);
@@ -333,8 +344,7 @@ internal sealed class BookingService(
     /// </summary>
     internal static bool IsWithinCancellationWindow(DateTime venueLocalEarliestStart, string? timeZoneId, DateTime utcNow, int windowDays = 2)
     {
-        var tz = TryGetTimeZone(timeZoneId);
-        var earliestUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(venueLocalEarliestStart, DateTimeKind.Unspecified), tz);
+        var earliestUtc = FromVenueLocal(venueLocalEarliestStart, TryGetTimeZone(timeZoneId));
         return earliestUtc <= utcNow.AddDays(windowDays);
     }
 
@@ -354,6 +364,15 @@ internal sealed class BookingService(
             return TimeZoneInfo.Utc;
         }
     }
+
+    // venueLocal/utc here are wall-clock readings, not `DateTime.Kind` in the .NET sense -- Kind is
+    // reset explicitly before each conversion since callers hand these in as Unspecified (JSON-
+    // deserialized, Dapper-read, or otherwise) regardless of which reading they actually hold.
+    private static DateTime ToVenueLocal(DateTime utc, TimeZoneInfo tz) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), tz);
+
+    private static DateTime FromVenueLocal(DateTime venueLocal, TimeZoneInfo tz) =>
+        TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(venueLocal, DateTimeKind.Unspecified), tz);
 
     private async Task RefundSucceededPaymentsAsync(int bookingId, string reason)
     {
