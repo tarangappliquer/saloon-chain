@@ -1,7 +1,7 @@
-using System.Data;
-using System.Diagnostics.CodeAnalysis;
 using Dapper;
 using SaloonApi.Modules.Booking.Infrastructure;
+using System.Data;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SaloonApi.Shared.Data.DbServices;
 
@@ -28,12 +28,12 @@ internal sealed class BookingDbService
     // and the read path relabels them Utc). The columns are TIMESTAMPTZ, and Npgsql refuses a
     // non-Utc DateTime for that -- so pin the Kind here. Unspecified is relabelled (digits kept),
     // Local is converted.
-    private static DateTime AsUtc(DateTime dt) => dt.Kind switch
-    {
-        DateTimeKind.Utc => dt,
-        DateTimeKind.Local => dt.ToUniversalTime(),
-        _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
-    };
+    //private static DateTime AsUtc(DateTime dt) => dt.Kind switch
+    //{
+    //    DateTimeKind.Utc => dt,
+    //    DateTimeKind.Local => dt.ToUniversalTime(),
+    //    _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+    //};
 
     // Each result set is now its own single-purpose fn_Booking_Availability* function (see
     // db/postgres/03_procs_postgres.sql) instead of a hand-rolled refcursor procedure -- Dapper's
@@ -134,8 +134,8 @@ internal sealed class BookingDbService
         args.Add("TreatmentId", treatmentId, DbType.Int32);
         args.Add("RoomId", roomId, DbType.Int32);
         args.Add("TherapistId", therapistId, DbType.Int32);
-        args.Add("StartTime", AsUtc(startTime), DbType.DateTime);
-        args.Add("EndTime", AsUtc(endTime), DbType.DateTime);
+        args.Add("StartTime", startTime, DbType.DateTime);
+        args.Add("EndTime", endTime, DbType.DateTime);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
         return db.QuerySingleOrDefaultAsync<ScheduleTreatmentRow>(
             "SELECT * FROM public.sp_Booking_ScheduleTreatment(@BookingId, @CustomerId, @TreatmentId, @RoomId, @TherapistId, @StartTime, @EndTime, @UpdatedBy)", args, commandType: CommandType.Text);
@@ -149,8 +149,8 @@ internal sealed class BookingDbService
         args.Add("TreatmentId", treatmentId, DbType.Int32);
         args.Add("RoomId", roomId, DbType.Int32);
         args.Add("TherapistId", therapistId, DbType.Int32);
-        args.Add("StartTime", AsUtc(startTime), DbType.DateTime);
-        args.Add("EndTime", AsUtc(endTime), DbType.DateTime);
+        args.Add("StartTime", startTime, DbType.DateTime);
+        args.Add("EndTime", endTime, DbType.DateTime);
         args.Add("UpdatedBy", updatedBy, DbType.Int32);
         return db.ExecuteScalarAsync<int>(
             "SELECT * FROM public.sp_Booking_RescheduleConfirmed(@BookingId, @TreatmentId, @RoomId, @TherapistId, @StartTime, @EndTime, @UpdatedBy)", args, commandType: CommandType.Text);
