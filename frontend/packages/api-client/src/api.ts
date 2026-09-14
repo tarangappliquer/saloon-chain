@@ -207,6 +207,7 @@ export interface BookingDetailsDto {
     'locationName': string;
     'status': string;
     'treatments': Array<BookingTreatmentLineDto>;
+    'timeZoneId': string;
 }
 export interface BookingProductDto {
     'id': number;
@@ -348,9 +349,9 @@ export interface CreateStaffRequest {
     'name': string;
     'email': string;
     'role': string;
-    'chainId': number;
-    'locationId': number;
-    'therapistId': number;
+    'chainId'?: number;
+    'locationId'?: number;
+    'therapistId'?: number;
     'isEmulator'?: boolean;
     'joiningDate'?: string;
 }
@@ -409,6 +410,7 @@ export interface DashboardUpcomingAppointmentDto {
     'therapistName'?: string;
     'status'?: string;
     'totalAmount'?: number;
+    'timeZoneId'?: string;
 }
 export interface DraftRequest {
     'locationId': number;
@@ -1020,11 +1022,11 @@ export interface UpdateStaffRequest {
     'name': string;
     'phone': string;
     'role': string;
-    'chainId': number;
-    'locationId': number;
-    'therapistId': number;
     'isEmulator': boolean;
     'isActive': boolean;
+    'chainId'?: number;
+    'locationId'?: number;
+    'therapistId'?: number;
     'joiningDate'?: string;
 }
 export interface UpdateTherapistShiftRequest {

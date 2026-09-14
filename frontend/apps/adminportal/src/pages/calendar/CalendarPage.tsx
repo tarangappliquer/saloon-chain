@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useEffectEvent, useMemo, useState }
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, LoadingFallback, PageHeader, Tooltip } from '@saloon/ui';
 import { adminBookingsApi, adminCatalogApi, adminStaffApi, ApiError, schedulingApi } from '../../api/client';
 import { bookingStreamUrl, subscribeToStream } from '../../api/sseClient';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -12,6 +12,7 @@ import { BookingDetailPanel } from '../../components/BookingDetailPanel';
 import { EditBlockSlotModal } from '../../components/EditBlockSlotModal';
 import { QuickActionsPopover } from '../../components/QuickActionsPopover';
 import { routes } from '../../routes';
+import { venueTimezoneTag } from '../../lib/time';
 
 
 const SHIFT_TIME_DEFAULTS: Record<ShiftType, { startTime: string; endTime: string }> = {
@@ -185,20 +186,33 @@ function computeBlockSpans(rooms: Room[], blockedSlots: BlockedSlot[], timeSlots
 // "T", so slicing the UTC wall-clock digits out of the string (as this used to do) printed the
 // booking's UTC time-of-day instead of its venue-local time -- same root cause as the dashboard's
 // "Upcoming Appointments" mismatch (see migrations/007_dashboard_upcoming_display_timezone.sql).
-// Route it through Date so the browser's local zone applies, same as every other admin screen.
-function toLocalHHmm(iso: string): string {
+//
+// This grid's own axis (timeSlots, generated from the location's OpenTime/CloseTime) and every
+// other row on it (ShiftAssignments/RoomCategoryAssignments/BlockedSlots) are plain venue-local
+// `time` values with no timezone conversion at all -- so a booking dot must be positioned using
+// that SAME venue-local reference frame, not the admin's own browser zone. Converting via the
+// browser's local time (as this used to) silently misaligns every booking against the shift/room
+// rows the moment the admin's browser isn't in the venue's own zone. Intl's `timeZone` option
+// converts straight to the venue's IANA zone without needing a date library.
+function toLocalHHmm(iso: string, timeZoneId?: string): string {
   const d = new Date(iso);
+  if (timeZoneId) {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: timeZoneId, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d);
+    const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    return `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}`;
+  }
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
+function extractFlatTreatments(bookings: AdminBooking[], timeZoneId?: string): FlatTreatmentSlot[] {
   const flat: FlatTreatmentSlot[] = [];
   for (const b of bookings) {
     if (b.status === 'Cancelled') continue;
     for (const t of b.treatments) {
       if (t.startTime && t.endTime) {
-        const startStr = t.startTime.includes('T') ? toLocalHHmm(t.startTime) : t.startTime.slice(0, 5);
-        const endStr = t.endTime.includes('T') ? toLocalHHmm(t.endTime) : t.endTime.slice(0, 5);
+        const startStr = t.startTime.includes('T') ? toLocalHHmm(t.startTime, timeZoneId) : t.startTime.slice(0, 5);
+        const endStr = t.endTime.includes('T') ? toLocalHHmm(t.endTime, timeZoneId) : t.endTime.slice(0, 5);
         flat.push({
           bookingId: b.bookingId,
           customerName: b.customerName,
@@ -254,9 +268,11 @@ export function CalendarPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState<number | null>(paramLocationId ? Number(paramLocationId) : null);
   const [date, setDate] = useState<string>(paramDate || today());
-  const [shiftType] = useState<ShiftType>(paramShiftType || 'Morning');
-  const [startTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].startTime);
-  const [endTime] = useState(SHIFT_TIME_DEFAULTS[paramShiftType || 'Morning'].endTime);
+  // No setter was ever wired to a control -- shiftType (and the startTime/endTime window derived
+  // from it) could only change by hand-editing the ?shiftType= URL param, so admins had no way to
+  // switch to (or configure room openings/therapist shifts for) the Evening shift from this page.
+  const [shiftType, setShiftType] = useState<ShiftType>(paramShiftType || 'Morning');
+  const { startTime, endTime } = SHIFT_TIME_DEFAULTS[shiftType];
 
   const [therapists, setTherapists] = useState<{ id: number; name: string }[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -315,6 +331,11 @@ export function CalendarPage() {
     const locId = v ? Number(v) : null;
     setLocationId(locId);
     updateUrl(chainId, locId, date, shiftType);
+  }
+
+  function changeShiftType(st: ShiftType) {
+    setShiftType(st);
+    updateUrl(chainId, locationId, date, st);
   }
 
   useEffect(() => {
@@ -516,10 +537,13 @@ export function CalendarPage() {
     }
   }
 
-  const flatTreatments = useMemo(() => extractFlatTreatments(bookings), [bookings]);
-  const timeSlots = useMemo(() => generateTimeSlots(startTime, endTime, 15), [startTime, endTime]);
   const selectedChain = chains.find((c) => c.id === chainId);
   const selectedLocation = locations.find((l) => l.id === locationId);
+  const flatTreatments = useMemo(
+    () => extractFlatTreatments(bookings, selectedLocation?.timeZoneId),
+    [bookings, selectedLocation?.timeZoneId],
+  );
+  const timeSlots = useMemo(() => generateTimeSlots(startTime, endTime, 15), [startTime, endTime]);
   const workOpen = selectedLocation?.openTime.slice(0, 5);
   const workClose = selectedLocation?.closeTime.slice(0, 5);
   const startTimeError = startTime >= endTime
@@ -607,6 +631,32 @@ export function CalendarPage() {
               </option>
             ))}
           </select>
+
+          <div className="flex items-center rounded-full border border-border bg-background p-0.5 text-xs font-bold">
+            {(['Morning', 'Evening'] as ShiftType[]).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => changeShiftType(st)}
+                aria-pressed={shiftType === st}
+                className={`rounded-full px-3 py-1 transition cursor-pointer ${
+                  shiftType === st ? 'bg-primary text-primary-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {st} ({SHIFT_TIME_DEFAULTS[st].startTime}–{SHIFT_TIME_DEFAULTS[st].endTime})
+              </button>
+            ))}
+          </div>
+
+          {selectedLocation && (
+            <Tooltip content="Every time on this page is shown in the location's own timezone, not your browser's">
+              <span>
+                <Badge variant="outline" showDot={false}>
+                  {venueTimezoneTag(selectedLocation.timeZoneId)}
+                </Badge>
+              </span>
+            </Tooltip>
+          )}
         </div>
 
         {/* Right Group: Settings, Refresh, View Mode, + Add */}
@@ -659,6 +709,7 @@ export function CalendarPage() {
             booking={detailBooking}
             chainId={chainId}
             locationId={locationId}
+            timeZoneId={selectedLocation?.timeZoneId}
             canCancel={canCancel}
             canMarkNoShow={canMarkNoShow}
             onClose={() => setDetailBookingId(null)}

@@ -13,6 +13,7 @@ Name | Type | Description | Notes
 **therapistName** | **string** |  | [optional] [default to undefined]
 **status** | **string** |  | [optional] [default to undefined]
 **totalAmount** | **number** |  | [optional] [default to undefined]
+**timeZoneId** | **string** |  | [optional] [default to undefined]
 
 ## Example
 
@@ -28,6 +29,7 @@ const instance: DashboardUpcomingAppointmentDto = {
     therapistName,
     status,
     totalAmount,
+    timeZoneId,
 };
 ```
 

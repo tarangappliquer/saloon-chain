@@ -28,7 +28,10 @@ internal sealed class BookingService(
     public async Task<IReadOnlyList<DateOnly>> GetAvailableDatesAsync(
         int locationId, DateOnly from, DateOnly to, IReadOnlyList<int>? treatmentIds = null, int? excludeBookingId = null)
     {
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        // Caller's own local "today" (X-Timezone header), not the API server's clock -- a customer
+        // shouldn't be blocked from booking "today" their own wall-clock just because the server (in
+        // whatever zone it happens to run) already ticked past midnight, or vice versa.
+        var today = requestContext.ClientToday;
         if (from < today) from = today;
         if (to < from) return [];
 
@@ -86,6 +89,7 @@ internal sealed class BookingService(
         // CloseTime, shift windows -- is venue-local. Resolve the venue's own zone and convert once
         // so the date grouping and overlap checks below land on the venue's calendar day, not UTC's.
         var rangeTz = TryGetTimeZone(rangeData.Location.TimeZoneId);
+        var rangeVenueNow = ToVenueLocal(DateTime.UtcNow, rangeTz);
 
         var pairsByDate = rangeData.EligiblePairs
             .GroupBy(p => p.WorkDate)
@@ -116,7 +120,7 @@ internal sealed class BookingService(
             foreach (var treatment in rangeData.Treatments)
             {
                 var slots = SlotCalculator.ComputeAvailableSlots(
-                    d, hours.OpenTime.ToTimeSpan(), hours.CloseTime.ToTimeSpan(), treatment.DurationSlots, pairs, bookings, blocked,
+                    d, rangeVenueNow, hours.OpenTime.ToTimeSpan(), hours.CloseTime.ToTimeSpan(), treatment.DurationSlots, pairs, bookings, blocked,
                     breakStart: rangeData.Location.BreakStartTime?.ToTimeSpan(), breakEnd: rangeData.Location.BreakEndTime?.ToTimeSpan());
 
                 if (slots.Count == 0)
@@ -172,6 +176,7 @@ internal sealed class BookingService(
         // ScheduleTreatmentAsync); SlotCalculator otherwise reasons entirely in the venue's own
         // wall-clock (OpenTime/CloseTime, shift windows), so convert before feeding it in.
         var tz = TryGetTimeZone(data.Location.TimeZoneId);
+        var venueNow = ToVenueLocal(DateTime.UtcNow, tz);
 
         var totalSlots = data.Treatments.Sum(t => t.DurationSlots);
         var pairs = data.EligiblePairs.Select(p => new EligiblePair(p.RoomId, p.TherapistId, p.ShiftStart.ToTimeSpan(), p.ShiftEnd.ToTimeSpan())).ToList();
@@ -181,7 +186,7 @@ internal sealed class BookingService(
             new BlockedRange(b.RoomId, date.ToDateTime(b.StartTime), date.ToDateTime(b.EndTime))).ToList();
 
         var venueLocalSlots = SlotCalculator.ComputeAvailableSlots(
-            date, data.Location.OpenTime.ToTimeSpan(), data.Location.CloseTime.ToTimeSpan(), totalSlots, pairs, existing, blocked,
+            date, venueNow, data.Location.OpenTime.ToTimeSpan(), data.Location.CloseTime.ToTimeSpan(), totalSlots, pairs, existing, blocked,
             breakStart: data.Location.BreakStartTime?.ToTimeSpan(), breakEnd: data.Location.BreakEndTime?.ToTimeSpan());
 
         // Slots above are computed in the venue's own wall-clock; hand back real UTC instants so
@@ -261,10 +266,14 @@ internal sealed class BookingService(
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
 
+        // t.StartTime is a true UTC instant (BookingTreatments.StartTime); formatting it straight
+        // would show the customer the venue's UTC-shifted clock face instead of their actual
+        // appointment time -- resolve the venue's own zone first, same as GetAvailableSlotsAsync.
+        var tz = TryGetTimeZone(details.TimeZoneId);
         var treatments = details.Treatments.Select(t => new BookingTreatmentDetailModel
         {
             TreatmentName = t.TreatmentName,
-            FormattedTime = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
+            FormattedTime = ToVenueLocal(t.StartTime, tz).ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
             TherapistName = t.TherapistName,
             FormattedPrice = t.Price.ToString("F2", CultureInfo.InvariantCulture)
         }).ToList();
@@ -289,10 +298,14 @@ internal sealed class BookingService(
     {
         var appointmentNumber = details.Id.ToString("D6", CultureInfo.InvariantCulture);
 
+        // t.StartTime is a true UTC instant (BookingTreatments.StartTime); formatting it straight
+        // would show the customer the venue's UTC-shifted clock face instead of their actual
+        // appointment time -- resolve the venue's own zone first, same as GetAvailableSlotsAsync.
+        var tz = TryGetTimeZone(details.TimeZoneId);
         var treatments = details.Treatments.Select(t => new BookingTreatmentDetailModel
         {
             TreatmentName = t.TreatmentName,
-            FormattedTime = t.StartTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
+            FormattedTime = ToVenueLocal(t.StartTime, tz).ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture),
             TherapistName = t.TherapistName,
             FormattedPrice = t.Price.ToString("F2", CultureInfo.InvariantCulture)
         }).ToList();

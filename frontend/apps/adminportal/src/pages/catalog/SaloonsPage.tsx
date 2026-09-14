@@ -328,7 +328,7 @@ export function SaloonsPage() {
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+            <table className="w-full text-left text-xs border-collapse min-w-175">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-muted-foreground font-semibold uppercase tracking-wider">
                   <th className="px-6 py-3.5">ID</th>

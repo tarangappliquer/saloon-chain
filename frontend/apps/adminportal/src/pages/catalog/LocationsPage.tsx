@@ -6,6 +6,7 @@ import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import { useAuth } from '../../features/auth/AuthContext';
 import type { Chain, Location } from '../../api/types';
 import { TimeInput } from '../../components/TimeInput';
+import { TimezoneSelect } from '../../components/TimezoneSelect';
 import { ClosuresModal } from '../../components/ClosuresModal';
 import { DayScheduleModal } from '../../components/DayScheduleModal';
 import { DAY_BITS } from '../../lib/schedule';
@@ -328,10 +329,9 @@ export function LocationsPage() {
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 error={getFieldError(submitError, 'address')}
               />
-              <Input
+              <TimezoneSelect
                 required
                 label="Time Zone ID"
-                placeholder="UTC or America/New_York"
                 value={form.timeZoneId}
                 onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
                 error={getFieldError(submitError, 'timeZoneId')}
@@ -449,7 +449,7 @@ export function LocationsPage() {
           </CardContent>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[950px]">
+            <table className="w-full text-left text-xs border-collapse min-w-237.5">
               <thead className="border-b border-border bg-muted/30 font-medium text-muted-foreground">
                 <tr>
                   <th className="px-6 py-3.5">Location Name</th>

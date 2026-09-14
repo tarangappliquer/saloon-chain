@@ -3,6 +3,7 @@ import Select, { type SingleValue } from 'react-select';
 import type { BookingTreatmentLine, Treatment } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { TreatmentDetailsModal } from './TreatmentDetailsModal';
+import { formatVenueDate, formatVenueTime } from '../../lib/time';
 
 interface Props {
   treatments: Treatment[]; // full catalog, for the "add" dropdown
@@ -10,18 +11,17 @@ interface Props {
   onAdd: (treatmentId: number) => void;
   onRemove: (treatmentId: number) => void;
   loading: boolean;
+  // Shown in the booking's own location zone, not the customer's browser zone -- see lib/time.ts.
+  timeZoneId?: string;
 }
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  return `${date}, ${time}`;
+function fmtTime(iso: string, timeZoneId?: string) {
+  return `${formatVenueDate(iso, timeZoneId)}, ${formatVenueTime(iso, timeZoneId)}`;
 }
 
 // Persistent strip shown alongside the schedule/summary steps so a treatment can be added or
 // dropped without leaving the page.
-export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Props) {
+export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading, timeZoneId }: Props) {
   const [detailsTreatment, setDetailsTreatment] = useState<Treatment | null>(null);
   const selectedIds = new Set(lines.map((l) => l.treatmentId));
   const addable = treatments.filter((t) => !selectedIds.has(t.id));
@@ -35,7 +35,7 @@ export function TreatmentBar({ treatments, lines, onAdd, onRemove, loading }: Pr
         >
           <span className="text-gray-900 dark:text-gray-100">{line.treatmentName}</span>
           <span className="font-semibold text-gray-700 dark:text-gray-300">${(line.price ?? 0).toFixed(2)}</span>
-          <span className="text-gray-400">{line.startTime ? fmtTime(line.startTime) : 'no time yet'}</span>
+          <span className="text-gray-400">{line.startTime ? fmtTime(line.startTime, timeZoneId) : 'no time yet'}</span>
           <button
             type="button"
             onClick={() => {

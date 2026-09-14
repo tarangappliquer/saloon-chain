@@ -1,3 +1,44 @@
+// The admin panel deliberately shows every booking/appointment instant in the LOCATION's own
+// timezone, never converted per-viewer -- an admin managing several locations across zones needs a
+// consistent, unambiguous reading of "when this actually happens at that venue", not a reading that
+// silently shifts depending on which browser/machine they're on. venueTimezoneTag() below labels
+// which zone a given formatVenueTime/formatVenueDate reading is in, so no conversion is implied.
+function resolveZone(timeZoneId?: string | null): string {
+  return timeZoneId && timeZoneId.trim() ? timeZoneId : 'UTC';
+}
+
+export function formatVenueTime(iso?: string | Date | null, timeZoneId?: string | null): string {
+  if (!iso) return '--:--';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '--:--';
+  return new Intl.DateTimeFormat('en-US', { timeZone: resolveZone(timeZoneId), hour: 'numeric', minute: '2-digit' }).format(d);
+}
+
+export function formatVenueDate(
+  iso?: string | Date | null,
+  timeZoneId?: string | null,
+  opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' },
+): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: resolveZone(timeZoneId), ...opts }).format(d);
+}
+
+// Short label for the zone a venue-local reading is displayed in -- "UTC", "GMT+5:30", "PDT", etc,
+// whatever Intl resolves the IANA zone's abbreviation to for the given instant (abbreviations can
+// vary by date for zones that observe DST). Falls back to the raw IANA id if the runtime can't
+// produce a short name for it.
+export function venueTimezoneTag(timeZoneId?: string | null, at: Date = new Date()): string {
+  const zone = resolveZone(timeZoneId);
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' }).formatToParts(at);
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? zone;
+  } catch {
+    return zone;
+  }
+}
+
 // 'HH:mm' (what TimeInput produces) -> 'HH:mm:00' (what the API expects), or null for an empty/unset
 // time. Was hand-duplicated at every call site that submits a time field; centralized here instead.
 export function toApiTime(value: string): string | null {

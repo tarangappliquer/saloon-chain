@@ -26,6 +26,7 @@ import {
 import { adminCatalogApi, ApiError, getFieldError } from "../api/client";
 import type { Chain, Location } from "../api/types";
 import { TimeInput } from "../components/TimeInput";
+import { TimezoneSelect } from "../components/TimezoneSelect";
 import { AddLocationWizard } from "../components/AddLocationWizard";
 import { DayScheduleModal } from "../components/DayScheduleModal";
 import { ClosuresModal } from "../components/ClosuresModal";
@@ -718,11 +719,10 @@ export function SettingsPage() {
                           }
                           error={getFieldError(submitError, "address")}
                         />
-                        <Input
+                        <TimezoneSelect
                           required
                           disabled={!isInfoEditMode}
                           label="Time Zone ID"
-                          placeholder="UTC or America/New_York"
                           value={form.timeZoneId}
                           onChange={(e) =>
                             setForm({ ...form, timeZoneId: e.target.value })

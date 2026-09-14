@@ -440,28 +440,34 @@ LANGUAGE sql STABLE AS $$
             AND (es.RoomId IS NULL OR es.RoomId = er.RoomId);
 $$;
 
--- 4) scheduled treatment lines on the date, anywhere -- NOT scoped to this location.
+-- 4) scheduled treatment lines on the date, anywhere -- NOT scoped to this location. bt.StartTime is
+-- a true UTC instant but p_WorkDate is a venue-local calendar date, so each row must resolve its OWN
+-- booking's location zone (not a hardcoded 'utc') before deriving the date to compare -- otherwise a
+-- booking within ~a UTC-offset's width of midnight venue-local lands on the wrong day here.
 CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityScheduledLines(p_WorkDate date, p_ExcludeBookingId int DEFAULT NULL)
 RETURNS TABLE(RoomId int, TherapistId int, StartTime timestamptz, EndTime timestamptz, Status varchar)
 LANGUAGE sql STABLE AS $$
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
     FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId
-    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+        JOIN public.Locations loc ON loc.Id = b.LocationId
+    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date = p_WorkDate
         AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
         AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
 $$;
 
 -- Range-aware sibling of fn_Booking_AvailabilityScheduledLines above -- same "anywhere, not scoped
--- to this location" shape, across the whole range instead of one date.
+-- to this location" shape (and same per-row venue-timezone resolution), across the whole range
+-- instead of one date.
 CREATE OR REPLACE FUNCTION public.fn_Booking_AvailabilityRangeScheduledLines(p_FromDate date, p_ToDate date, p_ExcludeBookingId int DEFAULT NULL)
 RETURNS TABLE(RoomId int, TherapistId int, StartTime timestamptz, EndTime timestamptz, Status varchar)
 LANGUAGE sql STABLE AS $$
     SELECT bt.RoomId, bt.TherapistId, bt.StartTime, bt.EndTime, b.Status
     FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId
-    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date BETWEEN p_FromDate AND p_ToDate
+        JOIN public.Locations loc ON loc.Id = b.LocationId
+    WHERE bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date BETWEEN p_FromDate AND p_ToDate
         AND bt.IsDelete = FALSE AND b.IsDelete = FALSE
         AND (p_ExcludeBookingId IS NULL OR b.Id <> p_ExcludeBookingId)
         AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()));
@@ -1099,9 +1105,11 @@ $$;
 -- Backs the confirmation email -- separate from sp_Booking_Confirm's own return value because the
 -- email needs customer/location names and each treatment's own therapist/time.
 CREATE OR REPLACE FUNCTION public.fn_Booking_ConfirmationHeader(p_BookingId int)
-RETURNS TABLE(Id int, LocationId int, LocationName varchar, CustomerId int, CustomerName varchar, CustomerEmail varchar)
+RETURNS TABLE(Id int, LocationId int, LocationName varchar, CustomerId int, CustomerName varchar, CustomerEmail varchar, TimeZoneId varchar)
 LANGUAGE sql STABLE AS $$
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName, c.Email AS CustomerEmail
+    -- TimeZoneId is returned so BookingService can render confirmation/cancellation emails in the
+    -- venue's own local time instead of the raw UTC instant BookingTreatments.StartTime stores.
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.CustomerId, c.Name AS CustomerName, c.Email AS CustomerEmail, l.TimeZoneId
     FROM public.Bookings b
         JOIN public.Users c ON c.Id = b.CustomerId
         JOIN public.Locations l ON l.Id = b.LocationId
@@ -1238,10 +1246,12 @@ $$;
 
 -- Powers refresh-restore: the booking id lives in the URL, so a reload just re-fetches the
 -- current state of the draft from here instead of trusting anything client-persisted.
+-- TimeZoneId is returned so the client portal's booking flow renders every slot/appointment time
+-- in the LOCATION's own zone instead of the customer's browser zone -- see ScheduleStep/SlotPicker.
 CREATE OR REPLACE FUNCTION public.fn_Booking_GetByIdHeader(p_BookingId int, p_CustomerId int)
-RETURNS TABLE(Id int, LocationId int, LocationName varchar, Status varchar)
+RETURNS TABLE(Id int, LocationId int, LocationName varchar, Status varchar, TimeZoneId varchar)
 LANGUAGE sql STABLE AS $$
-    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status
+    SELECT b.Id, b.LocationId, l.Name AS LocationName, b.Status, l.TimeZoneId
     FROM public.Bookings b
         JOIN public.Locations l ON l.Id = b.LocationId
     WHERE b.Id = p_BookingId AND b.CustomerId = p_CustomerId AND b.IsDelete = FALSE;
@@ -1676,7 +1686,13 @@ CREATE OR REPLACE FUNCTION public.sp_Catalog_UpdateLocation(
     p_IsActive boolean DEFAULT TRUE, p_UpdatedBy int DEFAULT NULL
 ) RETURNS void
 LANGUAGE plpgsql AS $$
-DECLARE v_RowCount int;
+DECLARE
+    v_RowCount int;
+    -- Validate against the zone this location is ABOUT to have (p_TimeZoneId), falling back to its
+    -- current one if the caller genuinely omitted it -- either way, never a hardcoded 'utc': every
+    -- BookingTreatments.StartTime/EndTime compared below is a true UTC instant, while OpenTime/
+    -- CloseTime/WorkingDaysMask/LocationDaySchedule are all venue-local wall-clock concepts.
+    v_TimeZoneId varchar := COALESCE(p_TimeZoneId, (SELECT TimeZoneId FROM public.Locations WHERE Id = p_Id));
 BEGIN
     -- Deactivating closes the whole location outright -- block if any non-cancelled future booking
     -- still exists, same "don't retroactively invalidate a real appointment" guard used everywhere
@@ -1703,15 +1719,15 @@ BEGIN
             AND NOT EXISTS (
                 SELECT 1 FROM public.LocationDaySchedule ds
                 WHERE ds.LocationId = p_Id
-                    AND ds.DayBit = public.fn_DayBit((bt.StartTime AT TIME ZONE 'utc')::date)
-                    AND ds.EffectiveFrom <= (bt.StartTime AT TIME ZONE 'utc')::date
-                    AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= (bt.StartTime AT TIME ZONE 'utc')::date)
+                    AND ds.DayBit = public.fn_DayBit((bt.StartTime AT TIME ZONE v_TimeZoneId)::date)
+                    AND ds.EffectiveFrom <= (bt.StartTime AT TIME ZONE v_TimeZoneId)::date
+                    AND (ds.EffectiveTo IS NULL OR ds.EffectiveTo >= (bt.StartTime AT TIME ZONE v_TimeZoneId)::date)
                     AND ds.IsDelete = FALSE
             )
             AND (
-                (p_WorkingDaysMask & public.fn_DayBit((bt.StartTime AT TIME ZONE 'utc')::date)) = 0
-                OR (bt.StartTime AT TIME ZONE 'utc')::time < p_OpenTime
-                OR (bt.EndTime AT TIME ZONE 'utc')::time > p_CloseTime
+                (p_WorkingDaysMask & public.fn_DayBit((bt.StartTime AT TIME ZONE v_TimeZoneId)::date)) = 0
+                OR (bt.StartTime AT TIME ZONE v_TimeZoneId)::time < p_OpenTime
+                OR (bt.EndTime AT TIME ZONE v_TimeZoneId)::time > p_CloseTime
             )
     ) THEN
         RAISE EXCEPTION 'Cannot change these hours -- a booking already exists outside the new hours (or on a day being closed).' USING ERRCODE = '50035';
@@ -1767,6 +1783,11 @@ CREATE OR REPLACE FUNCTION public.sp_Catalog_AddLocationDaySchedule(
     p_EffectiveTo date DEFAULT NULL, OUT p_Id int
 )
 LANGUAGE plpgsql AS $$
+DECLARE
+    -- BookingTreatments.StartTime/EndTime are true UTC instants; EffectiveFrom/EffectiveTo/DayBit/
+    -- OpenTime/CloseTime are all venue-local wall-clock concepts, so resolve the venue's own zone
+    -- before deriving a date/day-bit/time-of-day from StartTime, instead of assuming UTC.
+    v_TimeZoneId varchar := (SELECT TimeZoneId FROM public.Locations WHERE Id = p_LocationId);
 BEGIN
     IF p_IsClosed = FALSE AND (p_OpenTime IS NULL OR p_CloseTime IS NULL) THEN
         RAISE EXCEPTION 'Open and close time are required unless the day is marked closed.' USING ERRCODE = '50072';
@@ -1787,10 +1808,10 @@ BEGIN
             JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
         WHERE b.LocationId = p_LocationId AND bt.IsDelete = FALSE AND b.Status <> 'Cancelled'
             AND bt.StartTime IS NOT NULL
-            AND (bt.StartTime AT TIME ZONE 'utc')::date >= p_EffectiveFrom
-            AND (p_EffectiveTo IS NULL OR (bt.StartTime AT TIME ZONE 'utc')::date <= p_EffectiveTo)
-            AND public.fn_DayBit((bt.StartTime AT TIME ZONE 'utc')::date) = p_DayBit
-            AND (p_IsClosed = TRUE OR (bt.StartTime AT TIME ZONE 'utc')::time < p_OpenTime OR (bt.EndTime AT TIME ZONE 'utc')::time > p_CloseTime)
+            AND (bt.StartTime AT TIME ZONE v_TimeZoneId)::date >= p_EffectiveFrom
+            AND (p_EffectiveTo IS NULL OR (bt.StartTime AT TIME ZONE v_TimeZoneId)::date <= p_EffectiveTo)
+            AND public.fn_DayBit((bt.StartTime AT TIME ZONE v_TimeZoneId)::date) = p_DayBit
+            AND (p_IsClosed = TRUE OR (bt.StartTime AT TIME ZONE v_TimeZoneId)::time < p_OpenTime OR (bt.EndTime AT TIME ZONE v_TimeZoneId)::time > p_CloseTime)
     ) THEN
         RAISE EXCEPTION 'Cannot schedule these hours -- a booking already exists outside the new hours (or on a day being closed).' USING ERRCODE = '50073';
     END IF;
@@ -1812,6 +1833,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_LocationId int;
     v_DayBit smallint;
+    v_TimeZoneId varchar;
 BEGIN
     IF p_IsClosed = FALSE AND (p_OpenTime IS NULL OR p_CloseTime IS NULL) THEN
         RAISE EXCEPTION 'Open and close time are required unless the day is marked closed.' USING ERRCODE = '50072';
@@ -1825,9 +1847,14 @@ BEGIN
         RAISE EXCEPTION 'Scheduled hours not found.' USING ERRCODE = '50071';
     END IF;
 
+    SELECT TimeZoneId INTO v_TimeZoneId FROM public.Locations WHERE Id = v_LocationId;
+
+    -- "Already in effect" is a venue-local calendar-day question (EffectiveFrom is venue-local), not
+    -- a global UTC one -- fn_UtcToday() here could let a location ahead of UTC edit a day that has
+    -- already started locally, or block one behind UTC from editing a day that hasn't yet.
     IF EXISTS (
         SELECT 1 FROM public.LocationDaySchedule
-        WHERE Id = p_Id AND EffectiveFrom <= public.fn_UtcToday()
+        WHERE Id = p_Id AND EffectiveFrom <= (now() AT TIME ZONE v_TimeZoneId)::date
     ) THEN
         RAISE EXCEPTION 'Cannot edit hours that are already in effect.' USING ERRCODE = '50070';
     END IF;
@@ -1845,10 +1872,10 @@ BEGIN
             JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
         WHERE b.LocationId = v_LocationId AND bt.IsDelete = FALSE AND b.Status <> 'Cancelled'
             AND bt.StartTime IS NOT NULL
-            AND (bt.StartTime AT TIME ZONE 'utc')::date >= p_EffectiveFrom
-            AND (p_EffectiveTo IS NULL OR (bt.StartTime AT TIME ZONE 'utc')::date <= p_EffectiveTo)
-            AND public.fn_DayBit((bt.StartTime AT TIME ZONE 'utc')::date) = v_DayBit
-            AND (p_IsClosed = TRUE OR (bt.StartTime AT TIME ZONE 'utc')::time < p_OpenTime OR (bt.EndTime AT TIME ZONE 'utc')::time > p_CloseTime)
+            AND (bt.StartTime AT TIME ZONE v_TimeZoneId)::date >= p_EffectiveFrom
+            AND (p_EffectiveTo IS NULL OR (bt.StartTime AT TIME ZONE v_TimeZoneId)::date <= p_EffectiveTo)
+            AND public.fn_DayBit((bt.StartTime AT TIME ZONE v_TimeZoneId)::date) = v_DayBit
+            AND (p_IsClosed = TRUE OR (bt.StartTime AT TIME ZONE v_TimeZoneId)::time < p_OpenTime OR (bt.EndTime AT TIME ZONE v_TimeZoneId)::time > p_CloseTime)
     ) THEN
         RAISE EXCEPTION 'Cannot change these hours -- a booking already exists outside the new hours (or on a day being closed).' USING ERRCODE = '50073';
     END IF;
@@ -1866,9 +1893,13 @@ CREATE OR REPLACE FUNCTION public.sp_Catalog_DeleteLocationDaySchedule(p_Id int,
 LANGUAGE plpgsql AS $$
 DECLARE v_RowCount int;
 BEGIN
+    -- Same venue-local "already in effect" question as sp_Catalog_UpdateLocationDaySchedule --
+    -- EffectiveFrom is a venue-local calendar date, so fn_UtcToday() is the wrong "today" for any
+    -- location that isn't itself UTC.
     IF EXISTS (
-        SELECT 1 FROM public.LocationDaySchedule
-        WHERE Id = p_Id AND IsDelete = FALSE AND EffectiveFrom <= public.fn_UtcToday()
+        SELECT 1 FROM public.LocationDaySchedule ds
+            JOIN public.Locations loc ON loc.Id = ds.LocationId
+        WHERE ds.Id = p_Id AND ds.IsDelete = FALSE AND ds.EffectiveFrom <= (now() AT TIME ZONE loc.TimeZoneId)::date
     ) THEN
         RAISE EXCEPTION 'Cannot cancel hours that are already in effect.' USING ERRCODE = '50070';
     END IF;
@@ -1908,12 +1939,16 @@ CREATE OR REPLACE FUNCTION public.sp_Admin_CreateLocationClosures(
 ) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
+    -- Each target location can have its own TimeZoneId, and bt.StartTime is a true UTC instant --
+    -- resolve every booking's OWN location's zone (via the same join used to scope it to
+    -- p_LocationIds) instead of a hardcoded 'utc' before deriving its venue-local calendar date.
     IF EXISTS (
         SELECT 1
         FROM public.Bookings b
             JOIN public.BookingTreatments bt ON bt.BookingId = b.Id AND bt.IsDelete = FALSE
             JOIN unnest(p_LocationIds) AS li(Id) ON li.Id = b.LocationId
-        WHERE (bt.StartTime AT TIME ZONE 'utc')::date BETWEEN p_FromDate AND p_ToDate
+            JOIN public.Locations loc ON loc.Id = b.LocationId
+        WHERE (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date BETWEEN p_FromDate AND p_ToDate
             AND b.IsDelete = FALSE AND b.Status <> 'Cancelled'
     ) THEN
         RAISE EXCEPTION 'Cannot close -- one or more existing bookings fall within this date range.' USING ERRCODE = '50068';
@@ -2276,7 +2311,9 @@ $$;
 -------------------------------------------------------------------------------------------------
 
 -- "For a location on a date" means "has at least one treatment line scheduled that day" --
--- schedule lives per-treatment (BookingTreatments), not on the booking itself.
+-- schedule lives per-treatment (BookingTreatments), not on the booking itself. p_WorkDate is
+-- venue-local while bt.StartTime is a true UTC instant, so the date comparison resolves this
+-- location's own TimeZoneId (l.TimeZoneId, already joined) instead of assuming UTC.
 CREATE OR REPLACE FUNCTION public.fn_Booking_ForLocationHeaders(p_LocationId int, p_WorkDate date)
 RETURNS TABLE(BookingId int, LocationId int, LocationName varchar, CustomerId int, CustomerName varchar, CustomerEmail varchar, CustomerPhone varchar,
               Status varchar, CreatedDate timestamptz,
@@ -2305,7 +2342,7 @@ LANGUAGE sql STABLE AS $$
         AND EXISTS (
             SELECT 1
             FROM public.BookingTreatments bt
-            WHERE bt.BookingId = b.Id AND bt.IsDelete = FALSE AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+            WHERE bt.BookingId = b.Id AND bt.IsDelete = FALSE AND (bt.StartTime AT TIME ZONE l.TimeZoneId)::date = p_WorkDate
         )
     ORDER BY b.Id;
 $$;
@@ -2324,9 +2361,10 @@ LANGUAGE sql STABLE AS $$
         LEFT JOIN public.TreatmentDurations td ON td.Id = bt.TreatmentDurationId
         LEFT JOIN public.Rooms r ON r.Id = bt.RoomId
         LEFT JOIN public.TherapistProfile th ON th.Id = bt.TherapistId
+        JOIN public.Locations loc ON loc.Id = p_LocationId
     WHERE b.LocationId = p_LocationId AND b.IsDelete = FALSE AND bt.IsDelete = FALSE
         AND b.Status <> 'Cancelled'
-        AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+        AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date = p_WorkDate
     ORDER BY bt.StartTime;
 $$;
 
@@ -2770,8 +2808,10 @@ DECLARE
     v_TherapistId int;
     v_RoomId int;
     v_WorkDate date;
+    v_LocationId int;
+    v_TimeZoneId varchar;
 BEGIN
-    SELECT TherapistId, RoomId, WorkDate INTO v_TherapistId, v_RoomId, v_WorkDate
+    SELECT TherapistId, RoomId, WorkDate, LocationId INTO v_TherapistId, v_RoomId, v_WorkDate, v_LocationId
     FROM public.ShiftAssignments
     WHERE Id = p_Id AND IsDelete = FALSE;
 
@@ -2779,14 +2819,18 @@ BEGIN
         RAISE EXCEPTION 'Shift assignment not found.' USING ERRCODE = '50031';
     END IF;
 
+    -- bt.StartTime/EndTime are true UTC instants; WorkDate/p_StartTime/p_EndTime are venue-local --
+    -- resolve this shift's own location zone instead of assuming UTC.
+    SELECT TimeZoneId INTO v_TimeZoneId FROM public.Locations WHERE Id = v_LocationId;
+
     IF EXISTS (
         SELECT 1
         FROM public.BookingTreatments bt
             JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
         WHERE bt.IsDelete = FALSE AND b.Status <> 'Cancelled'
-            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = v_WorkDate
+            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE v_TimeZoneId)::date = v_WorkDate
             AND (bt.TherapistId = v_TherapistId OR (v_RoomId IS NOT NULL AND bt.RoomId = v_RoomId))
-            AND ((bt.StartTime AT TIME ZONE 'utc')::time < p_StartTime OR (bt.EndTime AT TIME ZONE 'utc')::time > p_EndTime)
+            AND ((bt.StartTime AT TIME ZONE v_TimeZoneId)::time < p_StartTime OR (bt.EndTime AT TIME ZONE v_TimeZoneId)::time > p_EndTime)
     ) THEN
         RAISE EXCEPTION 'Cannot change this shift -- a booking already exists outside the new time window.' USING ERRCODE = '50032';
     END IF;
@@ -2855,14 +2899,17 @@ LANGUAGE sql STABLE AS $$
     WHERE Id = p_Id AND IsDelete = FALSE;
 $$;
 
+-- sa.WorkDate is venue-local while bt.StartTime is a true UTC instant -- resolve the shift's own
+-- location zone (sa.LocationId) instead of assuming UTC before deriving the date to compare.
 CREATE OR REPLACE FUNCTION public.sp_Scheduling_HasShiftBookings(p_ShiftId int)
 RETURNS boolean
 LANGUAGE sql STABLE AS $$
     SELECT EXISTS (
         SELECT 1
         FROM public.ShiftAssignments sa
+            JOIN public.Locations loc ON loc.Id = sa.LocationId
         JOIN public.BookingTreatments bt ON (bt.RoomId = sa.RoomId OR bt.TherapistId = sa.TherapistId)
-            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = sa.WorkDate
+            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date = sa.WorkDate
             AND bt.IsDelete = FALSE
         JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
         WHERE sa.Id = p_ShiftId AND sa.IsDelete = FALSE
@@ -2899,6 +2946,8 @@ LANGUAGE sql STABLE AS $$
     );
 $$;
 
+-- p_WorkDate is venue-local while bt.StartTime is a true UTC instant -- resolve the room's own
+-- location zone instead of assuming UTC before deriving the date to compare.
 CREATE OR REPLACE FUNCTION public.sp_Scheduling_HasRoomBookings(p_RoomId int, p_WorkDate date)
 RETURNS boolean
 LANGUAGE sql STABLE AS $$
@@ -2906,8 +2955,10 @@ LANGUAGE sql STABLE AS $$
         SELECT 1
         FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
+        JOIN public.Rooms r ON r.Id = p_RoomId
+        JOIN public.Locations loc ON loc.Id = r.LocationId
         WHERE bt.RoomId = p_RoomId
-            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date = p_WorkDate
             AND bt.IsDelete = FALSE
             AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()))
     );
@@ -2915,7 +2966,7 @@ $$;
 
 -- Time-range-aware version of sp_Scheduling_HasRoomBookings above, used before blocking a slot --
 -- a whole-day check would reject blocking e.g. a lunch break just because the room has an
--- unrelated booking elsewhere that same day.
+-- unrelated booking elsewhere that same day. Same venue-timezone resolution as above.
 CREATE OR REPLACE FUNCTION public.sp_Scheduling_HasBookingOverlap(p_RoomId int, p_WorkDate date, p_StartTime time, p_EndTime time)
 RETURNS boolean
 LANGUAGE sql STABLE AS $$
@@ -2923,10 +2974,12 @@ LANGUAGE sql STABLE AS $$
         SELECT 1
         FROM public.BookingTreatments bt
         JOIN public.Bookings b ON b.Id = bt.BookingId AND b.IsDelete = FALSE
+        JOIN public.Rooms r ON r.Id = p_RoomId
+        JOIN public.Locations loc ON loc.Id = r.LocationId
         WHERE bt.RoomId = p_RoomId
-            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE 'utc')::date = p_WorkDate
+            AND bt.StartTime IS NOT NULL AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date = p_WorkDate
             AND bt.IsDelete = FALSE
-            AND (bt.StartTime AT TIME ZONE 'utc')::time < p_EndTime AND (bt.EndTime AT TIME ZONE 'utc')::time > p_StartTime
+            AND (bt.StartTime AT TIME ZONE loc.TimeZoneId)::time < p_EndTime AND (bt.EndTime AT TIME ZONE loc.TimeZoneId)::time > p_StartTime
             AND (b.Status = 'Confirmed' OR (b.Status = 'Draft' AND bt.ExpiresAt > now()))
     );
 $$;
@@ -3570,10 +3623,15 @@ CREATE FUNCTION public.fn_Admin_DashboardUpcoming(
 -- the appointment's local time. The admin dashboard's "upcoming appointments" widget then printed
 -- those UTC digits verbatim (e.g. "9:30 AM") while every other admin screen renders the same
 -- booking's real timestamptz through the browser's local zone (e.g. "2:00 PM") -- same booking,
--- two different displayed times. Let the frontend convert once, the same way it already does for
--- BookingsPage/BookingDetailPanel (`new Date(iso).toLocaleTimeString()`).
+-- two different displayed times.
+--
+-- TimeZoneId is returned alongside so the frontend renders every row in ITS OWN location's zone
+-- (not the admin's browser zone, and not a second conversion) -- this widget can span several
+-- locations/chains in one list (see fn_Admin_DashboardScopedLocations), each potentially in a
+-- different zone, so a single page-level zone wouldn't be correct for every row.
 RETURNS TABLE(BookingId int, StartTime timestamptz, EndTime timestamptz,
-              CustomerName varchar, LocationName varchar, TherapistName varchar, Status varchar, TotalAmount numeric)
+              CustomerName varchar, LocationName varchar, TherapistName varchar, Status varchar, TotalAmount numeric,
+              TimeZoneId varchar)
 LANGUAGE plpgsql AS $$
 DECLARE
     v_StartDate date := COALESCE(p_StartDate, public.fn_UtcToday());
@@ -3628,7 +3686,8 @@ BEGIN
         -- RETURNS TABLE(BookingId int, ...) column makes "BookingId" a PL/pgSQL variable in scope
         -- here, which an unqualified reference to BookingTreatments.BookingId would collide with
         -- ("column reference is ambiguous").
-        COALESCE((SELECT SUM(bt.Price) FROM public.BookingTreatments bt WHERE bt.BookingId = c.BookingId AND bt.IsDelete = FALSE), 0) AS TotalAmount
+        COALESCE((SELECT SUM(bt.Price) FROM public.BookingTreatments bt WHERE bt.BookingId = c.BookingId AND bt.IsDelete = FALSE), 0) AS TotalAmount,
+        l.TimeZoneId
     FROM candidates c
         JOIN public.Locations l ON l.Id = c.LocationId
         JOIN public.Users u ON u.Id = c.CustomerId
@@ -4232,8 +4291,14 @@ RETURNS TABLE(BookingId int, LocationId int, LocationName varchar, BookingTreatm
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_Now timestamptz := now();
-    v_Today date := (v_Now AT TIME ZONE 'utc')::date;
 BEGIN
+    -- "Today" for StaffAttendance.WorkDate is a per-location venue-local calendar date, not one
+    -- global UTC date -- a single precomputed v_Today (as this used to use) is wrong for every
+    -- location whose zone isn't UTC, so each row below resolves its OWN location's zone
+    -- (loc.TimeZoneId) instead. The original standalone "is bt.StartTime today" filter is dropped
+    -- entirely: it's implied by (and was the same buggy UTC-day shape as) the EXTRACT(EPOCH...)
+    -- lead-time window below, which is already a pure UTC-instant-to-UTC-instant comparison and
+    -- needs no timezone resolution at all.
     RETURN QUERY
     SELECT
         b.Id AS BookingId,
@@ -4259,10 +4324,10 @@ BEGIN
         LEFT JOIN public.Users u ON u.Id = tp.UserId
         JOIN public.Users cust ON cust.Id = b.CustomerId
         LEFT JOIN public.StaffAttendance sa
-            ON sa.LocationId = b.LocationId AND sa.UserId = tp.UserId AND sa.WorkDate = v_Today AND sa.ArrivalTime IS NOT NULL
+            ON sa.LocationId = b.LocationId AND sa.UserId = tp.UserId
+                AND sa.WorkDate = (bt.StartTime AT TIME ZONE loc.TimeZoneId)::date AND sa.ArrivalTime IS NOT NULL
     WHERE bt.IsDelete = FALSE
       AND bt.ProxyTherapistId IS NULL
-      AND (bt.StartTime AT TIME ZONE 'utc')::date = v_Today
       AND sa.Id IS NULL -- Staff has NOT logged arrival today yet!
       AND EXTRACT(EPOCH FROM (bt.StartTime - v_Now)) / 60 BETWEEN 0 AND COALESCE(loc.StaffEarlyArrivalMinutes, chain.StaffEarlyArrivalMinutes, 30);
 END;

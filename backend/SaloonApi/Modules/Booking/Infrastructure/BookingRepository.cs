@@ -102,7 +102,7 @@ internal sealed record BookingTreatmentLineDto
     public DateTime? ExpiresAt { get; init; }
 }
 
-internal sealed record BookingDetailsDto(int Id, int LocationId, string LocationName, string Status, IReadOnlyList<BookingTreatmentLineDto> Treatments);
+internal sealed record BookingDetailsDto(int Id, int LocationId, string LocationName, string Status, IReadOnlyList<BookingTreatmentLineDto> Treatments, string? TimeZoneId);
 
 internal sealed record MyBookingDto(
     int Id, int LocationId, string LocationName, string Status, DateTime CreatedDate, DateTime? ScheduledStart, DateTime? ScheduledEnd,
@@ -128,7 +128,7 @@ internal sealed record ConfirmationTreatmentLineDto
 
 internal sealed record ConfirmationDetailsDto(
     int Id, int LocationId, string LocationName, int CustomerId, string CustomerName, string CustomerEmail,
-    IReadOnlyList<ConfirmationTreatmentLineDto> Treatments);
+    IReadOnlyList<ConfirmationTreatmentLineDto> Treatments, string? TimeZoneId);
 
 // Split into a header row + a treatment-line row (one fn_Booking_ForLocation* function each) --
 // GetForLocationAsync below joins them client-side by BookingId, same pattern GetMineAsync already
@@ -197,6 +197,7 @@ internal sealed record BookingHeaderRow
     public int LocationId { get; init; }
     public string LocationName { get; init; } = "";
     public string Status { get; init; } = "";
+    public string? TimeZoneId { get; init; }
 }
 
 internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUser currentUser, BookingDbService bookingDb)
@@ -295,7 +296,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
             .Select(l => l.ExpiresAt is null ? l : l with { ExpiresAt = DateTime.SpecifyKind(l.ExpiresAt.Value, DateTimeKind.Utc) })
             .ToList();
 
-        return header is null ? null : new BookingDetailsDto(header.Id, header.LocationId, header.LocationName, header.Status, lines);
+        return header is null ? null : new BookingDetailsDto(header.Id, header.LocationId, header.LocationName, header.Status, lines, header.TimeZoneId);
     }
 
     public async Task<int?> GetCustomerIdAsync(int bookingId)
@@ -327,7 +328,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         var header = await multi.ReadSingleOrDefaultAsync<ConfirmationHeaderRow>();
         var lines = (await multi.ReadAsync<ConfirmationTreatmentLineDto>()).ToList();
 
-        return header is null ? null : new ConfirmationDetailsDto(header.Id, header.LocationId, header.LocationName, header.CustomerId, header.CustomerName, header.CustomerEmail, lines);
+        return header is null ? null : new ConfirmationDetailsDto(header.Id, header.LocationId, header.LocationName, header.CustomerId, header.CustomerName, header.CustomerEmail, lines, header.TimeZoneId);
     }
 
     // internal, not private: Sonar's dead-code analysis (S1144/S3459) can prove a `private` nested
@@ -342,6 +343,7 @@ internal sealed class BookingRepository(SqlConnectionFactory factory, ICurrentUs
         public int CustomerId { get; init; }
         public string CustomerName { get; init; } = "";
         public string CustomerEmail { get; init; } = "";
+        public string? TimeZoneId { get; init; }
     }
 
     public async Task<IReadOnlyList<BookingLocationRow>> CancelAsync(int bookingId, int customerId)

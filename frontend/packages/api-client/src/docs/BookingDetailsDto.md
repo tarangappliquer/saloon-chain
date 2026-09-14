@@ -10,6 +10,7 @@ Name | Type | Description | Notes
 **locationName** | **string** |  | [default to undefined]
 **status** | **string** |  | [default to undefined]
 **treatments** | [**Array&lt;BookingTreatmentLineDto&gt;**](BookingTreatmentLineDto.md) |  | [default to undefined]
+**timeZoneId** | **string** |  | [default to undefined]
 
 ## Example
 
@@ -22,6 +23,7 @@ const instance: BookingDetailsDto = {
     locationName,
     status,
     treatments,
+    timeZoneId,
 };
 ```
 

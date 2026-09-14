@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@saloon/ui';
 import { adminCatalogApi, ApiError, getFieldError } from '../api/client';
 import { TimeInput } from './TimeInput';
+import { TimezoneSelect } from './TimezoneSelect';
 import { defaultWeeklySchedule, type DaySchedule } from '../lib/schedule';
 import { toApiTime, validateBreakTimes } from '../lib/time';
 
@@ -144,10 +145,9 @@ export function AddLocationWizard({ chainId, onClose, onCreated }: { chainId: nu
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 error={getFieldError(submitError, 'address')}
               />
-              <Input
+              <TimezoneSelect
                 required
                 label="Time Zone ID"
-                placeholder="UTC or America/New_York"
                 value={form.timeZoneId}
                 onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
                 error={getFieldError(submitError, 'timeZoneId')}

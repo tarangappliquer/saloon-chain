@@ -88,7 +88,7 @@ export function PayrollPage() {
             <select
               value={locationId ?? ''}
               onChange={(e) => setLocationId(Number(e.target.value))}
-              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-[160px]"
+              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground min-w-40"
             >
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>

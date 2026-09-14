@@ -1,6 +1,6 @@
 # AdminBookingsApi
 
-All URIs are relative to *http://localhost:5199*
+All URIs are relative to *http://localhost:5127*
 
 |Method | HTTP request | Description|
 |------------- | ------------- | -------------|

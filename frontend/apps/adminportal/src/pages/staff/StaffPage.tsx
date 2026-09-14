@@ -199,23 +199,29 @@ export function StaffPage() {
             name: form.name,
             phone: form.phone || '',
             role: form.role,
-            chainId: form.chainId ? Number(form.chainId) : editingUser.chainId,
-            locationId: form.locationId ? Number(form.locationId) : editingUser.locationId,
-            therapistId: form.therapistId ? Number(form.therapistId) : (editingUser.therapistId ?? 0),
+            // 0 is the read side's "unset" convention (StaffUserDto always returns a number, never
+            // null) -- translate it to undefined rather than round-tripping it back as a bogus FK
+            // value the write side now correctly rejects (see AdminStaffEndpoints' own comment).
+            chainId: form.chainId ? Number(form.chainId) : editingUser.chainId || undefined,
+            locationId: form.locationId ? Number(form.locationId) : editingUser.locationId || undefined,
+            therapistId: form.therapistId ? Number(form.therapistId) : editingUser.therapistId || undefined,
             isEmulator,
             joiningDate: form.joiningDate,
             isActive: editingUser.isActive,
           });
         } else {
-          const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : 0;
-          const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : 0;
+          // A role with no chain/location context (e.g. RootSuperAdmin creating a chain's first
+          // SuperAdmin, which is chain-scoped only) genuinely has neither -- send undefined so the
+          // server stores NULL, not a fabricated 0 that isn't a real id (see AdminStaffEndpoints).
+          const cId = paramChainId ? Number(paramChainId) : form.chainId ? Number(form.chainId) : undefined;
+          const lId = paramLocationId ? Number(paramLocationId) : form.locationId ? Number(form.locationId) : undefined;
           await adminStaffApi.apiAdminStaffPost({
             name: form.name,
             email: form.email,
             role: form.role,
             chainId: cId,
             locationId: lId,
-            therapistId: form.therapistId ? Number(form.therapistId) : 0,
+            therapistId: form.therapistId ? Number(form.therapistId) : undefined,
             isEmulator,
             joiningDate: form.joiningDate,
           });

@@ -12,6 +12,7 @@ import { SlotPicker } from './SlotPicker';
 import { TreatmentBar } from './TreatmentBar';
 import { useAvailabilityStream } from './useAvailabilityStream';
 import { useBookingFlow } from './useBookingFlow';
+import { formatVenueDateKey, venueTimezoneTag } from '../../lib/time';
 
 function formatDateLabel(dateStr: string): string {
   const parts = dateStr.split('-').map(Number);
@@ -68,14 +69,11 @@ export function ScheduleStep() {
   useEffect(() => {
     if (allowedDates.length === 0) return;
     if (!date || !allowedDates.includes(date)) {
-      // startTime is a UTC instant -- slicing its date digits directly (as this used to do) reads
-      // the UTC calendar date, which can be a day off from `allowedDates` (venue-local dates) near
-      // midnight. Go through Date so the browser's local zone applies, same as the rest of booking.
+      // startTime is a UTC instant -- `allowedDates` is venue-local (from GET /available-dates), so
+      // the matching calendar date must be derived in the VENUE's own zone, not the browser's --
+      // see lib/time.ts.
       const scheduledStart = booking?.treatments.find((t) => t.startTime)?.startTime;
-      const scheduledDate = scheduledStart ? (() => {
-        const d = new Date(scheduledStart);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      })() : undefined;
+      const scheduledDate = scheduledStart ? formatVenueDateKey(scheduledStart, booking?.timeZoneId) : undefined;
       let targetDate: string;
       if (scheduledDate && allowedDates.includes(scheduledDate)) {
         targetDate = scheduledDate;
@@ -231,7 +229,7 @@ export function ScheduleStep() {
       )}
 
       {/* Saloon & Location Header Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-card p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-linear-to-r from-primary/10 via-primary/5 to-card p-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-primary/15 p-2.5 text-primary border border-primary/20 shadow-2xs">
             <Store className="h-5 w-5" />
@@ -255,6 +253,12 @@ export function ScheduleStep() {
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground bg-card/80 border border-border/80 px-3 py-1.5 rounded-xl shadow-2xs">
           <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
           <span>{ctxLocationName || booking.locationName}</span>
+          <span
+            className="rounded-full border border-border/80 bg-muted/60 px-2 py-0.5 text-[10px] font-bold text-muted-foreground"
+            title="Times below are shown in this saloon's own timezone"
+          >
+            {venueTimezoneTag(booking.timeZoneId)}
+          </span>
         </div>
       </div>
 
@@ -264,6 +268,7 @@ export function ScheduleStep() {
         onAdd={handleAddTreatment}
         onRemove={flow.removeTreatment}
         loading={state.loading}
+        timeZoneId={booking.timeZoneId}
       />
 
       <MonthYearPicker
@@ -282,6 +287,7 @@ export function ScheduleStep() {
           onSelect={flow.selectSlot}
           onRemove={flow.removeTreatment}
           loading={state.loading}
+          timeZoneId={booking.timeZoneId}
         />
       )}
 

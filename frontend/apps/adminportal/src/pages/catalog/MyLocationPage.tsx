@@ -5,6 +5,7 @@ import { Calendar, Clock, DoorClosed, Sparkles, UserPlus } from 'lucide-react';
 import { adminCatalogApi, ApiError, getFieldError } from '../../api/client';
 import type { Location } from '../../api/types';
 import { TimeInput } from '../../components/TimeInput';
+import { TimezoneSelect } from '../../components/TimezoneSelect';
 import { DayScheduleModal } from '../../components/DayScheduleModal';
 import { DAY_BITS } from '../../lib/schedule';
 import { toApiTime, validateBreakTimes } from '../../lib/time';
@@ -218,10 +219,9 @@ export function MyLocationPage() {
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
                   error={getFieldError(submitError, 'address')}
                 />
-                <Input
+                <TimezoneSelect
                   required
                   label="Time Zone ID"
-                  placeholder="UTC or America/New_York"
                   value={form.timeZoneId}
                   onChange={(e) => setForm({ ...form, timeZoneId: e.target.value })}
                   error={getFieldError(submitError, 'timeZoneId')}

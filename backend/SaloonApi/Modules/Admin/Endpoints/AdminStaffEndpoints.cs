@@ -77,6 +77,17 @@ internal static class AdminStaffEndpoints
         {
             var role = Enum.Parse<UserRole>(req.Role);
 
+            // 0 isn't a valid Locations/SaloonChains/TherapistProfile id (IDENTITY starts at 1) --
+            // an older/mismatched client sending it as a "not applicable" sentinel (see
+            // CreateStaffRequest's own comment) would otherwise crash the insert with a raw FK
+            // violation instead of storing NULL like it should.
+            req = req with
+            {
+                ChainId = req.ChainId is > 0 ? req.ChainId : null,
+                LocationId = req.LocationId is > 0 ? req.LocationId : null,
+                TherapistId = req.TherapistId is > 0 ? req.TherapistId : null,
+            };
+
             if (currentUser.IsInRole(UserRole.RootSuperAdmin))
             {
                 // No restriction, no clamp -- Root is the only role allowed to hand out SuperAdmin
@@ -142,6 +153,14 @@ internal static class AdminStaffEndpoints
         {
             var existing = await repo.GetStaffByIdAsync(id);
             if (existing is null) return Results.NotFound();
+
+            // Same 0-as-sentinel defense as POST above.
+            req = req with
+            {
+                ChainId = req.ChainId is > 0 ? req.ChainId : null,
+                LocationId = req.LocationId is > 0 ? req.LocationId : null,
+                TherapistId = req.TherapistId is > 0 ? req.TherapistId : null,
+            };
 
             // Who may edit whom mirrors POST's creation matrix above (RootSuperAdmin edits anyone,
             // SuperAdmin edits Admin/Manager/Receptionist/Therapist/Other/Customer in their own chain,
@@ -315,15 +334,28 @@ internal sealed record AssignProxyRequest(int BookingTreatmentId, int ProxyThera
 // for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
 // JoiningDate: null defaults to today (see the endpoint below) -- the adminportal form always
 // sends today's date by default but lets the caller pick a different one.
+// ChainId/LocationId/TherapistId default to null (not just nullable) so the OpenAPI schema marks
+// them optional/nullable instead of required -- without a default, .NET's OpenAPI generator lists
+// a nullable value-type parameter as required anyway, which forced the generated TS client to type
+// them as plain `number` and the adminportal form to send a 0 sentinel for "not applicable" (e.g. a
+// chain-level SuperAdmin has no LocationId). 0 isn't a valid Locations/SaloonChains/TherapistProfile
+// id (IDENTITY starts at 1), so that sentinel crashed the insert with a raw FK violation instead of
+// storing NULL like it should have.
 internal sealed record CreateStaffRequest(
-    string Name, string Email, string Role, int? ChainId, int? LocationId, int? TherapistId,
+    string Name, string Email, string Role, int? ChainId = null, int? LocationId = null, int? TherapistId = null,
     bool IsEmulator = false, DateOnly? JoiningDate = null);
 
 // IsEmulator: see EmulatorEligibleRoles above -- clamped false for any role outside that set, and
 // for any caller who isn't RootSuperAdmin/SuperAdmin/Admin, regardless of what's sent here.
 // JoiningDate: null leaves the stored value untouched (see sp_Admin_UpdateUser's COALESCE).
+// ChainId/LocationId/TherapistId default to null for the same OpenAPI-optionality reason as
+// CreateStaffRequest above. Reordered after IsEmulator/IsActive (still required, no default) since
+// C# requires every optional positional-record parameter to trail every required one -- this only
+// affects JSON model binding order, which is by property name, not position, so it's not a breaking
+// change for callers.
 internal sealed record UpdateStaffRequest(
-    string Name, string? Phone, string? Role, int? ChainId, int? LocationId, int? TherapistId, bool IsEmulator, bool IsActive, DateOnly? JoiningDate = null);
+    string Name, string? Phone, string? Role, bool IsEmulator, bool IsActive,
+    int? ChainId = null, int? LocationId = null, int? TherapistId = null, DateOnly? JoiningDate = null);
 
 internal sealed class CreateStaffRequestValidator : AbstractValidator<CreateStaffRequest>
 {

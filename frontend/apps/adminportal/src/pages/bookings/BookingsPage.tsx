@@ -6,6 +6,7 @@ import { useAuth } from '../../features/auth/AuthContext';
 import type { AdminBooking, Location, PaymentRecord } from '../../api/types';
 import { type SelectOption, selectClassNames } from '../../components/reactSelectStyles';
 import { DateInput } from '../../components/DateInput';
+import { formatVenueDate, formatVenueTime, venueTimezoneTag } from '../../lib/time';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -124,6 +125,7 @@ interface ReassignTarget {
 interface BookingDetailsModalProps {
   booking: AdminBooking;
   locationId: number;
+  timeZoneId?: string;
   canCancel: boolean;
   canMarkNoShow: boolean;
   onClose: () => void;
@@ -135,6 +137,7 @@ interface BookingDetailsModalProps {
 function BookingDetailsModal({
   booking,
   locationId,
+  timeZoneId,
   canCancel,
   canMarkNoShow,
   onClose,
@@ -229,7 +232,10 @@ function BookingDetailsModal({
             <div>
               <span className="block text-[11px] uppercase font-bold text-muted-foreground">Saloon & Venue</span>
               <p className="font-bold text-foreground text-sm mt-0.5">{booking.locationName}</p>
-              <p className="text-muted-foreground">Shoppey Verified Venue</p>
+              <p className="text-muted-foreground flex items-center gap-1.5">
+                Shoppey Verified Venue
+                <Badge variant="outline" showDot={false}>{venueTimezoneTag(timeZoneId)}</Badge>
+              </p>
             </div>
           </div>
 
@@ -249,9 +255,8 @@ function BookingDetailsModal({
                     </p>
                     {t.startTime && t.endTime && (
                       <p className="font-mono text-[11px] text-primary">
-                        {new Date(t.startTime).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
-                        {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
-                        {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatVenueDate(t.startTime, timeZoneId, { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
+                        {formatVenueTime(t.startTime, timeZoneId)} - {formatVenueTime(t.endTime, timeZoneId)}
                       </p>
                     )}
                     {canMarkNoShow && booking.status === 'Confirmed' && (
@@ -604,6 +609,8 @@ export function BookingsPage() {
     }
   }
 
+  const selectedLocation = locations.find((l) => l.id === locationId);
+
   return (
     <div className="space-y-6">
       <ConfirmDialog
@@ -660,6 +667,11 @@ export function BookingsPage() {
                 className="min-w-35"
               />
             </div>
+            {selectedLocation && (
+              <Badge variant="outline" showDot={false} title="All times on this page are shown in the location's own timezone">
+                {venueTimezoneTag(selectedLocation.timeZoneId)}
+              </Badge>
+            )}
           </div>
         }
       />
@@ -674,6 +686,7 @@ export function BookingsPage() {
         <BookingDetailsModal
           booking={selectedBooking}
           locationId={locationId}
+          timeZoneId={selectedLocation?.timeZoneId}
           canCancel={canCancel}
           canMarkNoShow={canMarkNoShow}
           onClose={() => setSelectedBooking(null)}
@@ -724,13 +737,10 @@ export function BookingsPage() {
                 {optimisticBookings.map((b) => {
                   const firstStart = b.treatments.find((t) => t.startTime)?.startTime;
                   const formattedBookingDate = firstStart
-                    ? new Date(firstStart).toLocaleDateString(undefined, {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })
-                    : new Date(date).toLocaleDateString(undefined, {
+                    ? formatVenueDate(firstStart, selectedLocation?.timeZoneId, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                    // `date` is a plain filter date (no instant to convert) -- parse it as local
+                    // calendar fields, not through Date's UTC-midnight parsing of a bare "YYYY-MM-DD".
+                    : new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
@@ -760,8 +770,7 @@ export function BookingsPage() {
                               <span className="font-medium text-foreground">{t.treatmentName}</span>
                               {t.startTime && t.endTime && (
                                 <span className="text-muted-foreground text-xs font-mono">
-                                  {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -{' '}
-                                  {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {formatVenueTime(t.startTime, selectedLocation?.timeZoneId)} - {formatVenueTime(t.endTime, selectedLocation?.timeZoneId)}
                                   {' · '}
                                   {t.roomName} · {t.therapistName}
                                 </span>

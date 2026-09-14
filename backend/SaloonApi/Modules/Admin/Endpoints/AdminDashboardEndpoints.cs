@@ -24,6 +24,11 @@ internal sealed record DashboardUpcomingAppointmentDto
     public string? TherapistName { get; init; }
     public string Status { get; init; } = "";
     public decimal TotalAmount { get; init; }
+    // The admin panel shows every booking time in ITS OWN location's timezone rather than
+    // converting per-viewer (an admin scanning appointments across several locations/chains needs
+    // an unambiguous reading of each one's actual local time) -- carried alongside StartTime/EndTime
+    // so the frontend can format and tag it without a second round trip.
+    public string? TimeZoneId { get; init; }
 }
 
 internal sealed record DashboardResponseDto(

@@ -3,11 +3,13 @@ import { Badge, Button } from '@saloon/ui';
 import { adminAppointmentStatusesApi, adminBookingsApi, adminCancelReasonsApi, paymentApi, ApiError } from '../api/client';
 import type { AdminBooking } from '../api/types';
 import type { AppointmentStatusDto, CancelReasonDto } from '@saloon/api-client';
+import { formatVenueTime, venueTimezoneTag } from '../lib/time';
 
 interface BookingDetailPanelProps {
   booking: AdminBooking;
   chainId: number | null;
   locationId: number;
+  timeZoneId?: string;
   canCancel: boolean;
   canMarkNoShow: boolean;
   onClose: () => void;
@@ -21,7 +23,7 @@ function hasStarted(booking: AdminBooking): boolean {
   return starts.length > 0 && Date.now() >= Math.min(...starts);
 }
 
-export function BookingDetailPanel({ booking, chainId, locationId, canCancel, canMarkNoShow, onClose, onChanged }: BookingDetailPanelProps) {
+export function BookingDetailPanel({ booking, chainId, locationId, timeZoneId, canCancel, canMarkNoShow, onClose, onChanged }: BookingDetailPanelProps) {
   const [statuses, setStatuses] = useState<AppointmentStatusDto[]>([]);
   const [cancelReasons, setCancelReasons] = useState<CancelReasonDto[]>([]);
   const [settingStatusId, setSettingStatusId] = useState<number | 'clear' | null>(null);
@@ -175,7 +177,12 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
 
           <div className="rounded-xl border border-border/70 bg-accent/30 p-3 text-xs space-y-1">
             <p className="text-muted-foreground">{booking.customerEmail}</p>
-            <p className="text-muted-foreground">{booking.locationName}</p>
+            <p className="text-muted-foreground flex items-center gap-1.5">
+              {booking.locationName}
+              <Badge variant="outline" showDot={false} title="All times below are shown in this location's own timezone">
+                {venueTimezoneTag(timeZoneId)}
+              </Badge>
+            </p>
             <div className="flex items-center justify-between pt-1">
               <span className="font-bold text-foreground">${totalAmount.toFixed(2)}</span>
               <span className={`text-[11px] font-bold ${booking.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
@@ -339,8 +346,7 @@ export function BookingDetailPanel({ booking, chainId, locationId, canCancel, ca
                   </p>
                   {t.startTime && t.endTime && (
                     <p className="font-mono text-[11px] text-primary">
-                      {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
-                      {new Date(t.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatVenueTime(t.startTime, timeZoneId)} – {formatVenueTime(t.endTime, timeZoneId)}
                     </p>
                   )}
                 </div>

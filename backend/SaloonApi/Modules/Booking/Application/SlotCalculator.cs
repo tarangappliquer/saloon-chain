@@ -13,6 +13,7 @@ internal static class SlotCalculator
 {
     public static IReadOnlyList<AvailableSlot> ComputeAvailableSlots(
         DateOnly date,
+        DateTime venueLocalNow,
         TimeSpan locationOpen,
         TimeSpan locationClose,
         int totalDurationSlots,
@@ -23,13 +24,18 @@ internal static class SlotCalculator
         TimeSpan? breakStart = null,
         TimeSpan? breakEnd = null)
     {
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        // "Today"/"now" must be the VENUE's own wall clock, not the API server's -- the server can run
+        // in any timezone (typically UTC in production), while `date`/locationOpen/locationClose and
+        // every existing-booking/blocked-range time fed in here are already venue-local (see callers
+        // in BookingService). Using the server's local clock here silently shifted the cutoff by
+        // whatever offset separates the server's zone from the venue's.
+        var today = DateOnly.FromDateTime(venueLocalNow);
         if (date < today || totalDurationSlots <= 0) return [];
 
         var duration = TimeSpan.FromMinutes(totalDurationSlots * slotMinutes);
         var results = new List<AvailableSlot>();
         var seenStartTimes = new HashSet<DateTime>();
-        var now = DateTime.Now;
+        var now = venueLocalNow;
 
         foreach (var pair in eligiblePairs)
         {

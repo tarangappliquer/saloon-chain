@@ -6,21 +6,8 @@ import { adminDashboardApi } from '../api/client';
 import { useAuth } from '../features/auth/AuthContext';
 import { DateInput } from '../components/DateInput';
 import { routes } from '../routes';
+import { formatVenueDate, formatVenueTime, venueTimezoneTag } from '../lib/time';
 import type { DashboardResponseDto } from '@saloon/api-client';
-
-function formatTimeSlot(iso?: string | Date): string {
-  if (!iso) return '--:--';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '--:--';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-function formatAppointmentDate(iso?: string | Date): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -168,7 +155,7 @@ export function DashboardPage() {
                         label="Date"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        className="min-w-[140px]"
+                        className="min-w-35"
                       />
                     ) : (
                       <div className="flex items-center gap-2">
@@ -176,14 +163,14 @@ export function DashboardPage() {
                           label="Start Date"
                           value={startDate}
                           onChange={(e) => setStartDate(e.target.value)}
-                          className="min-w-[130px]"
+                          className="min-w-32.5"
                         />
                         <span className="text-muted-foreground text-xs self-end pb-1.5">to</span>
                         <DateInput
                           label="End Date"
                           value={endDate}
                           onChange={(e) => setEndDate(e.target.value)}
-                          className="min-w-[130px]"
+                          className="min-w-32.5"
                         />
                       </div>
                     )}
@@ -203,12 +190,13 @@ export function DashboardPage() {
                         <div className="flex items-center gap-3">
                           <span className="flex items-center gap-1 font-mono font-bold text-foreground">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                            {formatAppointmentDate(item.startTime)} {formatTimeSlot(item.startTime)}
+                            {formatVenueDate(item.startTime, item.timeZoneId)} {formatVenueTime(item.startTime, item.timeZoneId)}
                           </span>
                           <div>
                             <p className="font-bold text-foreground">{item.customerName}</p>
-                            <p className="text-muted-foreground text-[11px]">
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5">
                               {item.locationName} • {item.therapistName || 'Unassigned Therapist'}
+                              <Badge variant="outline" showDot={false}>{venueTimezoneTag(item.timeZoneId)}</Badge>
                             </p>
                           </div>
                         </div>

@@ -8,9 +8,9 @@ Name | Type | Description | Notes
 **name** | **string** |  | [default to undefined]
 **email** | **string** |  | [default to undefined]
 **role** | **string** |  | [default to undefined]
-**chainId** | **number** |  | [default to undefined]
-**locationId** | **number** |  | [default to undefined]
-**therapistId** | **number** |  | [default to undefined]
+**chainId** | **number** |  | [optional] [default to undefined]
+**locationId** | **number** |  | [optional] [default to undefined]
+**therapistId** | **number** |  | [optional] [default to undefined]
 **isEmulator** | **boolean** |  | [optional] [default to false]
 **joiningDate** | **string** |  | [optional] [default to undefined]
 

@@ -284,7 +284,7 @@ export function ClosuresModal({
                 <option value="Maintenance">Maintenance</option>
               </select>
             </div>
-            <div className="flex-1 min-w-[160px]">
+            <div className="flex-1 min-w-40">
               <label className="block text-xs font-semibold text-muted-foreground mb-1">Note (optional)</label>
               <input
                 type="text"

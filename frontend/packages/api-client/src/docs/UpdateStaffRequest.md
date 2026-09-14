@@ -8,11 +8,11 @@ Name | Type | Description | Notes
 **name** | **string** |  | [default to undefined]
 **phone** | **string** |  | [default to undefined]
 **role** | **string** |  | [default to undefined]
-**chainId** | **number** |  | [default to undefined]
-**locationId** | **number** |  | [default to undefined]
-**therapistId** | **number** |  | [default to undefined]
 **isEmulator** | **boolean** |  | [default to undefined]
 **isActive** | **boolean** |  | [default to undefined]
+**chainId** | **number** |  | [optional] [default to undefined]
+**locationId** | **number** |  | [optional] [default to undefined]
+**therapistId** | **number** |  | [optional] [default to undefined]
 **joiningDate** | **string** |  | [optional] [default to undefined]
 
 ## Example
@@ -24,11 +24,11 @@ const instance: UpdateStaffRequest = {
     name,
     phone,
     role,
+    isEmulator,
+    isActive,
     chainId,
     locationId,
     therapistId,
-    isEmulator,
-    isActive,
     joiningDate,
 };
 ```
