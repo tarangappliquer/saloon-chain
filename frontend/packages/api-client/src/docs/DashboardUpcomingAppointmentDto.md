@@ -6,9 +6,8 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **bookingId** | **number** |  | [optional] [default to undefined]
-**appointmentDate** | **string** |  | [optional] [default to undefined]
-**startTimeSlot** | **string** |  | [optional] [default to undefined]
-**endTimeSlot** | **string** |  | [optional] [default to undefined]
+**startTime** | **string** |  | [optional] [default to undefined]
+**endTime** | **string** |  | [optional] [default to undefined]
 **customerName** | **string** |  | [optional] [default to undefined]
 **locationName** | **string** |  | [optional] [default to undefined]
 **therapistName** | **string** |  | [optional] [default to undefined]
@@ -22,9 +21,8 @@ import { DashboardUpcomingAppointmentDto } from './api';
 
 const instance: DashboardUpcomingAppointmentDto = {
     bookingId,
-    appointmentDate,
-    startTimeSlot,
-    endTimeSlot,
+    startTime,
+    endTime,
     customerName,
     locationName,
     therapistName,

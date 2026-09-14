@@ -181,14 +181,24 @@ function computeBlockSpans(rooms: Room[], blockedSlots: BlockedSlot[], timeSlots
   return byRoom;
 }
 
+// t.startTime/endTime are full UTC instants (ISO, e.g. "2026-09-11T08:30:00Z") when they carry a
+// "T", so slicing the UTC wall-clock digits out of the string (as this used to do) printed the
+// booking's UTC time-of-day instead of its venue-local time -- same root cause as the dashboard's
+// "Upcoming Appointments" mismatch (see migrations/007_dashboard_upcoming_display_timezone.sql).
+// Route it through Date so the browser's local zone applies, same as every other admin screen.
+function toLocalHHmm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function extractFlatTreatments(bookings: AdminBooking[]): FlatTreatmentSlot[] {
   const flat: FlatTreatmentSlot[] = [];
   for (const b of bookings) {
     if (b.status === 'Cancelled') continue;
     for (const t of b.treatments) {
       if (t.startTime && t.endTime) {
-        const startStr = t.startTime.includes('T') ? t.startTime.split('T')[1].slice(0, 5) : t.startTime.slice(0, 5);
-        const endStr = t.endTime.includes('T') ? t.endTime.split('T')[1].slice(0, 5) : t.endTime.slice(0, 5);
+        const startStr = t.startTime.includes('T') ? toLocalHHmm(t.startTime) : t.startTime.slice(0, 5);
+        const endStr = t.endTime.includes('T') ? toLocalHHmm(t.endTime) : t.endTime.slice(0, 5);
         flat.push({
           bookingId: b.bookingId,
           customerName: b.customerName,

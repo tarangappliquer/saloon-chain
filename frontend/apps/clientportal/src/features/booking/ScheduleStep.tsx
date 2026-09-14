@@ -68,7 +68,14 @@ export function ScheduleStep() {
   useEffect(() => {
     if (allowedDates.length === 0) return;
     if (!date || !allowedDates.includes(date)) {
-      const scheduledDate = booking?.treatments.find((t) => t.startTime)?.startTime?.slice(0, 10);
+      // startTime is a UTC instant -- slicing its date digits directly (as this used to do) reads
+      // the UTC calendar date, which can be a day off from `allowedDates` (venue-local dates) near
+      // midnight. Go through Date so the browser's local zone applies, same as the rest of booking.
+      const scheduledStart = booking?.treatments.find((t) => t.startTime)?.startTime;
+      const scheduledDate = scheduledStart ? (() => {
+        const d = new Date(scheduledStart);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })() : undefined;
       let targetDate: string;
       if (scheduledDate && allowedDates.includes(scheduledDate)) {
         targetDate = scheduledDate;

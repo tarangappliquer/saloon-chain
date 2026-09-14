@@ -3558,11 +3558,21 @@ $$;
 -- scheduled line in range, or is still unscheduled but was created in range), each narrowed to its
 -- own top-20 candidates first, before the display columns (Locations/Users/TherapistProfile/price
 -- subquery) are joined onto just those rows.
-CREATE OR REPLACE FUNCTION public.fn_Admin_DashboardUpcoming(
+-- Postgres won't CREATE OR REPLACE a function whose RETURNS TABLE column list changed, hence the
+-- DROP first (see migrations/007_dashboard_upcoming_display_timezone.sql).
+DROP FUNCTION IF EXISTS public.fn_Admin_DashboardUpcoming(varchar, int, int, date, date);
+CREATE FUNCTION public.fn_Admin_DashboardUpcoming(
     p_Role varchar(50), p_ChainId int DEFAULT NULL, p_LocationId int DEFAULT NULL,
     p_StartDate date DEFAULT NULL, p_EndDate date DEFAULT NULL
 )
-RETURNS TABLE(BookingId int, AppointmentDate date, StartTimeSlot time, EndTimeSlot time,
+-- StartTime/EndTime returned as raw timestamptz instants (not pre-split into date/time via
+-- `AT TIME ZONE 'utc'`), which used to freeze the UTC wall-clock digits as if they were already
+-- the appointment's local time. The admin dashboard's "upcoming appointments" widget then printed
+-- those UTC digits verbatim (e.g. "9:30 AM") while every other admin screen renders the same
+-- booking's real timestamptz through the browser's local zone (e.g. "2:00 PM") -- same booking,
+-- two different displayed times. Let the frontend convert once, the same way it already does for
+-- BookingsPage/BookingDetailPanel (`new Date(iso).toLocaleTimeString()`).
+RETURNS TABLE(BookingId int, StartTime timestamptz, EndTime timestamptz,
               CustomerName varchar, LocationName varchar, TherapistName varchar, Status varchar, TotalAmount numeric)
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -3608,9 +3618,8 @@ BEGIN
     RETURN QUERY
     SELECT
         c.BookingId,
-        (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::date AS AppointmentDate,
-        (COALESCE(c.StartTime, c.CreatedDate) AT TIME ZONE 'utc')::time AS StartTimeSlot,
-        (COALESCE(c.EndTime, c.CreatedDate + interval '30 minutes') AT TIME ZONE 'utc')::time AS EndTimeSlot,
+        COALESCE(c.StartTime, c.CreatedDate) AS StartTime,
+        COALESCE(c.EndTime, c.CreatedDate + interval '30 minutes') AS EndTime,
         u.Name AS CustomerName,
         l.Name AS LocationName,
         tp.Name AS TherapistName,

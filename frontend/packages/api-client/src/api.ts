@@ -402,9 +402,8 @@ export interface DashboardResponseDto {
 }
 export interface DashboardUpcomingAppointmentDto {
     'bookingId'?: number;
-    'appointmentDate'?: string;
-    'startTimeSlot'?: string;
-    'endTimeSlot'?: string;
+    'startTime'?: string;
+    'endTime'?: string;
     'customerName'?: string;
     'locationName'?: string;
     'therapistName'?: string;

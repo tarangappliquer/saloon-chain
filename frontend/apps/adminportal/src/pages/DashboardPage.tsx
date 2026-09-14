@@ -8,20 +8,16 @@ import { DateInput } from '../components/DateInput';
 import { routes } from '../routes';
 import type { DashboardResponseDto } from '@saloon/api-client';
 
-function formatTimeSlot(timeStr?: string): string {
-  if (!timeStr) return '--:--';
-  const parts = timeStr.split(':');
-  if (parts.length < 2) return timeStr;
-  let hours = parseInt(parts[0], 10);
-  const minutes = parts[1];
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${hours}:${minutes} ${ampm}`;
+function formatTimeSlot(iso?: string | Date): string {
+  if (!iso) return '--:--';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatAppointmentDate(dateStr?: string | Date): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
+function formatAppointmentDate(iso?: string | Date): string {
+  if (!iso) return '';
+  const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
@@ -207,7 +203,7 @@ export function DashboardPage() {
                         <div className="flex items-center gap-3">
                           <span className="flex items-center gap-1 font-mono font-bold text-foreground">
                             <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                            {formatAppointmentDate(item.appointmentDate)} {formatTimeSlot(item.startTimeSlot ? String(item.startTimeSlot) : '')}
+                            {formatAppointmentDate(item.startTime)} {formatTimeSlot(item.startTime)}
                           </span>
                           <div>
                             <p className="font-bold text-foreground">{item.customerName}</p>
